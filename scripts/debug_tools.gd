@@ -12,7 +12,7 @@ extends Node
 ## --wait=S       so viele Sekunden warten, nachdem alles geladen ist (Standard 3)
 ## --fly=H        Kamera H Meter über das Auto setzen (Überblicks-Bild)
 ## --pitch=G      Neigung dieser Überblicks-Kamera in Grad (Standard -10)
-## --bench=S      S Sekunden lang fahren und dann FPS-Werte ausgeben
+## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
 
 @export var camera: Camera3D
@@ -37,6 +37,12 @@ var _frame_times: PackedFloat32Array = PackedFloat32Array()
 var _gpu_times: PackedFloat32Array = PackedFloat32Array()
 var _cpu_times: PackedFloat32Array = PackedFloat32Array()
 var _load_start_msec: int = 0
+var _route: PackedVector3Array = PackedVector3Array()
+var _route_index: int = 0
+var _distance_driven: float = 0.0
+var _max_off_road: float = 0.0
+var _lowest_up: float = 1.0
+var _last_position: Vector3 = Vector3.ZERO
 
 
 func _ready() -> void:
@@ -80,9 +86,10 @@ func on_world_ready(game: Node3D) -> void:
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		# Falls das System trotzdem bei 60 FPS bremst: echte Rechenzeit pro Bild messen
 		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
-		_game.car.freeze = true
 		_state = "bench"
 		_timer = 0.0
+		_extend_route()
+		_last_position = _game.car.global_position
 
 
 func _process(delta: float) -> void:
@@ -115,22 +122,84 @@ func _process(delta: float) -> void:
 				get_tree().quit()
 
 
-func _physics_process(delta: float) -> void:
+func _physics_process(_delta: float) -> void:
 	if _state != "bench":
 		return
-	# Benchmark: Auto gleitet mit 160 km/h über das Gelände, damit ständig nachgeladen wird
+	_drive_autopilot()
+
+
+# ---------------------------------------------------------------------------
+# Autopilot: fährt die Straße entlang (benutzt dieselben Tasten wie ein Spieler)
+# ---------------------------------------------------------------------------
+
+func _extend_route() -> void:
 	var car: VehicleBody3D = _game.car
-	var forward := Vector3(sin(deg_to_rad(start_heading)), 0.0, cos(deg_to_rad(start_heading)))
-	var next := car.global_position + forward * 44.0 * delta
-	next.y = _game.ground_height(next.x, next.z) + 1.0
-	car.global_transform = Transform3D(Basis(Vector3.UP, deg_to_rad(start_heading)), next)
+	_route = _game.roads.route_from(car.global_position, car.global_basis.z, 2500.0)
+	_route_index = 0
 
 
+func _drive_autopilot() -> void:
+	var car: VehicleBody3D = _game.car
+	if _route.size() < 10:
+		_extend_route()
+		return
+	var here := car.global_position
+	# Nächsten Punkt der Route suchen (nur vorwärts)
+	var best_distance := INF
+	for i in range(_route_index, mini(_route_index + 40, _route.size())):
+		var d := Vector2(_route[i].x - here.x, _route[i].z - here.z).length()
+		if d < best_distance:
+			best_distance = d
+			_route_index = i
+	_max_off_road = maxf(_max_off_road, best_distance)
+	_distance_driven += Vector2(here.x - _last_position.x, here.z - _last_position.z).length()
+	_last_position = here
+	_lowest_up = minf(_lowest_up, car.global_basis.y.y)
+	if _route.size() - _route_index < 60:
+		_extend_route()
+		return
+
+	# Lenken: auf einen Punkt etwas voraus zielen (je schneller, desto weiter voraus)
+	var speed := car.linear_velocity.length()
+	var look_ahead := int((7.0 + speed * 0.5) / RoadSegment.POINT_SPACING)
+	var aim := _route[mini(_route_index + look_ahead, _route.size() - 1)]
+	var local := car.global_transform.affine_inverse() * aim
+	var angle := atan2(local.x, local.z)  # positiv = Ziel liegt links
+	if angle > 0.0:
+		Input.action_press("steer_left", clampf(angle * 2.5, 0.0, 1.0))
+		Input.action_release("steer_right")
+	else:
+		Input.action_press("steer_right", clampf(-angle * 2.5, 0.0, 1.0))
+		Input.action_release("steer_left")
+
+	# Tempo: vor Kurven langsamer werden
+	var p0 := _route[_route_index]
+	var p1 := _route[mini(_route_index + 10, _route.size() - 1)]
+	var p2 := _route[mini(_route_index + 20, _route.size() - 1)]
+	var d1 := Vector2(p1.x - p0.x, p1.z - p0.z)
+	var d2 := Vector2(p2.x - p1.x, p2.z - p1.z)
+	var curve := absf(d1.angle_to(d2)) if d1.length() > 0.1 and d2.length() > 0.1 else 0.0
+	var target_speed := lerpf(26.0, 7.0, clampf(curve / 1.2, 0.0, 1.0))
+	if speed < target_speed - 1.0:
+		Input.action_press("accelerate")
+		Input.action_release("brake")
+	elif speed > target_speed + 2.0:
+		Input.action_release("accelerate")
+		Input.action_press("brake")
+	else:
+		Input.action_release("accelerate")
+		Input.action_release("brake")
+
+
+## Überblicks-Kamera: hoch über und hinter dem Auto, Blick in Fahrtrichtung
 func _place_fly_camera() -> void:
 	var car: VehicleBody3D = _game.car
 	camera.set_physics_process(false)
-	var yaw := deg_to_rad(start_heading)
-	var eye := car.global_position + Vector3.UP * _fly_height
+	var forward := car.global_basis.z
+	forward.y = 0.0
+	forward = forward.normalized()
+	var eye := car.global_position + Vector3.UP * _fly_height - forward * _fly_height * 0.8
+	var yaw := atan2(forward.x, forward.z)
 	camera.global_transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(_pitch), yaw + PI, 0.0)), eye)
 	camera.reset_physics_interpolation()
 
@@ -164,6 +233,8 @@ func _print_bench() -> void:
 	print("BENCH gpu_ms avg=%.2f p99=%.2f | cpu_ms avg=%.2f p99=%.2f" % [
 		_average(_gpu_times), _percentile(_gpu_times, 0.99), _average(_cpu_times), _percentile(_cpu_times, 0.99)])
 	print("BENCH render_size=%s screen_scale=%.1f" % [get_viewport().get_texture().get_size(), DisplayServer.screen_get_scale()])
+	print("BENCH autopilot: %.0f m gefahren (%.0f km/h im Schnitt), max. %.1f m neben der Straßenmitte, min. Aufrecht-Wert %.2f" % [
+		_distance_driven, _distance_driven / maxf(_timer, 0.1) * 3.6, _max_off_road, _lowest_up])
 
 
 func _average(values: PackedFloat32Array) -> float:

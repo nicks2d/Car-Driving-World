@@ -23,6 +23,7 @@ extends Node3D
 
 var world_gen: WorldGen
 var target: Node3D
+var roads: RoadNetwork
 var _chunks: Dictionary = {}  # Vector2i -> Chunk
 var _running_jobs: int = 0
 
@@ -42,9 +43,10 @@ class Chunk:
 
 
 ## Wird vom Spiel aufgerufen, sobald die Welt-Formel bereit ist
-func start(gen: WorldGen, follow: Node3D) -> void:
+func start(gen: WorldGen, follow: Node3D, road_network: RoadNetwork) -> void:
 	world_gen = gen
 	target = follow
+	roads = road_network
 
 
 func _process(_delta: float) -> void:
@@ -94,16 +96,28 @@ func _update_chunks() -> void:
 	for entry: Array in todo:
 		if _running_jobs >= max_parallel_jobs:
 			break
-		_start_job(entry[1], entry[2])
+		var chunk: Chunk = entry[1]
+		# Erst bauen, wenn alle Straßen in der Nähe fertig berechnet sind
+		var road_data := roads.segments_for_rect(_chunk_rect(chunk.coord))
+		if road_data.is_empty():
+			continue
+		_start_job(chunk, entry[2], road_data)
 
 
-func _start_job(chunk: Chunk, lod: int) -> void:
+func _chunk_rect(coord: Vector2i) -> Rect2:
+	return Rect2(coord.x * chunk_size, coord.y * chunk_size, chunk_size, chunk_size)
+
+
+func _start_job(chunk: Chunk, lod: int, road_data: Dictionary) -> void:
 	var job := TerrainChunkJob.new()
 	job.world_gen = world_gen
 	job.coord = chunk.coord
 	job.lod = lod
 	job.spacing = lod_spacings[lod]
 	job.chunk_size = chunk_size
+	job.road_segments = road_data["segments"]
+	job.road_pads = road_data["pads"]
+	job.pad_radius = roads.pad_radius
 	chunk.job = job
 	chunk.task_id = WorkerThreadPool.add_task(job.run, false, "Gelände-Kachel")
 	_running_jobs += 1

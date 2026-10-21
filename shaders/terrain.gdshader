@@ -109,7 +109,8 @@ void fragment() {
 	float snow_line = snow_height + (big_noise - 0.5) * 300.0;
 	float snow_w = smoothstep(snow_line - snow_blend, snow_line + snow_blend * 0.3, world_pos.y);
 	snow_w *= 1.0 - smoothstep(0.30, 0.50, slope + (small_noise - 0.5) * 0.15);
-	float dirt_w = clamp(forest * 0.45, 0.0, 1.0);
+	// Erde/Schotter: im Wald und als schmaler Streifen neben der Straße (Grün-Kanal)
+	float dirt_w = clamp(forest * 0.45 + smoothstep(0.5, 1.0, COLOR.g) * 0.6, 0.0, 1.0);
 	float alpine_w = smoothstep(tree_line, tree_line + 220.0, world_pos.y + (mid_noise - 0.5) * 120.0);
 	vec3 green = mix(grass_color, dry_grass_color, smoothstep(0.55, 0.9, big_noise) * 0.7);
 	vec3 alpine = alpine_color * (0.7 + mid_noise * 0.6);

@@ -10,8 +10,13 @@ extends Node3D
 @export var loading_screen: Control
 @export var debug_tools: DebugTools
 @export var day_night: DayNight
+@export var roads: RoadNetwork
 
 var world_is_ready: bool = false
+var _car_on_road: bool = false
+var _start_point: Vector2 = Vector2.ZERO
+var _start_heading: float = 0.0
+var _place_timer: float = 0.0
 
 
 func _ready() -> void:
@@ -26,21 +31,44 @@ func _ready() -> void:
 		day_night.paused = true
 	if debug_tools.volumetric_fog:
 		day_night.set_volumetric_fog(true)
+	_start_point = start_point
+	_start_heading = heading
 	car.freeze = true
+	# Vorläufiger Platz, bis die Straßen in der Nähe berechnet sind
 	car.teleport(find_start(start_point, heading), true)
-	terrain.start(world_gen, car)
+	roads.start(world_gen, car)
+	terrain.start(world_gen, car, roads)
 	horizon.start(world_gen, car)
 	loading_screen.visible = true
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if world_is_ready:
+		return
+	if not _car_on_road:
+		_place_car_on_road(delta)
 		return
 	if terrain.is_area_ready(car.global_position) and horizon.is_ready():
 		world_is_ready = true
 		loading_screen.visible = false
 		car.freeze = false
 		debug_tools.on_world_ready(self)
+
+
+## Setzt das Auto auf die nächste Straße, sobald die Straßen in der Nähe berechnet sind
+func _place_car_on_road(delta: float) -> void:
+	_place_timer += delta
+	if not roads.is_area_ready(_start_point, 1200.0):
+		return
+	var forward := Vector3(sin(deg_to_rad(_start_heading)), 0.0, cos(deg_to_rad(_start_heading)))
+	var result := roads.nearest_road_transform(Vector3(_start_point.x, 0.0, _start_point.y), forward)
+	if result["found"]:
+		car.teleport(result["transform"], true)
+		_car_on_road = true
+	elif _place_timer > 15.0:
+		# Notfall: weit und breit keine Straße, dann eben im Gelände starten
+		push_warning("Keine Straße in der Nähe gefunden, Auto startet im Gelände.")
+		_car_on_road = true
 
 
 ## Geländehöhe an einer Stelle (ohne Straßen)

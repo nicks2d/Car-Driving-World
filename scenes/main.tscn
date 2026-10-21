@@ -20,6 +20,12 @@
 [ext_resource type="Texture2D" path="res://assets/textures/snow_02/snow_02_nor_gl_1k.jpg" id="18_snow_n"]
 [ext_resource type="Shader" path="res://shaders/sky.gdshader" id="19_sky"]
 [ext_resource type="Script" path="res://scripts/day_night.gd" id="20_daynight"]
+[ext_resource type="Script" path="res://scripts/road_network.gd" id="21_roads"]
+[ext_resource type="Shader" path="res://shaders/road.gdshader" id="22_road_shader"]
+[ext_resource type="Texture2D" path="res://assets/textures/asphalt_02/asphalt_02_diff_1k.jpg" id="23_asphalt_a"]
+[ext_resource type="Texture2D" path="res://assets/textures/asphalt_02/asphalt_02_nor_gl_1k.jpg" id="24_asphalt_n"]
+[ext_resource type="Texture2D" path="res://assets/textures/gravel_road/gravel_road_diff_1k.jpg" id="25_gravel_a"]
+[ext_resource type="Texture2D" path="res://assets/textures/gravel_road/gravel_road_nor_gl_1k.jpg" id="26_gravel_n"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -87,13 +93,21 @@ shader_parameter/snow_albedo = ExtResource("17_snow_a")
 shader_parameter/snow_normal = ExtResource("18_snow_n")
 shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_road"]
+shader = ExtResource("22_road_shader")
+shader_parameter/asphalt_albedo = ExtResource("23_asphalt_a")
+shader_parameter/asphalt_normal = ExtResource("24_asphalt_n")
+shader_parameter/gravel_albedo = ExtResource("25_gravel_a")
+shader_parameter/gravel_normal = ExtResource("26_gravel_n")
+shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ring"]
 shader = ExtResource("10_terrain_shader")
 shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 shader_parameter/far_mode = true
 shader_parameter/sink_radius = 1850.0
 
-[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night")]
+[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads")]
 script = ExtResource("1_game")
 world_gen = SubResource("WorldGen_main")
 terrain = NodePath("Terrain")
@@ -102,6 +116,7 @@ car = NodePath("Car")
 loading_screen = NodePath("HUD/LoadingScreen")
 debug_tools = NodePath("DebugTools")
 day_night = NodePath("DayNight")
+roads = NodePath("Roads")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")
@@ -121,6 +136,10 @@ world_environment = NodePath("../WorldEnvironment")
 [node name="Terrain" type="Node3D" parent="."]
 script = ExtResource("6_terrain")
 terrain_material = SubResource("ShaderMaterial_terrain")
+
+[node name="Roads" type="Node3D" parent="."]
+script = ExtResource("21_roads")
+road_material = SubResource("ShaderMaterial_road")
 
 [node name="HorizonRing" type="MeshInstance3D" parent="."]
 cast_shadow = 0

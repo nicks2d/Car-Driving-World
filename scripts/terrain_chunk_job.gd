@@ -10,6 +10,10 @@ var coord: Vector2i
 var lod: int
 var spacing: float
 var chunk_size: float
+## Straßen in der Nähe (RoadSegment) und Kreuzungsmittelpunkte
+var road_segments: Array = []
+var road_pads: PackedVector3Array = PackedVector3Array()
+var pad_radius: float = 11.0
 
 # --- Ergebnisse ---
 ## Fertige Mesh-Daten für ArrayMesh.add_surface_from_arrays()
@@ -25,15 +29,26 @@ func run() -> void:
 	var side: int = n + 3  # Raster mit einem Punkt Rand rundherum (für die Normalen)
 	var origin := Vector2(coord.x * chunk_size, coord.y * chunk_size)
 	var lakes: Array = world_gen.lakes_near(Rect2(origin, Vector2(chunk_size, chunk_size)))
+	var roads := RoadQuery.new(road_segments, road_pads, pad_radius,
+		Rect2(origin, Vector2(chunk_size, chunk_size)).grow(spacing * 2.0))
+	var has_roads := not roads.is_empty()
 
-	# 1. Alle Höhen berechnen
+	# 1. Alle Höhen berechnen (und an Straßen anpassen)
 	var hs := PackedFloat32Array()
 	hs.resize(side * side)
+	var road_near := PackedFloat32Array()
+	road_near.resize(side * side)
 	var i := 0
 	for gz in range(-1, n + 2):
 		var wz := origin.y + gz * spacing
 		for gx in range(-1, n + 2):
-			hs[i] = world_gen.terrain_height(origin.x + gx * spacing, wz, lakes)
+			var wx := origin.x + gx * spacing
+			var h := world_gen.terrain_height(wx, wz, lakes)
+			if has_roads:
+				var carved := roads.carve(wx, wz, h)
+				h = carved.x
+				road_near[i] = carved.y
+			hs[i] = h
 			i += 1
 
 	# 2. Punkte, Normalen und Farben des eigentlichen Rasters
@@ -58,10 +73,12 @@ func run() -> void:
 			var normal := Vector3(hs[c - 1] - hs[c + 1], 2.0 * spacing, hs[c - side] - hs[c + side]).normalized()
 			var wx := origin.x + gx * spacing
 			var wz := origin.y + gz * spacing
-			var forest := world_gen.forest_density(wx, wz, h, 1.0 - normal.y)
+			var near_road := road_near[c]
+			var forest := world_gen.forest_density(wx, wz, h, 1.0 - normal.y) * (1.0 - near_road)
 			verts[v] = Vector3(gx * spacing, h, gz * spacing)
 			normals[v] = normal
-			colors[v] = Color(forest, 0.0, 0.0, 1.0)
+			# Farbe: Rot = Wald, Grün = Nähe zur Straße
+			colors[v] = Color(forest, near_road, 0.0, 1.0)
 			heights[v] = h
 			v += 1
 
