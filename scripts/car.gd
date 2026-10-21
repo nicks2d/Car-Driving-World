@@ -155,6 +155,14 @@ func _upright_transform() -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, yaw), global_position + Vector3.UP * reset_lift)
 
 
+## Setzt das Auto an eine neue Stelle (z. B. Start auf der Straße).
+## Mit as_spawn = true landet es auch dort, falls es einmal aus der Welt fällt.
+func teleport(new_transform: Transform3D, as_spawn: bool = false) -> void:
+	if as_spawn:
+		_spawn_transform = new_transform
+	_place_car(new_transform)
+
+
 func _place_car(new_transform: Transform3D) -> void:
 	global_transform = new_transform
 	linear_velocity = Vector3.ZERO

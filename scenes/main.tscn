@@ -1,9 +1,26 @@
 [gd_scene format=3]
 
-[ext_resource type="Shader" path="res://shaders/grid.gdshader" id="1_grid"]
-[ext_resource type="PackedScene" path="res://scenes/car.tscn" id="2_car"]
-[ext_resource type="Script" path="res://scripts/follow_camera.gd" id="3_cam"]
-[ext_resource type="Script" path="res://scripts/hud.gd" id="4_hud"]
+[ext_resource type="Script" path="res://scripts/game.gd" id="1_game"]
+[ext_resource type="Script" path="res://scripts/world_gen.gd" id="2_worldgen"]
+[ext_resource type="PackedScene" path="res://scenes/car.tscn" id="3_car"]
+[ext_resource type="Script" path="res://scripts/follow_camera.gd" id="4_cam"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="5_hud"]
+[ext_resource type="Script" path="res://scripts/terrain_manager.gd" id="6_terrain"]
+[ext_resource type="Script" path="res://scripts/horizon_ring.gd" id="7_ring"]
+[ext_resource type="Script" path="res://scripts/fps_display.gd" id="8_fps"]
+[ext_resource type="Script" path="res://scripts/debug_tools.gd" id="9_debug"]
+[ext_resource type="Shader" path="res://shaders/terrain.gdshader" id="10_terrain_shader"]
+[ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
+[ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
+[ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
+[ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_nor_gl_1k.jpg" id="14_dirt_n"]
+[ext_resource type="Texture2D" path="res://assets/textures/rock_face/rock_face_diff_1k.jpg" id="15_rock_a"]
+[ext_resource type="Texture2D" path="res://assets/textures/rock_face/rock_face_nor_gl_1k.jpg" id="16_rock_n"]
+[ext_resource type="Texture2D" path="res://assets/textures/snow_02/snow_02_diff_1k.jpg" id="17_snow_a"]
+[ext_resource type="Texture2D" path="res://assets/textures/snow_02/snow_02_nor_gl_1k.jpg" id="18_snow_n"]
+
+[sub_resource type="Resource" id="WorldGen_main"]
+script = ExtResource("2_worldgen")
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 
@@ -13,18 +30,48 @@ sky_material = SubResource("ProceduralSkyMaterial_sky")
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 2
 sky = SubResource("Sky_main")
+tonemap_mode = 4
+fog_enabled = true
+fog_light_color = Color(0.62, 0.72, 0.86, 1)
+fog_density = 6e-05
+fog_aerial_perspective = 0.7
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_grid"]
-shader = ExtResource("1_grid")
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_variation"]
+frequency = 0.006
+fractal_octaves = 4
 
-[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
-material = SubResource("ShaderMaterial_grid")
-size = Vector2(2000, 2000)
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_variation"]
+width = 512
+height = 512
+seamless = true
+noise = SubResource("FastNoiseLite_variation")
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
-size = Vector3(2000, 2, 2000)
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_terrain"]
+shader = ExtResource("10_terrain_shader")
+shader_parameter/grass_albedo = ExtResource("11_grass_a")
+shader_parameter/grass_normal = ExtResource("12_grass_n")
+shader_parameter/dirt_albedo = ExtResource("13_dirt_a")
+shader_parameter/dirt_normal = ExtResource("14_dirt_n")
+shader_parameter/rock_albedo = ExtResource("15_rock_a")
+shader_parameter/rock_normal = ExtResource("16_rock_n")
+shader_parameter/snow_albedo = ExtResource("17_snow_a")
+shader_parameter/snow_normal = ExtResource("18_snow_n")
+shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 
-[node name="Main" type="Node3D"]
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ring"]
+shader = ExtResource("10_terrain_shader")
+shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
+shader_parameter/far_mode = true
+shader_parameter/sink_radius = 1850.0
+
+[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools")]
+script = ExtResource("1_game")
+world_gen = SubResource("WorldGen_main")
+terrain = NodePath("Terrain")
+horizon = NodePath("HorizonRing")
+car = NodePath("Car")
+loading_screen = NodePath("HUD/LoadingScreen")
+debug_tools = NodePath("DebugTools")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")
@@ -32,23 +79,25 @@ environment = SubResource("Environment_main")
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.866, -0.383, 0.3214, 0, 0.6428, 0.766, -0.5, -0.6634, 0.5567, 0, 50, 0)
 shadow_enabled = true
-directional_shadow_max_distance = 150.0
+directional_shadow_max_distance = 300.0
 
-[node name="Ground" type="StaticBody3D" parent="."]
+[node name="Terrain" type="Node3D" parent="."]
+script = ExtResource("6_terrain")
+terrain_material = SubResource("ShaderMaterial_terrain")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)
-shape = SubResource("BoxShape3D_ground")
+[node name="HorizonRing" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+material_override = SubResource("ShaderMaterial_ring")
+script = ExtResource("7_ring")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground"]
-mesh = SubResource("PlaneMesh_ground")
-
-[node name="Car" parent="." instance=ExtResource("2_car")]
+[node name="Car" parent="." instance=ExtResource("3_car")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
 
 [node name="Camera" type="Camera3D" parent="." node_paths=PackedStringArray("target")]
 current = true
-script = ExtResource("3_cam")
+near = 0.1
+far = 30000.0
+script = ExtResource("4_cam")
 target = NodePath("../Car")
 
 [node name="HUD" type="CanvasLayer" parent="."]
@@ -71,5 +120,46 @@ theme_override_font_sizes/font_size = 52
 text = "0 km/h"
 horizontal_alignment = 2
 vertical_alignment = 2
-script = ExtResource("4_hud")
+script = ExtResource("5_hud")
 car = NodePath("../../Car")
+
+[node name="FpsLabel" type="Label" parent="HUD" node_paths=PackedStringArray("terrain")]
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 600.0
+offset_bottom = 40.0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 6
+theme_override_font_sizes/font_size = 18
+text = "FPS"
+script = ExtResource("8_fps")
+terrain = NodePath("../../Terrain")
+
+[node name="LoadingScreen" type="ColorRect" parent="HUD"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.06, 0.07, 0.09, 1)
+
+[node name="Label" type="Label" parent="HUD/LoadingScreen"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -30.0
+offset_right = 300.0
+offset_bottom = 30.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 32
+text = "Welt wird erzeugt …"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="DebugTools" type="Node" parent="." node_paths=PackedStringArray("camera")]
+script = ExtResource("9_debug")
+camera = NodePath("../Camera")

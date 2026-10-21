@@ -15,3 +15,6 @@ Thumbs.db
 
 # Persönliche Claude-Code-Einstellungen
 .claude/settings.local.json
+
+# Screenshots vom Screenshot-Werkzeug
+/screenshots/

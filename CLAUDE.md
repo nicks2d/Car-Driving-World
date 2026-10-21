@@ -93,7 +93,7 @@ assets/
 
 - [x] Meilenstein 0: Setup geprüft
 - [x] Meilenstein 1 (Feinabstimmung der Fahrwerte nach Nicks Probefahrt möglich)
-- [ ] Meilenstein 2
+- [x] Meilenstein 2 (Terrain, Horizont-Ring, FPS-Anzeige, Screenshot-Werkzeug)
 - [ ] Meilenstein 3
 - [ ] Meilenstein 4
 - [ ] Meilenstein 5
@@ -116,4 +116,19 @@ assets/
   `_physics_process`, dann bleibt es auch auf 120-Hz-Bildschirmen flüssig.
 - Fahrwerte laut Testfahrt (Stand M1): 0–100 km/h in 5,8 s, Spitze ca. 220 km/h,
   100–0 km/h in 42 m, ca. 1,2 g in Kurven, kippt nicht um.
-- Boden in M1: 2 × 2 km. Wer vom Rand fällt, landet wieder am Start.
+- Welt-Formel: `scripts/world_gen.gd` (Resource, im Inspector am Main-Node). Seed 1337.
+  Höhe = Talboden (großräumig 60–180 m) + Relief (Hügel + Bergketten bis ~1.900 m).
+  Flüsse = Null-Linien eines Rauschens, das Relief wird dort zum Tal abgesenkt.
+  Seen = höchstens einer pro 2,5-km-Zelle, Wasserhöhe knapp unter dem tiefsten Randpunkt.
+- FastNoiseLite-Falle: Domain Warp hat standardmäßig 5 Stufen mit Faktor 6, das macht
+  das Gelände aus der Nähe stachelig. Deshalb `domain_warp_fractal_octaves = 2`.
+- Terrain: Kacheln à 256 m, Detailstufen mit 2/4/8/16 m Raster (Grenzen 450/900/1500 m),
+  Sichtweite 2 km, Kollision (HeightMapShape3D, skaliert) bis 320 m. Berechnung im
+  WorkerThreadPool, max. 2 Kacheln pro Bild einbauen. Schürzen gegen LOD-Lücken.
+- Horizont-Ring 1,2–26 km (110 × 720 Punkte), versinkt im Shader unter den Kacheln.
+  Ab 700–1500 m blendet der Terrain-Shader auf die Durchschnittsfarben der Texturen um,
+  damit Kacheln und Ring gleich aussehen.
+- Leistung (M2, Vollbild 2940×1846): ~93 FPS, Ruckler nur beim allerersten Laden.
+  Im Fenster lässt macOS V-Sync nicht abschalten, für FPS-Messungen `--fullscreen` nutzen.
+- Testen: `Godot --path . -- --shot=NAME --pos=X,Z --heading=G --fly=H --time=H` speichert
+  `screenshots/NAME.png`. `-- --bench=20` misst FPS (siehe `scripts/debug_tools.gd`).
