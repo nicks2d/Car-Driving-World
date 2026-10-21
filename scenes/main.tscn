@@ -1,0 +1,45 @@
+[gd_scene format=3]
+
+[ext_resource type="Shader" path="res://shaders/grid.gdshader" id="1_grid"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_grid"]
+shader = ExtResource("1_grid")
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+material = SubResource("ShaderMaterial_grid")
+size = Vector2(2000, 2000)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
+size = Vector3(2000, 2, 2000)
+
+[node name="Main" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.383, 0.3214, 0, 0.6428, 0.766, -0.5, -0.6634, 0.5567, 0, 50, 0)
+shadow_enabled = true
+directional_shadow_max_distance = 150.0
+
+[node name="Ground" type="StaticBody3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)
+shape = SubResource("BoxShape3D_ground")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground"]
+mesh = SubResource("PlaneMesh_ground")
+
+[node name="Camera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.9659, 0.2588, 0, -0.2588, 0.9659, 0, 4, 12)
+current = true
