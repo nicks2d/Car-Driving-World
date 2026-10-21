@@ -92,7 +92,7 @@ assets/
 ## Fortschritt
 
 - [x] Meilenstein 0: Setup geprüft
-- [ ] Meilenstein 1
+- [x] Meilenstein 1 (Feinabstimmung der Fahrwerte nach Nicks Probefahrt möglich)
 - [ ] Meilenstein 2
 - [ ] Meilenstein 3
 - [ ] Meilenstein 4
@@ -108,3 +108,12 @@ assets/
 
 - Godot 4.7.2 (stable), Physik-Engine Jolt (in Godot eingebaut).
 - Auto: Heckantrieb (Nicks Wahl), Godots eingebautes `VehicleBody3D`.
+- `VehicleBody3D`: Die Nase zeigt nach +Z, `steering` positiv = links.
+  `brake` ist ein Impuls pro Physik-Tick (60 Hz), keine Kraft in Newton.
+- Godots Standard-Dämpfung (`linear_damp` 0.1) bremst wie Sirup (max. ~100 km/h).
+  Beim Auto daher `linear_damp_mode = Replace` mit 0, Luftwiderstand macht `car.gd` selbst.
+- Physik-Interpolation ist an. Was dem Auto folgt (Kamera), bewegt sich in
+  `_physics_process`, dann bleibt es auch auf 120-Hz-Bildschirmen flüssig.
+- Fahrwerte laut Testfahrt (Stand M1): 0–100 km/h in 5,8 s, Spitze ca. 220 km/h,
+  100–0 km/h in 42 m, ca. 1,2 g in Kurven, kippt nicht um.
+- Boden in M1: 2 × 2 km. Wer vom Rand fällt, landet wieder am Start.
