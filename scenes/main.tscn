@@ -2,6 +2,7 @@
 
 [ext_resource type="Shader" path="res://shaders/grid.gdshader" id="1_grid"]
 [ext_resource type="PackedScene" path="res://scenes/car.tscn" id="2_car"]
+[ext_resource type="Script" path="res://scripts/follow_camera.gd" id="3_cam"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 
@@ -44,6 +45,7 @@ mesh = SubResource("PlaneMesh_ground")
 [node name="Car" parent="." instance=ExtResource("2_car")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
 
-[node name="Camera" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.9659, 0.2588, 0, -0.2588, 0.9659, 0, 4, 12)
+[node name="Camera" type="Camera3D" parent="." node_paths=PackedStringArray("target")]
 current = true
+script = ExtResource("3_cam")
+target = NodePath("../Car")
