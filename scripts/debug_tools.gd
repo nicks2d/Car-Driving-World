@@ -13,6 +13,7 @@ extends Node
 ## --fly=H        Kamera H Meter über das Auto setzen (Überblicks-Bild)
 ## --pitch=G      Neigung dieser Überblicks-Kamera in Grad (Standard -10)
 ## --bench=S      S Sekunden lang fahren und dann FPS-Werte ausgeben
+## --volfog       volumetrischen Nebel einschalten
 
 @export var camera: Camera3D
 
@@ -21,6 +22,8 @@ var start_position: Vector2 = Vector2.ZERO
 var start_heading: float = 0.0
 ## Tageszeit aus den Argumenten (negativ = nicht angegeben)
 var time_of_day: float = -1.0
+## Volumetrischer Nebel per Argument eingeschaltet?
+var volumetric_fog: bool = false
 
 var _shot_name: String = ""
 var _wait: float = 3.0
@@ -60,6 +63,8 @@ func _ready() -> void:
 				_pitch = float(value)
 			"bench":
 				_bench_seconds = float(value)
+			"volfog":
+				volumetric_fog = true
 
 
 ## Das Spiel meldet: Gelände rund ums Auto ist da
@@ -134,6 +139,9 @@ func _take_screenshot() -> void:
 	await RenderingServer.frame_post_draw
 	var folder := ProjectSettings.globalize_path("res://screenshots")
 	DirAccess.make_dir_recursive_absolute(folder)
+	# .gdignore: Godot soll die Bilder nicht als Spiel-Assets importieren
+	if not FileAccess.file_exists(folder.path_join(".gdignore")):
+		FileAccess.open(folder.path_join(".gdignore"), FileAccess.WRITE).close()
 	var path := folder.path_join(_shot_name + ".png")
 	var image := get_viewport().get_texture().get_image()
 	image.save_png(path)

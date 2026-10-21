@@ -9,6 +9,7 @@ extends Node3D
 @export var car: VehicleBody3D
 @export var loading_screen: Control
 @export var debug_tools: DebugTools
+@export var day_night: DayNight
 
 var world_is_ready: bool = false
 
@@ -20,6 +21,11 @@ func _ready() -> void:
 	if debug_tools.has_start_position:
 		start_point = debug_tools.start_position
 		heading = debug_tools.start_heading
+	if debug_tools.time_of_day >= 0.0:
+		day_night.time_of_day = debug_tools.time_of_day
+		day_night.paused = true
+	if debug_tools.volumetric_fog:
+		day_night.set_volumetric_fog(true)
 	car.freeze = true
 	car.teleport(find_start(start_point, heading), true)
 	terrain.start(world_gen, car)

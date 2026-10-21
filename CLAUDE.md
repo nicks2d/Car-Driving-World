@@ -94,7 +94,7 @@ assets/
 - [x] Meilenstein 0: Setup geprüft
 - [x] Meilenstein 1 (Feinabstimmung der Fahrwerte nach Nicks Probefahrt möglich)
 - [x] Meilenstein 2 (Terrain, Horizont-Ring, FPS-Anzeige, Screenshot-Werkzeug)
-- [ ] Meilenstein 3
+- [x] Meilenstein 3 (Himmel-Shader, Tag-Nacht, Nebel, Schatten, MetalFX)
 - [ ] Meilenstein 4
 - [ ] Meilenstein 5
 - [ ] Meilenstein 6
@@ -132,3 +132,10 @@ assets/
   Im Fenster lässt macOS V-Sync nicht abschalten, für FPS-Messungen `--fullscreen` nutzen.
 - Testen: `Godot --path . -- --shot=NAME --pos=X,Z --heading=G --fly=H --time=H` speichert
   `screenshots/NAME.png`. `-- --bench=20` misst FPS (siehe `scripts/debug_tools.gd`).
+- Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in
+  `day_night.gd` (Sonnenhöhe -18° bis +40°). Nachts wird das Sonnenlicht zum Mondlicht.
+  Sky-Radiance `process_mode = Incremental` (Realtime kostet merklich FPS).
+- Tonemapping AgX, Glow, SSAO, Fernnebel mit Luftperspektive. Volumetrischer Nebel aus
+  (Schalter `volumetric_fog` an DayNight, Test mit `--volfog`).
+- Render-Skalierung: MetalFX Temporal mit 75 % (Projekteinstellungen > Rendering >
+  Scaling 3D). Vollbild Retina: ~98 FPS statt 69 ohne Skalierung.
