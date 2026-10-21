@@ -1,0 +1,16 @@
+# Einheitliche Zeilenenden für Godot-Dateien
+* text=auto eol=lf
+
+# Binärdateien nicht anfassen
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.exr binary
+*.hdr binary
+*.glb binary
+*.gltf binary
+*.fbx binary
+*.blend binary
+*.ogg binary
+*.wav binary
+*.mp3 binary

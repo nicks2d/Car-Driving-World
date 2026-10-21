@@ -1,0 +1,17 @@
+# Godot 4 – automatisch erzeugte Dateien
+.godot/
+/android/
+
+# Export-Zugangsdaten nie hochladen
+export_credentials.cfg
+
+# Builds
+/build/
+/exports/
+
+# macOS / Windows Kram
+.DS_Store
+Thumbs.db
+
+# Persönliche Claude-Code-Einstellungen
+.claude/settings.local.json
