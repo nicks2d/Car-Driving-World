@@ -14,6 +14,7 @@ extends Node
 ## --pitch=G      Neigung dieser Überblicks-Kamera in Grad (Standard -10)
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
+## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png)
 
 @export var camera: Camera3D
 
@@ -43,6 +44,10 @@ var _distance_driven: float = 0.0
 var _max_off_road: float = 0.0
 var _lowest_up: float = 1.0
 var _last_position: Vector3 = Vector3.ZERO
+var _log_timer: float = 0.0
+var _bench_shot_time: float = -1.0
+var _stuck_time: float = 0.0
+var _reverse_time: float = 0.0
 
 
 func _ready() -> void:
@@ -71,6 +76,8 @@ func _ready() -> void:
 				_bench_seconds = float(value)
 			"volfog":
 				volumetric_fog = true
+			"benchshot":
+				_bench_shot_time = float(value)
 
 
 ## Das Spiel meldet: Gelände rund ums Auto ist da
@@ -116,6 +123,9 @@ func _process(delta: float) -> void:
 			_cpu_times.append(RenderingServer.viewport_get_measured_render_time_cpu(viewport_rid)
 				+ Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 				+ Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
+			if _bench_shot_time > 0.0 and _timer >= _bench_shot_time:
+				_bench_shot_time = -1.0
+				_save_image("bench_%d" % int(_timer))
 			if _timer >= _bench_seconds:
 				_state = "done"
 				_print_bench()
@@ -144,9 +154,10 @@ func _drive_autopilot() -> void:
 		_extend_route()
 		return
 	var here := car.global_position
-	# Nächsten Punkt der Route suchen (nur vorwärts)
+	# Nächsten Punkt der Route suchen (nur ein kurzes Stück vorwärts, sonst springt er
+	# in einer Kehre auf den nächsten Ast der Straße und kürzt quer über den Hang ab)
 	var best_distance := INF
-	for i in range(_route_index, mini(_route_index + 40, _route.size())):
+	for i in range(_route_index, mini(_route_index + 10, _route.size())):
 		var d := Vector2(_route[i].x - here.x, _route[i].z - here.z).length()
 		if d < best_distance:
 			best_distance = d
@@ -155,31 +166,54 @@ func _drive_autopilot() -> void:
 	_distance_driven += Vector2(here.x - _last_position.x, here.z - _last_position.z).length()
 	_last_position = here
 	_lowest_up = minf(_lowest_up, car.global_basis.y.y)
+	_log_timer += get_physics_process_delta_time()
+	if _log_timer >= 3.0:
+		_log_timer = 0.0
+		print("Autopilot: %.0f km/h, %.1f m neben der Mitte, Routenpunkt %d/%d, Position %s" % [
+			car.linear_velocity.length() * 3.6, best_distance, _route_index, _route.size(), here.round()])
 	if _route.size() - _route_index < 60:
 		_extend_route()
 		return
 
-	# Lenken: auf einen Punkt etwas voraus zielen (je schneller, desto weiter voraus)
 	var speed := car.linear_velocity.length()
-	var look_ahead := int((7.0 + speed * 0.5) / RoadSegment.POINT_SPACING)
+	# Festgefahren? Dann kurz zurücksetzen, wie ein Mensch es tun würde
+	_stuck_time = _stuck_time + get_physics_process_delta_time() if speed < 0.5 else 0.0
+	if _stuck_time > 2.0:
+		_reverse_time = 2.5
+		_stuck_time = 0.0
+	if _reverse_time > 0.0:
+		_reverse_time -= get_physics_process_delta_time()
+		Input.action_release("accelerate")
+		Input.action_release("steer_left")
+		Input.action_release("steer_right")
+		Input.action_press("brake")
+		return
+
+	# Lenken: auf einen Punkt etwas voraus zielen (je schneller, desto weiter voraus)
+	var look_ahead := maxi(int((6.0 + speed * 0.45) / RoadSegment.POINT_SPACING), 2)
 	var aim := _route[mini(_route_index + look_ahead, _route.size() - 1)]
 	var local := car.global_transform.affine_inverse() * aim
 	var angle := atan2(local.x, local.z)  # positiv = Ziel liegt links
 	if angle > 0.0:
-		Input.action_press("steer_left", clampf(angle * 2.5, 0.0, 1.0))
+		Input.action_press("steer_left", clampf(angle * 4.0, 0.0, 1.0))
 		Input.action_release("steer_right")
 	else:
-		Input.action_press("steer_right", clampf(-angle * 2.5, 0.0, 1.0))
+		Input.action_press("steer_right", clampf(-angle * 4.0, 0.0, 1.0))
 		Input.action_release("steer_left")
 
-	# Tempo: vor Kurven langsamer werden
-	var p0 := _route[_route_index]
-	var p1 := _route[mini(_route_index + 10, _route.size() - 1)]
-	var p2 := _route[mini(_route_index + 20, _route.size() - 1)]
-	var d1 := Vector2(p1.x - p0.x, p1.z - p0.z)
-	var d2 := Vector2(p2.x - p1.x, p2.z - p1.z)
-	var curve := absf(d1.angle_to(d2)) if d1.length() > 0.1 and d2.length() > 0.1 else 0.0
-	var target_speed := lerpf(26.0, 7.0, clampf(curve / 1.2, 0.0, 1.0))
+	# Tempo: Für jede Kurve der nächsten 120 m ausrechnen, wie schnell man sie fahren kann
+	# (Querbeschleunigung max. 4 m/s²) und rechtzeitig bremsen (max. 4 m/s²)
+	var target_speed := 26.0
+	for i in range(_route_index + 3, mini(_route_index + 30, _route.size() - 3)):
+		var d1 := Vector2(_route[i].x - _route[i - 3].x, _route[i].z - _route[i - 3].z)
+		var d2 := Vector2(_route[i + 3].x - _route[i].x, _route[i + 3].z - _route[i].z)
+		var angle_change := absf(d1.angle_to(d2))
+		if angle_change < 0.01:
+			continue
+		var radius := 3.0 * RoadSegment.POINT_SPACING / angle_change
+		var curve_speed := maxf(sqrt(4.0 * radius), 4.0)
+		var distance_to_curve := (i - _route_index) * RoadSegment.POINT_SPACING
+		target_speed = minf(target_speed, sqrt(curve_speed * curve_speed + 2.0 * 4.0 * distance_to_curve))
 	if speed < target_speed - 1.0:
 		Input.action_press("accelerate")
 		Input.action_release("brake")
@@ -205,17 +239,21 @@ func _place_fly_camera() -> void:
 
 
 func _take_screenshot() -> void:
+	await _save_image(_shot_name)
+	get_tree().quit()
+
+
+func _save_image(file_name: String) -> void:
 	await RenderingServer.frame_post_draw
 	var folder := ProjectSettings.globalize_path("res://screenshots")
 	DirAccess.make_dir_recursive_absolute(folder)
 	# .gdignore: Godot soll die Bilder nicht als Spiel-Assets importieren
 	if not FileAccess.file_exists(folder.path_join(".gdignore")):
 		FileAccess.open(folder.path_join(".gdignore"), FileAccess.WRITE).close()
-	var path := folder.path_join(_shot_name + ".png")
+	var path := folder.path_join(file_name + ".png")
 	var image := get_viewport().get_texture().get_image()
 	image.save_png(path)
 	print("Screenshot gespeichert: ", path)
-	get_tree().quit()
 
 
 func _print_bench() -> void:

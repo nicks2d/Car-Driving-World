@@ -7,6 +7,10 @@ extends RefCounted
 ##  3. Höhenprofil glätten und die Steigung begrenzen (Gelände wird später angepasst).
 ##  4. Mesh-Daten für Fahrbahn und Kollision erzeugen.
 
+# Rasterpunkte sind durchnummeriert (Zeile * Breite + Spalte). Die Ganzzahl-Divisionen
+# in diesem Skript sind deshalb gewollt.
+@warning_ignore_start("integer_division")
+
 # --- Eingaben ---
 var world_gen: WorldGen
 var key: Vector3i
@@ -33,7 +37,9 @@ var origin: Vector3
 
 const POINT_SPACING: float = 4.0
 ## So weit kann die Böschung neben der Straße höchstens reichen
-const MAX_BANK: float = 45.0
+const MAX_BANK: float = 60.0
+## Neigung der Böschungen: pro Meter Abstand darf das Gelände 0,65 m höher oder tiefer liegen
+const BANK_SLOPE: float = 0.65
 ## Höchster erlaubter Unterschied zwischen Fahrbahn und Gelände (sonst keine Straße)
 const MAX_CUT: float = 35.0
 
@@ -42,10 +48,12 @@ func build() -> void:
 	var path := _find_path()
 	if path.size() < 2:
 		return
-	path = _simplify(path, 6.0)
+	# Nur leicht vereinfachen: sonst werden die sanften Kehren der Wegsuche wieder zu Ecken
+	path = _simplify(path, 2.5)
 	for i in 3:
 		path = _chaikin(path)
 	_resample(path)
+	_relax(4)
 	if not _make_profile():
 		return
 	_build_mesh()
@@ -89,6 +97,15 @@ func _find_path() -> PackedVector2Array:
 					if p.distance_to(lake.center) < lake.radius + 15.0:
 						in_lake = true
 				penalty += 100000.0 if in_lake else 40.0
+			# In den ersten und letzten 300 m soll die Straße in einem Kegel von etwa ±45° um die
+			# Richtung zum anderen Ort bleiben. Die Nachbarn eines Orts liegen in vier
+			# verschiedenen Richtungen, so kreuzen sich seine Straßen nicht gegenseitig.
+			var from_a := p - a
+			var from_b := p - b
+			if from_a.length() < 300.0 and from_a.length() > 1.0 and from_a.normalized().dot(dir_u) < 0.72:
+				penalty += 300.0
+			if from_b.length() < 300.0 and from_b.length() > 1.0 and from_b.normalized().dot(-dir_u) < 0.72:
+				penalty += 300.0
 			extra[i] = penalty
 
 	var start_index := roundi(half_width / grid_step) * nu + roundi(margin / grid_step)
@@ -304,6 +321,15 @@ func _chaikin(path: PackedVector2Array) -> PackedVector2Array:
 	return result
 
 
+## Jeden Punkt etwas in die Mitte seiner Nachbarn ziehen: Kurven werden runder
+func _relax(rounds: int) -> void:
+	for r in rounds:
+		var smoothed := points.duplicate()
+		for i in range(1, points.size() - 1):
+			smoothed[i] = points[i - 1] * 0.25 + points[i] * 0.5 + points[i + 1] * 0.25
+		points = smoothed
+
+
 ## Gleichmäßig alle POINT_SPACING Meter einen Punkt setzen
 func _resample(path: PackedVector2Array) -> void:
 	points = PackedVector3Array()
@@ -388,28 +414,38 @@ func _build_mesh() -> void:
 	var half := road_width * 0.5
 	var outer := half + shoulder_width
 	# Seitlicher Abstand (positiv = links), Höhenversatz und u-Koordinate jedes Querschnittspunkts
-	var side := [outer, outer, half, -half, -outer, -outer]
-	var drop := [-0.7, -0.06, 0.0, 0.0, -0.06, -0.7]
-	var u_coord := [-shoulder_width / road_width, -shoulder_width / road_width, 0.0, 1.0,
-		1.0 + shoulder_width / road_width, 1.0 + shoulder_width / road_width]
+	# Der äußerste Punkt liegt schräg tiefer: ein Bankett, das in die Böschung übergeht
+	var verge := outer + 1.8
+	var side := [verge, outer, half, -half, -outer, -verge]
+	var drop := [-1.3, -0.06, 0.0, 0.0, -0.06, -1.3]
+	var u_coord := [-(verge - half) / road_width, -shoulder_width / road_width, 0.0, 1.0,
+		1.0 + shoulder_width / road_width, 1.0 + (verge - half) / road_width]
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var tangents := PackedFloat32Array()
 	var uvs := PackedVector2Array()
 	var distance := 0.0
+	var turns := _turn_radii()
 	for i in n:
 		var forward := direction_at(i)
 		var left := Vector3.UP.cross(forward).normalized()
 		var up := forward.cross(left).normalized()
 		if i > 0:
 			distance += points[i].distance_to(points[i - 1])
+		# In sehr engen Kurven die Innenseite schmaler machen, sonst überschlägt sich das Band
+		var inner_limit := absf(turns[i]) * 0.85
 		for k in 6:
-			verts.append(points[i] + left * side[k] + Vector3(0.0, drop[k], 0.0) - origin)
+			var offset: float = side[k]
+			if turns[i] > 0.0 and offset > 0.0:
+				offset = minf(offset, inner_limit)
+			elif turns[i] < 0.0 and offset < 0.0:
+				offset = maxf(offset, -inner_limit)
+			verts.append(points[i] + left * offset + Vector3(0.0, drop[k], 0.0) - origin)
 			var normal: Vector3 = up
 			if k == 0:
-				normal = left
+				normal = (up + left * 0.6).normalized()
 			elif k == 5:
-				normal = -left
+				normal = (up - left * 0.6).normalized()
 			normals.append(normal)
 			# Tangente zeigt nach rechts (Richtung wachsender u-Koordinate)
 			var right := -left
@@ -434,6 +470,32 @@ func _build_mesh() -> void:
 	mesh_arrays[Mesh.ARRAY_INDEX] = indices
 
 
+## Kurvenradius an jedem Punkt (kleinster Wert der Umgebung).
+## Positiv = Linkskurve, negativ = Rechtskurve, sehr groß = gerade.
+func _turn_radii() -> PackedFloat32Array:
+	var n := points.size()
+	var raw := PackedFloat32Array()
+	raw.resize(n)
+	raw.fill(100000.0)
+	for i in range(1, n - 1):
+		var d_prev := points[i] - points[i - 1]
+		var d_next := points[i + 1] - points[i]
+		d_prev.y = 0.0
+		d_next.y = 0.0
+		var angle := d_prev.angle_to(d_next)
+		var radius := POINT_SPACING / maxf(angle, 0.0001)
+		raw[i] = radius if d_prev.cross(d_next).y > 0.0 else -radius
+	var result := PackedFloat32Array()
+	result.resize(n)
+	for i in n:
+		var tightest := raw[i]
+		for j in range(maxi(i - 2, 0), mini(i + 3, n)):
+			if absf(raw[j]) < absf(tightest):
+				tightest = raw[j]
+		result[i] = tightest
+	return result
+
+
 ## Fahrtrichtung am Punkt i (Mittel aus Richtung davor und danach)
 func direction_at(i: int) -> Vector3:
 	var a := points[maxi(i - 1, 0)]
@@ -444,5 +506,5 @@ func direction_at(i: int) -> Vector3:
 
 
 ## Länge der Straße in Metern
-func length() -> float:
+func total_length() -> float:
 	return (points.size() - 1) * POINT_SPACING

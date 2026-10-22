@@ -166,18 +166,18 @@ func _edges_touching(rect: Rect2) -> Array[Vector3i]:
 func segments_for_rect(rect: Rect2) -> Dictionary:
 	var segments: Array = []
 	var pads := PackedVector3Array()
-	var ready := true
+	var all_ready := true
 	for key in _edges_touching(rect):
 		var entry: Entry = _entries.get(key)
 		if entry == null or not entry.done:
 			_wanted[key] = true
-			ready = false
+			all_ready = false
 			continue
 		if entry.segment.valid and entry.segment.bounds.intersects(rect):
 			segments.append(entry.segment)
 			pads.append(entry.segment.start)
 			pads.append(entry.segment.end)
-	if not ready:
+	if not all_ready:
 		return {}
 	return {"segments": segments, "pads": pads}
 
@@ -253,7 +253,9 @@ func route_from(near: Vector3, forward: Vector3, min_length: float) -> PackedVec
 		var end_cell := Vector2i(key.x, key.y)
 		if going_forward:
 			end_cell += Vector2i(1, 0) if key.z == 0 else Vector2i(0, 1)
-		var next := _next_segment_at(end_cell, visited)
+		var arriving := route[route.size() - 1] - route[maxi(route.size() - 7, 0)]
+		arriving.y = 0.0
+		var next := _next_segment_at(end_cell, visited, arriving.normalized())
 		if next.is_empty():
 			break
 		key = next["key"]
@@ -263,19 +265,30 @@ func route_from(near: Vector3, forward: Vector3, min_length: float) -> PackedVec
 	return route
 
 
-func _next_segment_at(cell: Vector2i, visited: Dictionary) -> Dictionary:
-	# Straßen, die an diesem Ort beginnen (vorwärts) oder enden (rückwärts)
+func _next_segment_at(cell: Vector2i, visited: Dictionary, arriving: Vector3) -> Dictionary:
+	# Straßen, die an diesem Ort beginnen (vorwärts) oder enden (rückwärts).
+	# Genommen wird die, bei der man am wenigsten abbiegen muss.
 	var options := [
 		[Vector3i(cell.x, cell.y, 0), true], [Vector3i(cell.x, cell.y, 1), true],
 		[Vector3i(cell.x - 1, cell.y, 0), false], [Vector3i(cell.x, cell.y - 1, 1), false]]
+	var best: Dictionary = {}
+	var best_dot := -2.0
 	for option: Array in options:
 		var key: Vector3i = option[0]
 		if visited.has(key):
 			continue
 		var entry: Entry = _entries.get(key)
-		if entry and entry.done and entry.segment.valid:
-			return {"key": key, "forward": option[1]}
-	return {}
+		if entry == null or not entry.done or not entry.segment.valid:
+			continue
+		var points := entry.segment.points
+		var leaving: Vector3 = points[mini(6, points.size() - 1)] - points[0] if option[1] \
+			else points[maxi(points.size() - 7, 0)] - points[points.size() - 1]
+		leaving.y = 0.0
+		var dot := leaving.normalized().dot(arriving)
+		if dot > best_dot:
+			best_dot = dot
+			best = {"key": key, "forward": option[1]}
+	return best
 
 
 # ---------------------------------------------------------------------------

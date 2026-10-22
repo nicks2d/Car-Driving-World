@@ -52,12 +52,18 @@ func is_empty() -> bool:
 
 
 ## Gelände an die Straße anpassen. Gibt (neue Höhe, Nähe zur Straße 0..1) zurück.
+## Jedes Straßenstück in der Nähe erlaubt nur einen Höhenbereich: auf der Fahrbahn genau
+## ihre Höhe, daneben mit jedem Meter Abstand BANK_SLOPE Meter mehr Spielraum (Böschung).
+## Das Gelände muss alle Bereiche gleichzeitig einhalten. So entsteht zwischen zwei
+## Serpentinen-Ästen ein durchgehender Hang statt einer senkrechten Stufe.
 func carve(x: float, z: float, natural: float) -> Vector2:
 	var pieces: Array = _cells.get(Vector2i(floori(x / CELL), floori(z / CELL)), [])
 	if pieces.is_empty():
 		return Vector2(natural, 0.0)
-	var best_over := INF
-	var best_height := 0.0
+	var lowest := -INF
+	var highest := INF
+	var nearest_over := INF
+	var road_height := 0.0
 	for index: int in pieces:
 		var a := _a[index]
 		var b := _b[index]
@@ -71,20 +77,28 @@ func carve(x: float, z: float, natural: float) -> Vector2:
 			t = clampf((apx * abx + apz * abz) / len_sq, 0.0, 1.0)
 		var dx := apx - abx * t
 		var dz := apz - abz * t
-		# Wie weit liegt der Punkt außerhalb des flachen Teils?
+		# Wie weit liegt der Punkt außerhalb des flachen Teils (Fahrbahn + Bankett)?
 		var over := sqrt(dx * dx + dz * dz) - _core[index]
-		if over < best_over:
-			best_over = over
-			best_height = lerpf(a.y, b.y, t)
-	if best_over > RoadSegment.MAX_BANK:
+		if over > RoadSegment.MAX_BANK:
+			continue
+		# Gelände knapp unter der Fahrbahn, daneben die Böschung
+		var target := lerpf(a.y, b.y, t) - 0.3
+		if over < nearest_over:
+			nearest_over = over
+			road_height = target
+		var slack := maxf(over, 0.0) * RoadSegment.BANK_SLOPE
+		lowest = maxf(lowest, target - slack)
+		highest = minf(highest, target + slack)
+	if nearest_over == INF:
 		return Vector2(natural, 0.0)
-	# Gelände knapp unter die Fahrbahn legen und mit einer Böschung (ca. 1 : 1,5) anschließen
-	var target := best_height - 0.3
-	var bank := clampf(absf(natural - target) * 1.5, 2.0, RoadSegment.MAX_BANK)
-	var proximity := 1.0 - smoothstep(0.0, 5.0, best_over)
-	if best_over <= 0.0:
-		return Vector2(target, 1.0)
-	return Vector2(lerpf(target, natural, smoothstep(0.0, bank, best_over)), proximity)
+	var proximity := 1.0 - smoothstep(0.0, 5.0, nearest_over)
+	# Unter einer Fahrbahn gilt immer deren Höhe: eine Straße darf nie zugeschüttet werden
+	if nearest_over <= 0.0:
+		return Vector2(road_height, 1.0)
+	if lowest > highest:
+		# Zwei Straßen wollen Unvereinbares (zu nah übereinander): Mitte nehmen
+		return Vector2((lowest + highest) * 0.5, proximity)
+	return Vector2(clampf(natural, lowest, highest), proximity)
 
 
 ## Liegt hier Straße (inklusive kleinem Rand)? Für Bäume und Felsen.

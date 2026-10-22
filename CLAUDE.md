@@ -95,7 +95,7 @@ assets/
 - [x] Meilenstein 1 (Feinabstimmung der Fahrwerte nach Nicks Probefahrt möglich)
 - [x] Meilenstein 2 (Terrain, Horizont-Ring, FPS-Anzeige, Screenshot-Werkzeug)
 - [x] Meilenstein 3 (Himmel-Shader, Tag-Nacht, Nebel, Schatten, MetalFX)
-- [ ] Meilenstein 4
+- [x] Meilenstein 4 (Straßennetz mit Serpentinen, Geländeanpassung, Start auf Straße)
 - [ ] Meilenstein 5
 - [ ] Meilenstein 6
 - [ ] Meilenstein 7
@@ -139,3 +139,19 @@ assets/
   (Schalter `volumetric_fog` an DayNight, Test mit `--volfog`).
 - Render-Skalierung: MetalFX Temporal mit 75 % (Projekteinstellungen > Rendering >
   Scaling 3D). Vollbild Retina: ~98 FPS statt 69 ohne Skalierung.
+- Straßen-Ansatz (M4): **Knoten-Gitter + A*-Wegsuche pro Abschnitt.** Warum: Jeder
+  Abschnitt hängt nur von seinen zwei Orten ab, dadurch ist das Netz endlos, nahtlos und
+  deterministisch, und die Wegsuche übers Gelände liefert von selbst Landstraßen im Tal und
+  Serpentinen am Hang. Rauschen-Linien (keine Steigungskontrolle, keine Ziele) und
+  Stadt-Algorithmen (L-Systeme, passen nicht zu Landstraßen) wurden verworfen.
+- Straßen-Details: Orte in 1,2-km-Zellen (flach, im Tal, nicht über 300 m Relief).
+  A* auf 18-m-Raster mit 48 Schrittrichtungen (sonst keine Serpentinen möglich), Kosten für
+  Steigung (>10 % sehr teuer), Wasser, scharfe Knicke und Abweichung vom ±45°-Kegel in den
+  ersten/letzten 300 m (sonst kreuzen sich Straßen eines Orts). Danach glätten, Höhenprofil
+  mit max. 10 % Steigung, bei über 35 m Abtrag/Auftrag wird der Abschnitt verworfen.
+- Gelände an Straßen (`road_query.gd`): Fahrbahn ist immer „hart“, daneben Böschung mit
+  Neigung 0,65; bei mehreren Straßen müssen alle Höhenbereiche gleichzeitig gelten
+  (sonst Wände zwischen Serpentinen-Ästen).
+- Gelände-Kacheln warten, bis alle Straßen in ihrer Nähe berechnet sind.
+- Testen: `-- --bench=60` fährt per Autopilot die Straßen ab (Stand M4: 4 km am Stück,
+  ~80 km/h im Schnitt, Vollbild ~98 FPS, 1%-Low 77 FPS).
