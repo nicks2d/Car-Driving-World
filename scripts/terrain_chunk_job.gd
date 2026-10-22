@@ -14,6 +14,11 @@ var chunk_size: float
 var road_segments: Array = []
 var road_pads: PackedVector3Array = PackedVector3Array()
 var pad_radius: float = 11.0
+## Bäume, Büsche und Felsen verteilen? (nur für nahe und mittlere Kacheln)
+var with_vegetation: bool = false
+## Abstand der möglichen Baumplätze und Felsplätze in Metern (kleiner = dichter)
+var tree_spacing: float = 7.0
+var rock_spacing: float = 22.0
 
 # --- Ergebnisse ---
 ## Fertige Mesh-Daten für ArrayMesh.add_surface_from_arrays()
@@ -24,6 +29,10 @@ var heights: PackedFloat32Array
 var grid_size: int = 0
 ## Mesh-Daten der Flussoberfläche in dieser Kachel (leer = kein Fluss)
 var water_arrays: Array = []
+## Pflanzen und Felsen: Art -> MultiMesh-Puffer (je Exemplar 12 Zahlen Transform + 4 Zufallswerte)
+var vegetation: Dictionary = {}
+## Hindernisse für die Kollision: je 4 Zahlen (x, y, z, Radius) relativ zur Kachel
+var colliders: PackedFloat32Array = PackedFloat32Array()
 
 
 func run() -> void:
@@ -136,12 +145,139 @@ func run() -> void:
 			k += 6
 
 	_build_river_water(origin)
+	if with_vegetation:
+		_place_vegetation(origin, hs, side, lakes, roads if has_roads else null)
 
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_INDEX] = indices
+
+
+## Höhe an beliebiger Stelle der Kachel (zwischen den Rasterpunkten gemittelt)
+func _height_at(hs: PackedFloat32Array, side: int, lx: float, lz: float) -> float:
+	var fx := lx / spacing + 1.0
+	var fz := lz / spacing + 1.0
+	var ix := clampi(floori(fx), 0, side - 2)
+	var iz := clampi(floori(fz), 0, side - 2)
+	var tx := fx - ix
+	var tz := fz - iz
+	var top := lerpf(hs[iz * side + ix], hs[iz * side + ix + 1], tx)
+	var bottom := lerpf(hs[(iz + 1) * side + ix], hs[(iz + 1) * side + ix + 1], tx)
+	return lerpf(top, bottom, tz)
+
+
+## Steigung (0 = flach) an beliebiger Stelle der Kachel
+func _slope_at(hs: PackedFloat32Array, side: int, lx: float, lz: float) -> float:
+	var gx := (_height_at(hs, side, lx + spacing, lz) - _height_at(hs, side, lx - spacing, lz)) / (2.0 * spacing)
+	var gz := (_height_at(hs, side, lx, lz + spacing) - _height_at(hs, side, lx, lz - spacing)) / (2.0 * spacing)
+	return 1.0 - 1.0 / sqrt(1.0 + gx * gx + gz * gz)
+
+
+## Bäume, Büsche und Felsen auf einem leicht zufällig verschobenen Raster verteilen.
+## Pro Platz werden immer gleich viele Zufallszahlen gezogen: So stehen die Bäume bei
+## gleichem Seed immer an derselben Stelle, egal in welcher Detailstufe die Kachel ist.
+func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes: Array, roads: RoadQuery) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = world_gen.hash_cell(coord.x, coord.y, 404)
+	var conifers := PackedFloat32Array()
+	var broadleafs := PackedFloat32Array()
+	var bushes := PackedFloat32Array()
+	# Hinweis: Packed-Arrays sind Werte. In einem Array verändert append() nur eine Kopie,
+	# deshalb drei einzelne Variablen für die drei Felsformen.
+	var rocks_a := PackedFloat32Array()
+	var rocks_b := PackedFloat32Array()
+	var rocks_c := PackedFloat32Array()
+	var tree_line := world_gen.tree_line
+	var cells := floori(chunk_size / tree_spacing)
+	for cz in cells:
+		for cx in cells:
+			var lx := (cx + rng.randf()) * tree_spacing
+			var lz := (cz + rng.randf()) * tree_spacing
+			var accept := rng.randf()
+			var kind := rng.randf()
+			var size := rng.randf()
+			var angle := rng.randf() * TAU
+			var shade := Color(rng.randf(), rng.randf(), rng.randf(), 0.0)
+			if accept > 0.9:
+				continue
+			var x := origin.x + lx
+			var z := origin.y + lz
+			var h := _height_at(hs, side, lx, lz)
+			var slope := _slope_at(hs, side, lx, lz)
+			var low := 1.0 - smoothstep(tree_line - 100.0, tree_line, h)
+			var gentle := 1.0 - smoothstep(0.25, 0.4, slope)
+			var tree_chance := world_gen.forest_density(x, z, h, slope) * 0.8 + 0.02 * low * gentle
+			var bush_chance := 0.035 * gentle * (1.0 - smoothstep(tree_line, tree_line + 120.0, h))
+			if accept >= tree_chance + bush_chance:
+				continue
+			if _is_wet(x, z, h, lakes) or (roads and roads.is_on_road(x, z, 4.0)):
+				continue
+			if accept < tree_chance:
+				# Weiter oben mehr Nadelbäume, im Tal mehr Laubbäume
+				var conifer_share := clampf(0.4 + (h - 250.0) / 500.0 + world_gen.variation(x, z) * 0.3, 0.1, 0.95)
+				if kind < conifer_share:
+					var height := lerpf(13.0, 27.0, size)
+					conifers.append_array(_instance(lx, h - 0.3, lz, angle, height * 0.95, height, height * 0.95, shade))
+				else:
+					var height := lerpf(9.0, 17.0, size)
+					broadleafs.append_array(_instance(lx, h - 0.3, lz, angle, height, height, height, shade))
+				colliders.append_array([lx, h, lz, 0.4])
+			else:
+				var scale := lerpf(1.0, 2.6, size)
+				bushes.append_array(_instance(lx, h - 0.2, lz, angle, scale, scale * 0.8, scale, shade))
+	# Felsen: seltener, häufiger an steilen Hängen und über der Baumgrenze
+	var rock_cells := floori(chunk_size / rock_spacing)
+	for cz in rock_cells:
+		for cx in rock_cells:
+			var lx := (cx + rng.randf()) * rock_spacing
+			var lz := (cz + rng.randf()) * rock_spacing
+			var accept := rng.randf()
+			var kind := rng.randi_range(0, 2)
+			var size := rng.randf()
+			var angle := rng.randf() * TAU
+			var stretch := rng.randf()
+			var x := origin.x + lx
+			var z := origin.y + lz
+			var h := _height_at(hs, side, lx, lz)
+			var slope := _slope_at(hs, side, lx, lz)
+			var chance := 0.04 + smoothstep(0.12, 0.35, slope) * 0.45 + smoothstep(tree_line, tree_line + 300.0, h) * 0.3
+			if accept >= chance:
+				continue
+			if _is_wet(x, z, h, lakes) or (roads and roads.is_on_road(x, z, 2.5)):
+				continue
+			var scale := lerpf(0.6, 3.8, size * size) * (1.0 + slope)
+			var shade := Color(stretch, 0.0, 0.0, 0.0)
+			var row := _instance(lx, h - scale * 0.2, lz, angle,
+				scale * lerpf(0.8, 1.3, stretch), scale * lerpf(0.6, 1.0, size), scale, shade)
+			if kind == 0:
+				rocks_a.append_array(row)
+			elif kind == 1:
+				rocks_b.append_array(row)
+			else:
+				rocks_c.append_array(row)
+			if scale > 1.3:
+				colliders.append_array([lx, h, lz, scale * 0.45])
+	vegetation = {"conifer": conifers, "broadleaf": broadleafs, "bush": bushes,
+		"rock0": rocks_a, "rock1": rocks_b, "rock2": rocks_c}
+
+
+## Eine Zeile für den MultiMesh-Puffer: Drehung um die Hochachse, Größe, Position, Zufallswerte
+func _instance(x: float, y: float, z: float, angle: float, sx: float, sy: float, sz: float, custom: Color) -> PackedFloat32Array:
+	var c := cos(angle)
+	var s := sin(angle)
+	return PackedFloat32Array([c * sx, 0.0, s * sz, x, 0.0, sy, 0.0, y, -s * sx, 0.0, c * sz, z,
+		custom.r, custom.g, custom.b, custom.a])
+
+
+## Liegt die Stelle im oder direkt am Wasser?
+func _is_wet(x: float, z: float, h: float, lakes: Array) -> bool:
+	var level := world_gen.river_surface_near(x, z, 10.0)
+	for lake: WorldGen.Lake in lakes:
+		if Vector2(x, z).distance_to(lake.center) < lake.radius + 15.0:
+			level = maxf(level, lake.level)
+	return level > WorldGen.NO_WATER and h < level + 1.0
 
 
 ## Wie nass ist der Boden hier? 1 = unter Wasser, zum Ufer hin weniger

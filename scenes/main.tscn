@@ -28,6 +28,9 @@
 [ext_resource type="Texture2D" path="res://assets/textures/gravel_road/gravel_road_nor_gl_1k.jpg" id="26_gravel_n"]
 [ext_resource type="Shader" path="res://shaders/water.gdshader" id="27_water_shader"]
 [ext_resource type="Script" path="res://scripts/water_manager.gd" id="28_water"]
+[ext_resource type="Shader" path="res://shaders/foliage.gdshader" id="29_foliage"]
+[ext_resource type="Shader" path="res://shaders/grass.gdshader" id="30_grass"]
+[ext_resource type="Script" path="res://scripts/grass_manager.gd" id="31_grass"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -138,13 +141,30 @@ shader_parameter/wave_normal_b = SubResource("NoiseTexture2D_waves_b")
 albedo_color = Color(0.58, 0.57, 0.54, 1)
 roughness = 0.9
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_foliage"]
+shader = ExtResource("29_foliage")
+shader_parameter/leaf_noise = SubResource("NoiseTexture2D_variation")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_grass"]
+shader = ExtResource("30_grass")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rock"]
+albedo_color = Color(0.82, 0.8, 0.77, 1)
+albedo_texture = ExtResource("15_rock_a")
+roughness = 0.9
+normal_enabled = true
+normal_texture = ExtResource("16_rock_n")
+uv1_scale = Vector3(0.25, 0.25, 0.25)
+uv1_triplanar = true
+uv1_world_triplanar = true
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ring"]
 shader = ExtResource("10_terrain_shader")
 shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 shader_parameter/far_mode = true
 shader_parameter/sink_radius = 1850.0
 
-[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water")]
+[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water", "grass")]
 script = ExtResource("1_game")
 world_gen = SubResource("WorldGen_main")
 terrain = NodePath("Terrain")
@@ -155,6 +175,7 @@ debug_tools = NodePath("DebugTools")
 day_night = NodePath("DayNight")
 roads = NodePath("Roads")
 water = NodePath("Water")
+grass = NodePath("Grass")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")
@@ -175,6 +196,8 @@ world_environment = NodePath("../WorldEnvironment")
 script = ExtResource("6_terrain")
 terrain_material = SubResource("ShaderMaterial_terrain")
 water_material = SubResource("ShaderMaterial_water")
+foliage_material = SubResource("ShaderMaterial_foliage")
+rock_material = SubResource("StandardMaterial3D_rock")
 
 [node name="Roads" type="Node3D" parent="."]
 script = ExtResource("21_roads")
@@ -184,6 +207,10 @@ bridge_material = SubResource("StandardMaterial3D_concrete")
 [node name="Water" type="Node3D" parent="."]
 script = ExtResource("28_water")
 water_material = SubResource("ShaderMaterial_water")
+
+[node name="Grass" type="Node3D" parent="."]
+script = ExtResource("31_grass")
+grass_material = SubResource("ShaderMaterial_grass")
 
 [node name="HorizonRing" type="MeshInstance3D" parent="."]
 cast_shadow = 0

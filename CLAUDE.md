@@ -97,7 +97,7 @@ assets/
 - [x] Meilenstein 3 (Himmel-Shader, Tag-Nacht, Nebel, Schatten, MetalFX)
 - [x] Meilenstein 4 (Straßennetz mit Serpentinen, Geländeanpassung, Start auf Straße)
 - [x] Meilenstein 5 (Flüsse, Seen, Wasser-Shader, Brücken, Auto im Wasser)
-- [ ] Meilenstein 6
+- [x] Meilenstein 6 (Bäume, Büsche, Felsen, Gras mit Wind, Stamm-Kollision)
 - [ ] Meilenstein 7
 - [ ] Meilenstein 8
 - [ ] Meilenstein 9
@@ -167,3 +167,16 @@ assets/
   `car.gd` bleibt unverändert).
 - Leistung: Das MacBook Air (ohne Lüfter) drosselt nach mehreren Benchmarks hintereinander
   deutlich (98 → 65 FPS). Für Vergleiche immer mit kühlem Mac messen.
+- Vegetation (M6): Modelle werden im Code gebaut (`vegetation_meshes.gd`), weil Poly Havens
+  Bäume Millionen Dreiecke haben und Kenney Comic-Stil ist. Fichte ~180, Laubbaum ~150
+  Dreiecke, ferne Versionen ~15. Bäume/Büsche/Felsen verteilt die Gelände-Kachel im
+  Hintergrund (festes Zufallsraster pro Kachel, deterministisch), MultiMesh pro Art und Kachel,
+  bis Detailstufe 2 (~1,5 km), Schatten nur Detailstufe 0. Gras: `grass_manager.gd`,
+  16-m-Felder bis 56 m ums Auto, 3 Büschel/m².
+- Vertex-Farben kommen im eigenen Shader unverändert an (kein sRGB → linear). Deshalb rechnet
+  `foliage.gdshader` sie selbst um, sonst sind die Bäume knallgrün.
+- Kollision von Stämmen/Felsen direkt über den PhysicsServer, ein Körper pro 64 × 64 m.
+  Ein Körper mit 1000 Formen kostete 33 ms (Ruckler), so sind es ~3,5 ms pro Kachel.
+- Leistung (Stand M6, Vollbild 2940×1846, MetalFX 75 %, Mac schon warm): ~68 FPS im
+  Schnitt, 1%-Low ~55. Stellschrauben: `vegetation_max_lod`, `tree_spacing`,
+  Gras `radius`/`density`, Render-Skalierung.
