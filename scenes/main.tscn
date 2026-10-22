@@ -26,6 +26,8 @@
 [ext_resource type="Texture2D" path="res://assets/textures/asphalt_02/asphalt_02_nor_gl_1k.jpg" id="24_asphalt_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/gravel_road/gravel_road_diff_1k.jpg" id="25_gravel_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/gravel_road/gravel_road_nor_gl_1k.jpg" id="26_gravel_n"]
+[ext_resource type="Shader" path="res://shaders/water.gdshader" id="27_water_shader"]
+[ext_resource type="Script" path="res://scripts/water_manager.gd" id="28_water"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -101,13 +103,48 @@ shader_parameter/gravel_albedo = ExtResource("25_gravel_a")
 shader_parameter/gravel_normal = ExtResource("26_gravel_n")
 shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_waves_a"]
+frequency = 0.03
+fractal_octaves = 3
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_waves_a"]
+width = 512
+height = 512
+seamless = true
+as_normal_map = true
+bump_strength = 6.0
+noise = SubResource("FastNoiseLite_waves_a")
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_waves_b"]
+seed = 7
+frequency = 0.05
+fractal_octaves = 2
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_waves_b"]
+width = 512
+height = 512
+seamless = true
+as_normal_map = true
+bump_strength = 4.0
+noise = SubResource("FastNoiseLite_waves_b")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_water"]
+render_priority = 1
+shader = ExtResource("27_water_shader")
+shader_parameter/wave_normal_a = SubResource("NoiseTexture2D_waves_a")
+shader_parameter/wave_normal_b = SubResource("NoiseTexture2D_waves_b")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_concrete"]
+albedo_color = Color(0.58, 0.57, 0.54, 1)
+roughness = 0.9
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ring"]
 shader = ExtResource("10_terrain_shader")
 shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 shader_parameter/far_mode = true
 shader_parameter/sink_radius = 1850.0
 
-[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads")]
+[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water")]
 script = ExtResource("1_game")
 world_gen = SubResource("WorldGen_main")
 terrain = NodePath("Terrain")
@@ -117,6 +154,7 @@ loading_screen = NodePath("HUD/LoadingScreen")
 debug_tools = NodePath("DebugTools")
 day_night = NodePath("DayNight")
 roads = NodePath("Roads")
+water = NodePath("Water")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")
@@ -136,10 +174,16 @@ world_environment = NodePath("../WorldEnvironment")
 [node name="Terrain" type="Node3D" parent="."]
 script = ExtResource("6_terrain")
 terrain_material = SubResource("ShaderMaterial_terrain")
+water_material = SubResource("ShaderMaterial_water")
 
 [node name="Roads" type="Node3D" parent="."]
 script = ExtResource("21_roads")
 road_material = SubResource("ShaderMaterial_road")
+bridge_material = SubResource("StandardMaterial3D_concrete")
+
+[node name="Water" type="Node3D" parent="."]
+script = ExtResource("28_water")
+water_material = SubResource("ShaderMaterial_water")
 
 [node name="HorizonRing" type="MeshInstance3D" parent="."]
 cast_shadow = 0

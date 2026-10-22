@@ -11,6 +11,7 @@ extends Node3D
 @export var debug_tools: DebugTools
 @export var day_night: DayNight
 @export var roads: RoadNetwork
+@export var water: WaterManager
 
 var world_is_ready: bool = false
 var _car_on_road: bool = false
@@ -39,6 +40,7 @@ func _ready() -> void:
 	roads.start(world_gen, car)
 	terrain.start(world_gen, car, roads)
 	horizon.start(world_gen, car)
+	water.start(world_gen, car, roads)
 	loading_screen.visible = true
 
 

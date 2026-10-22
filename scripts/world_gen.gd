@@ -51,7 +51,7 @@ extends Resource
 ## Breite des Ufers zwischen Wasserrand und Talboden
 const RIVER_BANK: float = 8.0
 ## So weit unter dem Talboden liegt der Wasserspiegel eines Flusses
-const RIVER_WATER_DROP: float = 0.6
+const RIVER_WATER_DROP: float = 1.2
 ## Wert für „hier ist kein Wasser“
 const NO_WATER: float = -1.0e9
 ## So weit reicht die Senke rund um einen See (Meter hinter dem Wasserrand)
@@ -164,7 +164,8 @@ func river_distance(x: float, z: float) -> float:
 	var gx := (_river.get_noise_2d(x + e, z) - n) / e
 	var gz := (_river.get_noise_2d(x, z + e) - n) / e
 	var g := sqrt(gx * gx + gz * gz)
-	return absf(n) / maxf(g, 0.000001)
+	# Wo das Rauschen sehr flach ist, wäre der Fluss sonst riesig breit: Steigung nach unten begrenzen
+	return absf(n) / maxf(g, 2.0 / river_spacing)
 
 
 ## Gelände ohne Seen und Straßen: Talboden + Relief, entlang der Flüsse zum Tal abgesenkt
@@ -181,8 +182,9 @@ func natural_height(x: float, z: float) -> float:
 	var channel := _river_channel(strength)
 	var half := river_width * 0.5 * channel
 	var bank := RIVER_BANK * channel
-	# Je näher am Fluss, desto mehr wird das Relief zum flachen Talboden
-	var valley := smoothstep(half + bank, half + bank + river_valley_width, d)
+	# Je näher am Fluss, desto mehr wird das Relief zum flachen Talboden.
+	# Bei hohen Bergen wird das Tal breiter, sonst entstünden senkrechte Schluchtwände.
+	var valley := smoothstep(half + bank, half + bank + river_valley_width + relief * 0.5, d)
 	var h := floor_h + relief * lerpf(1.0, valley, valley_amount)
 	# Flussbett: unter dem Wasserspiegel eine runde Rinne, am Ufer sanft ansteigend
 	if channel > 0.0 and d < half + bank:
@@ -243,6 +245,25 @@ func water_level_at(x: float, z: float, lakes: Array) -> float:
 		if Vector2(x, z).distance_to(lake.center) < lake.radius:
 			level = maxf(level, lake.level)
 	return level
+
+
+## Höhe des Flusswassers, wenn hier ein Fluss fließt. margin erweitert den Bereich etwas
+## über das Ufer hinaus, damit die Wasserfläche unter dem Ufer endet statt am Rand zu enden.
+func river_surface_near(x: float, z: float, margin: float) -> float:
+	var strength := _river_strength(x, z)
+	if strength <= 0.0:
+		return NO_WATER
+	var half := river_width * 0.5 * _river_channel(strength)
+	if half < 1.0 or river_distance(x, z) > half + margin:
+		return NO_WATER
+	return ground_level(x, z) - RIVER_WATER_DROP
+
+
+## Richtung, in die ein Fluss hier fließt (bergab entlang des Talbodens)
+func river_flow(x: float, z: float) -> Vector2:
+	var e := 25.0
+	var slope := Vector2(ground_level(x + e, z) - ground_level(x - e, z), ground_level(x, z + e) - ground_level(x, z - e))
+	return -slope.normalized() if slope.length() > 0.00001 else Vector2.ZERO
 
 
 ## Alle Seen, die das Rechteck (plus Rand) berühren könnten

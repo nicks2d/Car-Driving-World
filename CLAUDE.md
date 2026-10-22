@@ -96,7 +96,7 @@ assets/
 - [x] Meilenstein 2 (Terrain, Horizont-Ring, FPS-Anzeige, Screenshot-Werkzeug)
 - [x] Meilenstein 3 (Himmel-Shader, Tag-Nacht, Nebel, Schatten, MetalFX)
 - [x] Meilenstein 4 (Straßennetz mit Serpentinen, Geländeanpassung, Start auf Straße)
-- [ ] Meilenstein 5
+- [x] Meilenstein 5 (Flüsse, Seen, Wasser-Shader, Brücken, Auto im Wasser)
 - [ ] Meilenstein 6
 - [ ] Meilenstein 7
 - [ ] Meilenstein 8
@@ -155,3 +155,15 @@ assets/
 - Gelände-Kacheln warten, bis alle Straßen in ihrer Nähe berechnet sind.
 - Testen: `-- --bench=60` fährt per Autopilot die Straßen ab (Stand M4: 4 km am Stück,
   ~80 km/h im Schnitt, Vollbild ~98 FPS, 1%-Low 77 FPS).
+- Wasser (M5): Seen = Kreisscheibe pro See (`water_manager.gd`), Flüsse = Wasserfläche pro
+  Gelände-Kachel (`terrain_chunk_job.gd`, UV = Fließrichtung). Wasserspiegel eines Flusses
+  liegt 1,2 m unter dem Talboden. Flussbreite: Abstand = Rauschwert / Steigung, Steigung nach
+  unten begrenzt (sonst riesige Wasserflächen, wo das Rauschen flach ist). Bei hohen Bergen
+  wird das Flusstal breiter (relief * 0.5), sonst entstehen senkrechte Schluchtwände.
+- Brücken: wo die Straße über Wasser oder mehr als 7 m über dem Gelände liegt (+12 m Zugabe).
+  Fahrbahnplatte, Brüstungen mit Kollision, Pfeiler alle 24 m. Unter Brücken wird das Gelände
+  nicht angepasst. Lange Hangviadukte entstehen gelegentlich, das ist gewollt.
+- Auto im Wasser: Bremskraft, nach 3 s Reset auf die nächste Straße (Wasser-Manager,
+  `car.gd` bleibt unverändert).
+- Leistung: Das MacBook Air (ohne Lüfter) drosselt nach mehreren Benchmarks hintereinander
+  deutlich (98 → 65 FPS). Für Vergleiche immer mit kühlem Mac messen.

@@ -6,6 +6,8 @@ extends Node3D
 
 ## Material für das Gelände (terrain.gdshader)
 @export var terrain_material: Material
+## Material für Flüsse (water.gdshader)
+@export var water_material: Material
 ## Kantenlänge einer Kachel in Metern
 @export var chunk_size: float = 256.0
 ## Bis zu dieser Entfernung gibt es detailliertes Gelände (dahinter: Horizont-Ring)
@@ -33,6 +35,7 @@ class Chunk:
 	var coord: Vector2i
 	var lod: int = -1
 	var mesh_instance: MeshInstance3D
+	var water_instance: MeshInstance3D
 	var body: StaticBody3D
 	var job: TerrainChunkJob
 	var task_id: int = -1
@@ -155,10 +158,28 @@ func _apply_job(chunk: Chunk) -> void:
 		chunk.mesh_instance.position = Vector3(chunk.coord.x * chunk_size, 0.0, chunk.coord.y * chunk_size)
 		add_child(chunk.mesh_instance)
 	chunk.mesh_instance.mesh = mesh
+	_apply_water(chunk, job)
 	chunk.lod = job.lod
 	if job.lod == 0:
 		chunk.heights = job.heights
 		chunk.grid_size = job.grid_size
+
+
+func _apply_water(chunk: Chunk, job: TerrainChunkJob) -> void:
+	if job.water_arrays.is_empty():
+		if chunk.water_instance:
+			chunk.water_instance.queue_free()
+			chunk.water_instance = null
+		return
+	var water_mesh := ArrayMesh.new()
+	water_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, job.water_arrays)
+	if chunk.water_instance == null:
+		chunk.water_instance = MeshInstance3D.new()
+		chunk.water_instance.material_override = water_material
+		chunk.water_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		chunk.water_instance.position = chunk.mesh_instance.position
+		add_child(chunk.water_instance)
+	chunk.water_instance.mesh = water_mesh
 
 
 func _update_collision(chunk: Chunk, distance: float) -> void:
@@ -193,6 +214,9 @@ func _remove_chunk(chunk: Chunk) -> void:
 	if chunk.mesh_instance:
 		chunk.mesh_instance.queue_free()
 		chunk.mesh_instance = null
+	if chunk.water_instance:
+		chunk.water_instance.queue_free()
+		chunk.water_instance = null
 	if chunk.body:
 		chunk.body.queue_free()
 		chunk.body = null

@@ -8,6 +8,8 @@ extends Node3D
 
 ## Material der Fahrbahn (road.gdshader)
 @export var road_material: Material
+## Material für Brücken (Beton)
+@export var bridge_material: Material
 ## Größe einer Zelle mit höchstens einem Ort (Meter)
 @export var cell_size: float = 1200.0
 ## Wahrscheinlichkeit, dass zwei benachbarte Orte verbunden sind
@@ -366,10 +368,15 @@ func _update_visuals() -> void:
 			if entry.mesh_instance == null:
 				var mesh := ArrayMesh.new()
 				mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, segment.mesh_arrays)
+				mesh.surface_set_material(0, road_material)
+				if not segment.bridge_arrays.is_empty():
+					mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, segment.bridge_arrays)
+					mesh.surface_set_material(1, bridge_material)
 				entry.mesh_instance = MeshInstance3D.new()
 				entry.mesh_instance.mesh = mesh
-				entry.mesh_instance.material_override = road_material
-				entry.mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				# Brücken werfen Schatten, flache Straßen brauchen das nicht
+				entry.mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
+					if not segment.bridge_arrays.is_empty() else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				entry.mesh_instance.position = segment.origin
 				add_child(entry.mesh_instance)
 			pad_cells[Vector2i(key.x, key.y)] = segment.start

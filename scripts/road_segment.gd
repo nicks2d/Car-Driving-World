@@ -26,11 +26,15 @@ var grid_step: float = 18.0
 var points: PackedVector3Array
 ## Geländehöhe unter jedem Punkt (vor der Anpassung)
 var ground: PackedFloat32Array
+## 1 = an diesem Punkt ist die Straße eine Brücke (über Wasser oder hoch über dem Gelände)
+var bridge: PackedByteArray
 ## Rechteck (x/z), in dem die Straße das Gelände beeinflusst
 var bounds: Rect2
 ## false = es gab keinen vernünftigen Weg, hier entsteht keine Straße
 var valid: bool = false
 var mesh_arrays: Array = []
+## Mesh-Daten für Brücken (Beton): Fahrbahnplatte, Brüstungen, Pfeiler. Leer = keine Brücke.
+var bridge_arrays: Array = []
 var collision_faces: PackedVector3Array
 ## Mittelpunkt, auf den sich die Mesh-Koordinaten beziehen (für Genauigkeit)
 var origin: Vector3
@@ -40,8 +44,12 @@ const POINT_SPACING: float = 4.0
 const MAX_BANK: float = 60.0
 ## Neigung der Böschungen: pro Meter Abstand darf das Gelände 0,65 m höher oder tiefer liegen
 const BANK_SLOPE: float = 0.65
-## Höchster erlaubter Unterschied zwischen Fahrbahn und Gelände (sonst keine Straße)
+## Höchster erlaubter Einschnitt ins Gelände (sonst keine Straße)
 const MAX_CUT: float = 35.0
+## Höchste erlaubte Höhe über dem Gelände (Brücke)
+const MAX_FILL: float = 50.0
+## Ab so vielen Metern über dem Gelände wird statt eines Damms eine Brücke gebaut
+const BRIDGE_HEIGHT: float = 7.0
 
 
 func build() -> void:
@@ -96,7 +104,7 @@ func _find_path() -> PackedVector2Array:
 				for lake: WorldGen.Lake in lakes:
 					if p.distance_to(lake.center) < lake.radius + 15.0:
 						in_lake = true
-				penalty += 100000.0 if in_lake else 40.0
+				penalty += 100000.0 if in_lake else 250.0
 			# In den ersten und letzten 300 m soll die Straße in einem Kegel von etwa ±45° um die
 			# Richtung zum anderen Ort bleiben. Die Nachbarn eines Orts liegen in vier
 			# verschiedenen Richtungen, so kreuzen sich seine Straßen nicht gegenseitig.
@@ -373,10 +381,13 @@ func _make_profile() -> bool:
 			count += 1
 		smooth[i] = total / count
 	# Über Flüsse hinweg mindestens ein paar Meter über dem Wasser bleiben
+	var over_water := PackedByteArray()
+	over_water.resize(n)
 	for i in n:
 		var water := world_gen.water_level_at(points[i].x, points[i].z, lakes)
 		if water > WorldGen.NO_WATER:
-			smooth[i] = maxf(smooth[i], water + 4.0)
+			smooth[i] = maxf(smooth[i], water + 4.5)
+			over_water[i] = 1
 	# Anfang und Ende liegen genau auf den Orten
 	smooth[0] = start.y
 	smooth[n - 1] = end.y
@@ -388,11 +399,19 @@ func _make_profile() -> bool:
 	for i in range(n - 2, -1, -1):
 		smooth[i] = clampf(smooth[i], smooth[i + 1] - max_step, smooth[i + 1] + max_step)
 	smooth[0] = start.y
-	# Wenn die Straße tiefe Schluchten bräuchte, lieber keine Straße
+	# Wenn die Straße tiefe Schluchten oder riesige Brücken bräuchte, lieber keine Straße
 	for i in n:
-		if absf(smooth[i] - ground[i]) > MAX_CUT:
+		if ground[i] - smooth[i] > MAX_CUT or smooth[i] - ground[i] > MAX_FILL:
 			return false
 		points[i].y = smooth[i]
+	# Brücken: über Wasser und wo die Straße hoch über dem Gelände liegt, plus 12 m Zugabe.
+	# Nicht direkt an den Orten (dort sind Kreuzungen).
+	bridge = PackedByteArray()
+	bridge.resize(n)
+	for i in n:
+		if over_water[i] == 1 or smooth[i] - ground[i] > BRIDGE_HEIGHT:
+			for j in range(maxi(i - 3, 4), mini(i + 4, n - 4)):
+				bridge[j] = 1
 	bounds = _points_rect().grow(road_width * 0.5 + shoulder_width + MAX_BANK)
 	return true
 
@@ -424,6 +443,7 @@ func _build_mesh() -> void:
 	var normals := PackedVector3Array()
 	var tangents := PackedFloat32Array()
 	var uvs := PackedVector2Array()
+	var lefts := PackedVector3Array()
 	var distance := 0.0
 	var turns := _turn_radii()
 	for i in n:
@@ -432,15 +452,21 @@ func _build_mesh() -> void:
 		var up := forward.cross(left).normalized()
 		if i > 0:
 			distance += points[i].distance_to(points[i - 1])
+		lefts.append(left)
 		# In sehr engen Kurven die Innenseite schmaler machen, sonst überschlägt sich das Band
 		var inner_limit := absf(turns[i]) * 0.85
 		for k in 6:
 			var offset: float = side[k]
+			var height: float = drop[k]
+			# Auf Brücken gibt es kein schräges Bankett, dort ist die Fahrbahnplatte
+			if bridge[i] == 1 and (k == 0 or k == 5):
+				offset = outer if k == 0 else -outer
+				height = -0.06
 			if turns[i] > 0.0 and offset > 0.0:
 				offset = minf(offset, inner_limit)
 			elif turns[i] < 0.0 and offset < 0.0:
 				offset = maxf(offset, -inner_limit)
-			verts.append(points[i] + left * offset + Vector3(0.0, drop[k], 0.0) - origin)
+			verts.append(points[i] + left * offset + Vector3(0.0, height, 0.0) - origin)
 			var normal: Vector3 = up
 			if k == 0:
 				normal = (up + left * 0.6).normalized()
@@ -468,6 +494,99 @@ func _build_mesh() -> void:
 	mesh_arrays[Mesh.ARRAY_TANGENT] = tangents
 	mesh_arrays[Mesh.ARRAY_TEX_UV] = uvs
 	mesh_arrays[Mesh.ARRAY_INDEX] = indices
+	_build_bridges(lefts)
+
+
+# ---------------------------------------------------------------------------
+# 5. Brücken: Fahrbahnplatte, Brüstungen und Pfeiler aus Beton
+# ---------------------------------------------------------------------------
+
+const DECK_THICKNESS: float = 1.4
+const WALL_HEIGHT: float = 0.9
+const WALL_THICKNESS: float = 0.3
+## Alle wie vielen Punkte (je 4 m) ein Pfeiler steht
+const PILLAR_EVERY: int = 6
+
+var _b_verts := PackedVector3Array()
+var _b_normals := PackedVector3Array()
+var _b_indices := PackedInt32Array()
+
+
+func _build_bridges(lefts: PackedVector3Array) -> void:
+	var n := points.size()
+	var outer := road_width * 0.5 + shoulder_width
+	var down := Vector3(0.0, -DECK_THICKNESS, 0.0)
+	var top := Vector3(0.0, -0.06, 0.0)
+	var wall := Vector3(0.0, WALL_HEIGHT, 0.0)
+	var i := 0
+	while i < n:
+		if bridge[i] == 0:
+			i += 1
+			continue
+		var j := i
+		while j < n and bridge[j] == 1:
+			j += 1
+		# Ein Brückenstück reicht von Punkt i bis j-1, einen Punkt Überlappung auf jeder Seite
+		for k in range(maxi(i - 1, 0), mini(j, n - 1)):
+			var p0 := points[k] - origin
+			var p1 := points[k + 1] - origin
+			for sgn: float in [1.0, -1.0]:
+				var l0: Vector3 = lefts[k] * sgn
+				var l1: Vector3 = lefts[k + 1] * sgn
+				var normal := ((l0 + l1) * 0.5).normalized()
+				var o0 := p0 + l0 * outer
+				var o1 := p1 + l1 * outer
+				var w0 := p0 + l0 * (outer - WALL_THICKNESS)
+				var w1 := p1 + l1 * (outer - WALL_THICKNESS)
+				# Außenseite: Platte und Brüstung in einem Stück
+				_quad(o0 + down, o1 + down, o1 + wall, o0 + wall, normal)
+				# Oberkante und Innenseite der Brüstung
+				_quad(o0 + wall, o1 + wall, w1 + wall, w0 + wall, Vector3.UP)
+				_quad(w0 + top, w1 + top, w1 + wall, w0 + wall, -normal)
+				# Die Innenseite hält das Auto auf der Brücke
+				collision_faces.append_array([w0 + top + origin, w1 + top + origin, w1 + wall + origin,
+					w0 + top + origin, w1 + wall + origin, w0 + wall + origin])
+			# Unterseite der Platte
+			var a0 := p0 + lefts[k] * outer + down
+			var a1 := p1 + lefts[k + 1] * outer + down
+			var b0 := p0 - lefts[k] * outer + down
+			var b1 := p1 - lefts[k + 1] * outer + down
+			_quad(a0, a1, b1, b0, Vector3.DOWN)
+		# Pfeiler bis in den Boden
+		for k in range(i + 2, j - 2, PILLAR_EVERY):
+			var bottom := ground[k] - 3.0
+			if points[k].y - DECK_THICKNESS - bottom > 1.5:
+				_pillar(points[k] - origin, bottom - origin.y)
+		i = j
+	if _b_indices.is_empty():
+		return
+	bridge_arrays.resize(Mesh.ARRAY_MAX)
+	bridge_arrays[Mesh.ARRAY_VERTEX] = _b_verts
+	bridge_arrays[Mesh.ARRAY_NORMAL] = _b_normals
+	bridge_arrays[Mesh.ARRAY_INDEX] = _b_indices
+
+
+## Viereck mit vier Ecken in Reihenfolge; die Vorderseite zeigt in Richtung normal
+func _quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, normal: Vector3) -> void:
+	var base := _b_verts.size()
+	_b_verts.append_array([a, b, c, d])
+	_b_normals.append_array([normal, normal, normal, normal])
+	if (c - a).cross(b - a).dot(normal) >= 0.0:
+		_b_indices.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
+	else:
+		_b_indices.append_array([base, base + 2, base + 1, base, base + 3, base + 2])
+
+
+## Eckiger Pfeiler unter der Fahrbahnplatte
+func _pillar(center: Vector3, bottom_y: float) -> void:
+	var h := 0.8
+	var y0 := bottom_y
+	var y1 := center.y - DECK_THICKNESS
+	for normal: Vector3 in [Vector3.RIGHT, Vector3.LEFT, Vector3.BACK, Vector3.FORWARD]:
+		var t := Vector3(normal.z, 0.0, -normal.x)
+		var c := center + normal * h
+		_quad(Vector3(c.x - t.x * h, y0, c.z - t.z * h), Vector3(c.x + t.x * h, y0, c.z + t.z * h),
+			Vector3(c.x + t.x * h, y1, c.z + t.z * h), Vector3(c.x - t.x * h, y1, c.z - t.z * h), normal)
 
 
 ## Kurvenradius an jedem Punkt (kleinster Wert der Umgebung).

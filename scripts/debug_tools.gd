@@ -12,6 +12,7 @@ extends Node
 ## --wait=S       so viele Sekunden warten, nachdem alles geladen ist (Standard 3)
 ## --fly=H        Kamera H Meter über das Auto setzen (Überblicks-Bild)
 ## --pitch=G      Neigung dieser Überblicks-Kamera in Grad (Standard -10)
+## --lookat=X,Z   Überblicks-Kamera schaut auf diesen Punkt (statt in Fahrtrichtung)
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
 ## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png)
@@ -30,6 +31,8 @@ var _shot_name: String = ""
 var _wait: float = 3.0
 var _fly_height: float = 0.0
 var _pitch: float = -10.0
+var _look_at: Vector2 = Vector2.ZERO
+var _has_look_at: bool = false
 var _bench_seconds: float = 0.0
 var _game: Node3D
 var _state: String = "idle"
@@ -72,6 +75,10 @@ func _ready() -> void:
 				_fly_height = float(value)
 			"pitch":
 				_pitch = float(value)
+			"lookat":
+				var xz := value.split(",")
+				_look_at = Vector2(float(xz[0]), float(xz[1]))
+				_has_look_at = true
 			"bench":
 				_bench_seconds = float(value)
 			"volfog":
@@ -230,6 +237,8 @@ func _place_fly_camera() -> void:
 	var car: VehicleBody3D = _game.car
 	camera.set_physics_process(false)
 	var forward := car.global_basis.z
+	if _has_look_at:
+		forward = Vector3(_look_at.x, 0.0, _look_at.y) - car.global_position
 	forward.y = 0.0
 	forward = forward.normalized()
 	var eye := car.global_position + Vector3.UP * _fly_height - forward * _fly_height * 0.8

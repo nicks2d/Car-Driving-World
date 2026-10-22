@@ -172,9 +172,18 @@ void fragment() {
 		normal_ws = normalize(mix(near_n, n, far_blend));
 	}
 
-	// Seen im Horizont-Ring (Blau-Kanal der Punktfarbe)
-	albedo = mix(albedo, vec3(0.02, 0.04, 0.05), COLOR.b);
-	roughness = mix(roughness, 0.1, COLOR.b);
+	if (far_mode) {
+		// Horizont-Ring: Blau-Kanal = See
+		albedo = mix(albedo, vec3(0.02, 0.04, 0.05), COLOR.b);
+		roughness = mix(roughness, 0.1, COLOR.b);
+	} else {
+		// Kacheln: Blau-Kanal = nass. Am Ufer dunkler und glänzender, unter Wasser schlammig.
+		float wet = COLOR.b;
+		vec3 mud = vec3(0.16, 0.15, 0.10) * mix(0.8, 1.2, mid_noise);
+		albedo = mix(albedo, albedo * 0.55, smoothstep(0.0, 0.5, wet));
+		albedo = mix(albedo, mud, smoothstep(0.6, 1.0, wet));
+		roughness = mix(roughness, 0.35, wet);
+	}
 
 	ALBEDO = albedo;
 	ROUGHNESS = roughness;

@@ -23,6 +23,9 @@ func _init(segments: Array, pads: PackedVector3Array, pad_radius: float, area: R
 		var core := segment.road_width * 0.5 + segment.shoulder_width + 0.5
 		reach = maxf(reach, core + RoadSegment.MAX_BANK)
 		for i in segment.points.size() - 1:
+			# Unter Brücken bleibt das Gelände, wie es ist (Fluss, Tal)
+			if segment.bridge[i] == 1 and segment.bridge[i + 1] == 1:
+				continue
 			_add_piece(segment.points[i], segment.points[i + 1], core, grown)
 	for pad in pads:
 		reach = maxf(reach, pad_radius + RoadSegment.MAX_BANK)

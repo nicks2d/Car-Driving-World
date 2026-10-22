@@ -22,6 +22,8 @@ var arrays: Array = []
 var heights: PackedFloat32Array
 ## Anzahl Rasterpunkte pro Seite
 var grid_size: int = 0
+## Mesh-Daten der Flussoberfläche in dieser Kachel (leer = kein Fluss)
+var water_arrays: Array = []
 
 
 func run() -> void:
@@ -74,11 +76,12 @@ func run() -> void:
 			var wx := origin.x + gx * spacing
 			var wz := origin.y + gz * spacing
 			var near_road := road_near[c]
-			var forest := world_gen.forest_density(wx, wz, h, 1.0 - normal.y) * (1.0 - near_road)
+			var wet := _wetness(wx, wz, h, lakes)
+			var forest := world_gen.forest_density(wx, wz, h, 1.0 - normal.y) * (1.0 - near_road) * (1.0 - wet)
 			verts[v] = Vector3(gx * spacing, h, gz * spacing)
 			normals[v] = normal
-			# Farbe: Rot = Wald, Grün = Nähe zur Straße
-			colors[v] = Color(forest, near_road, 0.0, 1.0)
+			# Farbe: Rot = Wald, Grün = Nähe zur Straße, Blau = nass (Ufer, Grund von Flüssen und Seen)
+			colors[v] = Color(forest, near_road, wet, 1.0)
 			heights[v] = h
 			v += 1
 
@@ -132,11 +135,68 @@ func run() -> void:
 				indices[k + 5] = bottom_a
 			k += 6
 
+	_build_river_water(origin)
+
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_INDEX] = indices
+
+
+## Wie nass ist der Boden hier? 1 = unter Wasser, zum Ufer hin weniger
+func _wetness(x: float, z: float, h: float, lakes: Array) -> float:
+	var level := world_gen.river_surface_near(x, z, 14.0)
+	for lake: WorldGen.Lake in lakes:
+		if Vector2(x, z).distance_to(lake.center) < lake.radius + 60.0:
+			level = maxf(level, lake.level)
+	if level <= WorldGen.NO_WATER:
+		return 0.0
+	return 1.0 - smoothstep(0.0, 2.5, h - level)
+
+
+## Flussoberfläche: ein Raster, in dem nur die Quadrate am Fluss verwendet werden.
+## Sie reicht etwas unter das Ufer, damit man ihren Rand nicht sieht.
+## In UV steht die Fließrichtung (für den Wasser-Shader).
+func _build_river_water(origin: Vector2) -> void:
+	var step := clampf(spacing * 2.0, 4.0, 8.0)
+	var count := roundi(chunk_size / step) + 1
+	var levels := PackedFloat32Array()
+	levels.resize(count * count)
+	var any_water := false
+	for gz in count:
+		for gx in count:
+			var level := world_gen.river_surface_near(origin.x + gx * step, origin.y + gz * step, 7.0)
+			levels[gz * count + gx] = level
+			if level > WorldGen.NO_WATER:
+				any_water = true
+	if not any_water:
+		return
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	for gz in count:
+		for gx in count:
+			var level := levels[gz * count + gx]
+			var x := origin.x + gx * step
+			var z := origin.y + gz * step
+			verts.append(Vector3(gx * step, level, gz * step))
+			normals.append(Vector3.UP)
+			uvs.append(world_gen.river_flow(x, z) if level > WorldGen.NO_WATER else Vector2.ZERO)
+	var indices := PackedInt32Array()
+	for gz in count - 1:
+		for gx in count - 1:
+			var a := gz * count + gx
+			if levels[a] > WorldGen.NO_WATER and levels[a + 1] > WorldGen.NO_WATER \
+					and levels[a + count] > WorldGen.NO_WATER and levels[a + count + 1] > WorldGen.NO_WATER:
+				indices.append_array([a, a + 1, a + count, a + 1, a + count + 1, a + count])
+	if indices.is_empty():
+		return
+	water_arrays.resize(Mesh.ARRAY_MAX)
+	water_arrays[Mesh.ARRAY_VERTEX] = verts
+	water_arrays[Mesh.ARRAY_NORMAL] = normals
+	water_arrays[Mesh.ARRAY_TEX_UV] = uvs
+	water_arrays[Mesh.ARRAY_INDEX] = indices
 
 
 ## Index des e-ten Rasterpunkts an einer Kante (0 = vorne, 1 = hinten, 2 = links, 3 = rechts)
