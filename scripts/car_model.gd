@@ -54,7 +54,7 @@ const LOD_BIAS := {"bBMW_M2Competition_2018InteriorA_Material1": 0.25, "coloured
 	"tire__spec": 0.5, "Matte__FF114182__sec_env_8_spec": 0.5, "Matte__FFBFBFBF__env_9_spec": 0.5,
 	"Matte__FFBFBF00__env_7_spec": 0.5}
 
-var _car: VehicleBody3D
+var _car: Car
 var _model: Node3D
 var _paint: StandardMaterial3D
 var _paint_index: int = 0
@@ -70,7 +70,7 @@ var _calipers: Array = []
 
 
 func _ready() -> void:
-	_car = get_parent() as VehicleBody3D
+	_car = get_parent() as Car
 	# Erst im nächsten Moment einbauen: Während _ready() richtet das Auto noch seine
 	# Kind-Nodes ein und nimmt keine neuen an
 	_build.call_deferred()
@@ -124,7 +124,7 @@ func _process(_delta: float) -> void:
 	for spot in _spots:
 		spot.visible = _lights_on
 	_head_glow.emission_energy_multiplier = headlight_glow if _lights_on else 0.15
-	var braking: bool = _car.get("braking")
+	var braking := _car.braking
 	_tail_glow.emission_energy_multiplier = brake_glow if braking else (taillight_glow if _lights_on else 0.1)
 
 

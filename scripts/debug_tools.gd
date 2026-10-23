@@ -184,6 +184,9 @@ func _drive_autopilot() -> void:
 		if d < best_distance:
 			best_distance = d
 			_route_index = i
+	if best_distance > 8.0 and best_distance > _max_off_road + 1.0:
+		print("Autopilot weit neben der Straße: %.1f m bei %s, %.0f km/h, Driftwinkel %.0f Grad" % [
+			best_distance, here.round(), car.linear_velocity.length() * 3.6, car.get("drift_angle")])
 	_max_off_road = maxf(_max_off_road, best_distance)
 	_distance_driven += Vector2(here.x - _last_position.x, here.z - _last_position.z).length()
 	_last_position = here

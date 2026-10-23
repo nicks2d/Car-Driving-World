@@ -2,6 +2,8 @@
 
 [ext_resource type="Script" path="res://scripts/car.gd" id="1_car"]
 [ext_resource type="Script" path="res://scripts/car_model.gd" id="2_model"]
+[ext_resource type="Script" path="res://scripts/tire_effects.gd" id="3_tires"]
+[ext_resource type="Script" path="res://scripts/engine_sound.gd" id="4_sound"]
 
 [sub_resource type="StandardMaterial3D" id="Mat_body"]
 albedo_color = Color(0.75, 0.1, 0.08, 1)
@@ -169,3 +171,9 @@ mesh = SubResource("BoxMesh_spoke")
 
 [node name="Model" type="Node3D" parent="."]
 script = ExtResource("2_model")
+
+[node name="TireEffects" type="Node3D" parent="."]
+script = ExtResource("3_tires")
+
+[node name="EngineSound" type="Node" parent="."]
+script = ExtResource("4_sound")

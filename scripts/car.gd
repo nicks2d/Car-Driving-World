@@ -1,3 +1,4 @@
+class_name Car
 extends VehicleBody3D
 ## Das Auto des Spielers: ein BMW M2 Competition (F87) mit Heckantrieb.
 ## Die eigentliche Physik (Federung, Reifen-Grip) rechnet Godots VehicleBody3D.
@@ -94,6 +95,8 @@ var gear: int = 1
 var engine_rpm: float = 900.0
 ## Gaspedal 0 bis 1 (für den Sound)
 var throttle_input: float = 0.0
+## Driftwinkel in Grad: Winkel zwischen Fahrtrichtung und Blickrichtung des Autos
+var drift_angle: float = 0.0
 
 var _steer_input: float = 0.0
 var _shift_timer: float = 0.0
@@ -120,6 +123,7 @@ func _physics_process(delta: float) -> void:
 	# Tempo in Fahrtrichtung in m/s: positiv = vorwärts, negativ = rückwärts.
 	# Beim VehicleBody3D zeigt die Nase des Autos in Richtung +Z.
 	var forward_speed: float = linear_velocity.dot(global_basis.z)
+	drift_angle = _measure_drift_angle()
 
 	_update_steering(delta, absf(forward_speed) * 3.6)
 	_update_gearbox(delta, forward_speed)
@@ -207,15 +211,32 @@ func _torque_at(rpm: float) -> float:
 
 ## Fahrhilfe: Wie viel Leistung darf bei diesem Driftwinkel noch anliegen (0 bis 1)?
 func _drift_control() -> float:
+	if drift_angle_limit <= 0.0:
+		return 1.0
+	# Bis zum Grenzwert volle Leistung, 15° darüber nur noch 20 %
+	return clampf(1.0 - (drift_angle - drift_angle_limit) / 15.0 * 0.8, 0.2, 1.0)
+
+
+func _measure_drift_angle() -> float:
 	var velocity := linear_velocity
 	velocity.y = 0.0
-	if drift_angle_limit <= 0.0 or velocity.length() < 5.0:
-		return 1.0
+	if velocity.length() < 5.0:
+		return 0.0
 	var heading := global_basis.z
 	heading.y = 0.0
-	var angle := rad_to_deg(heading.normalized().angle_to(velocity.normalized()))
-	# Bis zum Grenzwert volle Leistung, 15° darüber nur noch 20 %
-	return clampf(1.0 - (angle - drift_angle_limit) / 15.0 * 0.8, 0.2, 1.0)
+	return rad_to_deg(heading.normalized().angle_to(velocity.normalized()))
+
+
+## Wie stark rutscht dieses Rad (0 = haftet, 1 = rutscht voll)? Für Reifenspuren, Rauch
+## und Quietschen. Godot meldet Rutschen über get_skidinfo(); bei den Hinterrädern zählt
+## zusätzlich der Driftwinkel des ganzen Autos.
+func wheel_slip(wheel: VehicleWheel3D) -> float:
+	if not wheel.is_in_contact() or linear_velocity.length() < 2.0:
+		return 0.0
+	var slip := clampf((0.9 - wheel.get_skidinfo()) / 0.6, 0.0, 1.0)
+	if wheel == _rear_left or wheel == _rear_right:
+		slip = maxf(slip, clampf((drift_angle - 6.0) / 14.0, 0.0, 1.0))
+	return slip
 
 
 ## Antriebskraft am Boden (alle Antriebsräder zusammen, Newton) bei Vollgas
