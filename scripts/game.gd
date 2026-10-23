@@ -11,6 +11,7 @@ extends Node3D
 @export var debug_tools: DebugTools
 @export var day_night: DayNight
 @export var garage: Garage
+@export var map_tiles: MapTiles
 @export var roads: RoadNetwork
 @export var water: WaterManager
 @export var grass: GrassManager
@@ -45,6 +46,8 @@ func _ready() -> void:
 	# Vorläufiger Platz, bis die Straßen in der Nähe berechnet sind
 	car.teleport(find_start(start_point, heading), true)
 	roads.start(world_gen, car)
+	if map_tiles:
+		map_tiles.world_gen = world_gen
 	terrain.start(world_gen, car, roads)
 	horizon.start(world_gen, car)
 	water.start(world_gen, car, roads)

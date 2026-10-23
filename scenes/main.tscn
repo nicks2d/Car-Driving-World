@@ -39,6 +39,11 @@
 [ext_resource type="Resource" path="res://cars/e92.tres" id="54_e92"]
 [ext_resource type="Resource" path="res://cars/f90.tres" id="55_f90"]
 [ext_resource type="Resource" path="res://cars/g90.tres" id="56_g90"]
+[ext_resource type="Script" path="res://scripts/map_tiles.gd" id="60_tiles"]
+[ext_resource type="Script" path="res://scripts/navigation.gd" id="61_nav"]
+[ext_resource type="Script" path="res://scripts/minimap.gd" id="62_minimap"]
+[ext_resource type="Script" path="res://scripts/nav_banner.gd" id="63_banner"]
+[ext_resource type="Script" path="res://scripts/big_map.gd" id="64_bigmap"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -178,7 +183,7 @@ shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 shader_parameter/far_mode = true
 shader_parameter/sink_radius = 1850.0
 
-[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water", "grass", "garage")]
+[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water", "grass", "garage", "map_tiles")]
 script = ExtResource("1_game")
 world_gen = SubResource("WorldGen_main")
 terrain = NodePath("Terrain")
@@ -188,6 +193,7 @@ loading_screen = NodePath("HUD/LoadingScreen")
 debug_tools = NodePath("DebugTools")
 day_night = NodePath("DayNight")
 garage = NodePath("Garage")
+map_tiles = NodePath("MapTiles")
 roads = NodePath("Roads")
 water = NodePath("Water")
 grass = NodePath("Grass")
@@ -288,6 +294,37 @@ mouse_filter = 2
 script = ExtResource("50_tacho")
 car = NodePath("../../Car")
 
+[node name="Minimap" type="Control" parent="HUD" node_paths=PackedStringArray("car", "roads", "navigation", "tiles")]
+layout_mode = 3
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -254.0
+offset_right = 254.0
+offset_bottom = -24.0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("62_minimap")
+car = NodePath("../../Car")
+roads = NodePath("../../Roads")
+navigation = NodePath("../../Navigation")
+tiles = NodePath("../../MapTiles")
+
+[node name="NavBanner" type="Control" parent="HUD" node_paths=PackedStringArray("navigation")]
+layout_mode = 3
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -210.0
+offset_top = 16.0
+offset_right = 210.0
+offset_bottom = 100.0
+grow_horizontal = 2
+mouse_filter = 2
+script = ExtResource("63_banner")
+navigation = NodePath("../../Navigation")
+
 [node name="FpsLabel" type="Label" parent="HUD" node_paths=PackedStringArray("terrain")]
 offset_left = 16.0
 offset_top = 12.0
@@ -333,3 +370,19 @@ camera = NodePath("../Camera")
 script = ExtResource("51_garage")
 car = NodePath("../Car")
 cars = Array[ExtResource("57_profile")]([ExtResource("52_m2"), ExtResource("53_e30"), ExtResource("54_e92"), ExtResource("55_f90"), ExtResource("56_g90")])
+
+[node name="MapTiles" type="Node" parent="."]
+process_mode = 3
+script = ExtResource("60_tiles")
+
+[node name="Navigation" type="Node" parent="." node_paths=PackedStringArray("roads", "car")]
+script = ExtResource("61_nav")
+roads = NodePath("../Roads")
+car = NodePath("../Car")
+
+[node name="BigMap" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "roads", "navigation", "tiles")]
+script = ExtResource("64_bigmap")
+car = NodePath("../Car")
+roads = NodePath("../Roads")
+navigation = NodePath("../Navigation")
+tiles = NodePath("../MapTiles")

@@ -100,7 +100,7 @@ assets/
 - [x] Meilenstein 6 (Bäume, Büsche, Felsen, Gras mit Wind, Stamm-Kollision)
 - [x] Meilenstein 7 (BMW M2 Competition: Modell, Antrieb, Licht, Spuren, Rauch, Sound)
 - [x] Extra: Autoauswahl mit Garage (5 BMW, Profile, Showroom, Sound pro Motor)
-- [ ] Extra: Minimap mit Navi
+- [x] Extra: Minimap mit Navi (Kartenkacheln, Route über Orts-Graphen, Abbiege-Hinweise)
 - [ ] Extra: Wetter und Jahreszeiten
 - [ ] Extra: Tunnel
 - [ ] Meilenstein 8
@@ -189,7 +189,20 @@ assets/
   `--carview=G` stellt die Kamera neben das Auto (0 = vorne, 180 = hinten), `--steer=left`
   lenkt dabei (Vorderräder prüfen), `--car=e30` startet mit diesem Auto.
 - Tasten: WASD fahren, Leertaste Handbremse, R aufrichten, T Zeitraffer, F3 FPS,
-  C Lackfarbe, K Aufkleber, L Licht, G Garage.
+  C Lackfarbe, K Aufkleber, L Licht, G Garage, M große Karte (Linksklick Ziel, Rechtsklick
+  Ziel löschen, Mausrad zoomen, ziehen verschiebt).
+- Karte und Navi: `map_tiles.gd` rechnet das Kartenbild (Höhenfarbe, Schattierung, Wald,
+  Wasser) in Kacheln à 128 px im Hintergrund (Stufen 4/16/64 m pro Pixel, max. 400 gemerkt).
+  `map_view.gd` zeichnet darüber Straßen, Route, Ziel, Auto in Weltkoordinaten (eine
+  Transform, Straßenlinien pro Abschnitt einmal gemerkt). Minimap unten links (dreht mit,
+  Zoom 1,3–4 m/px nach Tempo, runde Maske über `clip_children`), große Karte mit M.
+  Navi (`navigation.gd`): A* über den Orts-Graphen (Orte/Verbindungen stehen ohne Wegsuche
+  fest); berechnete Abschnitte mit echter Länge, unbekannte mit Luftlinie × 1,35, weggefallene
+  (`RoadNetwork._missing`, bleibt gemerkt) gar nicht. Ziel rastet auf eine fertige Straße
+  (bis 80 m) oder auf den nächsten Ort mit Verbindung ein (sonst unerreichbar: Orte, deren
+  Straßen alle zu steil sind). Suche höchstens doppelte Luftlinie + 5 km. Jede Sekunde:
+  weggefallen → neu planen, neu berechnet → Linie verfeinern; > 40 m daneben für 3 s → neu.
+  14 km Route: ~25 ms. Geschätzte Teile der Route gestrichelt.
 - Leistung: Gelände- und Straßen-Manager prüfen ihre Umgebung nur alle 0,1 s (und sofort,
   wenn ein Auftrag fertig ist), Gelände fragt pro Prüfung höchstens 6 wartende Kacheln nach
   Straßen. Vorher kosteten sie 6,7 ms pro Bild, jetzt ~0,9 ms (`update_interval`).

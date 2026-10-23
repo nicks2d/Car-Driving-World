@@ -125,6 +125,9 @@ func _apply_paint_to_car() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Etwas anderes (z. B. die große Karte) hat das Spiel angehalten: dann nicht stören
+	if not is_open and get_tree().paused:
+		return
 	if event.is_action_pressed("open_garage"):
 		if is_open:
 			close(true)

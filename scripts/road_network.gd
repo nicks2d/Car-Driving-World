@@ -72,6 +72,9 @@ var _wanted: Dictionary = {}  # Vector3i -> int
 var _edge_cache: Dictionary = {}  # Vector3i -> bool (gibt es diese Verbindung?)
 var _junctions: Dictionary = {}  # Vector2i -> RoadJunction
 var _departures: Dictionary = {}  # Vector2i -> Dictionary (Nachbarzelle -> Richtung)
+## Abschnitte, die es sicher nicht gibt (zu steil, überlappt): bleibt gemerkt, auch wenn
+## der Abschnitt selbst vergessen wird (für das Navi)
+var _missing: Dictionary = {}  # Vector3i -> true
 var _running: int = 0
 var _update_timer: float = 0.0
 
@@ -425,6 +428,54 @@ func _next_segment_at(cell: Vector2i, visited: Dictionary, arriving: Vector3) ->
 
 
 # ---------------------------------------------------------------------------
+# Für Karte und Navi
+# ---------------------------------------------------------------------------
+
+## Zustand einer Verbindung: 0 = noch unbekannt, 1 = berechnet und im Netz,
+## 2 = gibt es nicht (keine Orte, zu steil, überlappt)
+func edge_status(key: Vector3i) -> int:
+	if _missing.has(key) or not _edge_exists(Vector2i(key.x, key.y), key.z):
+		return 2
+	var entry: Entry = _entries.get(key)
+	if entry and entry.state >= State.CHECKED:
+		return 1 if entry.kept else 2
+	return 0
+
+
+## Der berechnete Abschnitt einer Verbindung (null, solange er nicht fertig geprüft ist)
+func edge_segment(key: Vector3i) -> RoadSegment:
+	var entry: Entry = _entries.get(key)
+	if entry and entry.state >= State.CHECKED and entry.kept:
+		return entry.segment
+	return null
+
+
+## Ort, an dem eine Verbindung endet (sie beginnt in der Zelle key.x, key.y)
+func edge_end_cell(key: Vector3i) -> Vector2i:
+	return _end_cell(key)
+
+
+## Die Verbindungen an einem Ort, die es geben könnte: [Schlüssel, true = beginnt hier]
+func edges_at(cell: Vector2i) -> Array:
+	var result: Array = []
+	for option: Array in _arm_keys(cell):
+		var key: Vector3i = option[0]
+		if _edge_exists(Vector2i(key.x, key.y), key.z) and not _missing.has(key):
+			result.append(option)
+	return result
+
+
+## Alle fertigen Abschnitte, die in einem Bereich liegen: [[Schlüssel, RoadSegment], ...]
+func loaded_segments(rect: Rect2) -> Array:
+	var result: Array = []
+	for key: Vector3i in _entries:
+		var entry: Entry = _entries[key]
+		if entry.state >= State.CHECKED and entry.kept and entry.segment.bounds.intersects(rect):
+			result.append([key, entry.segment])
+	return result
+
+
+# ---------------------------------------------------------------------------
 # Kreuzungen
 # ---------------------------------------------------------------------------
 
@@ -542,6 +593,8 @@ func _collect_finished() -> int:
 				entry.kept = not entry.check.overlaps
 				entry.check = null
 				entry.state = State.CHECKED
+				if not entry.kept:
+					_missing[entry.segment.key] = true
 			State.MESHING:
 				entry.state = State.READY
 	return finished
@@ -565,6 +618,7 @@ func _start_check(key: Vector3i, entry: Entry) -> void:
 	if not entry.segment.valid:
 		entry.kept = false
 		entry.state = State.CHECKED
+		_missing[key] = true
 		return
 	if not entry.has_neighbors:
 		for other_key in _edges_touching(entry.segment.bounds):
