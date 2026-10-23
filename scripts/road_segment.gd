@@ -6,7 +6,8 @@ extends RefCounted
 ##  2. Trassierung wie im echten Straßenbau: Geraden und Kreisbögen, alle 4 m ein Punkt.
 ##     Dazu die Querneigung in Kurven.
 ##  3. Höhenprofil glätten und die Steigung begrenzen (Gelände wird später angepasst).
-##  4. Mesh-Daten für Fahrbahn und Kollision erzeugen.
+## Später (wenn feststeht, wie groß die Kreuzungen an den Enden sind) baut build_mesh()
+## die Mesh-Daten für Fahrbahn und Kollision, ebenfalls im Hintergrund.
 
 # Rasterpunkte sind durchnummeriert (Zeile * Breite + Spalte). Die Ganzzahl-Divisionen
 # in diesem Skript sind deshalb gewollt.
@@ -17,6 +18,10 @@ var world_gen: WorldGen
 var key: Vector3i
 var start: Vector3
 var end: Vector3
+## Richtung, in der die Straße die Orte verlässt (am Ende: vom Ort aus gesehen).
+## Vector2.ZERO = Luftlinie zum anderen Ort.
+var start_direction: Vector2 = Vector2.ZERO
+var end_direction: Vector2 = Vector2.ZERO
 var road_width: float = 9.0
 var shoulder_width: float = 1.5
 var max_grade: float = 0.10
@@ -60,6 +65,14 @@ const MAX_CUT: float = 35.0
 const MAX_FILL: float = 50.0
 ## So lang ist die Straße an beiden Orten mindestens gerade (Platz für die Kreuzung)
 const END_STRAIGHT: float = 30.0
+## Die ersten und letzten LEAD Meter führen genau in Abfahrtsrichtung (Kreuzungszufahrt)
+const LEAD: float = 50.0
+## So viele Punkte (je 4 m) liegen an beiden Orten flach auf Ortshöhe (Kreuzungsfläche)
+const JUNCTION_FLAT: int = 6
+## Querschnitt neben der Fahrbahn: Böschungskante (Breite, Absenkung) und Bankett-Absenkung
+const VERGE_WIDTH: float = 1.8
+const VERGE_DROP: float = -1.3
+const SHOULDER_DROP: float = -0.06
 ## Ab so vielen Metern über dem Gelände wird statt eines Damms eine Brücke gebaut
 const BRIDGE_HEIGHT: float = 7.0
 
@@ -68,14 +81,17 @@ func build() -> void:
 	var path := _find_path()
 	if path.size() < 2:
 		return
-	# Kleine Zickzacks der Wegsuche entfernen: übrig bleibt ein Polygonzug aus langen Geraden
-	path = _simplify(path, 4.0)
+	# Kleine Zickzacks der Wegsuche entfernen: übrig bleibt ein Polygonzug aus langen Geraden.
+	# Die geraden Kreuzungszufahrten (erster und letzter Abschnitt) bleiben unverändert.
+	var last := path.size() - 1
+	path = PackedVector2Array([path[0]]) + _simplify(path.slice(1, last), 4.0) + PackedVector2Array([path[last]])
+	if path.size() < 4:
+		return
 	if not _fit_curves(path):
 		return
 	_make_bank()
 	if not _make_profile():
 		return
-	_build_mesh()
 	valid = true
 
 
@@ -95,6 +111,8 @@ func _find_path() -> PackedVector2Array:
 	var nv := int(2.0 * half_width / grid_step) + 1
 	var grid_origin := a - dir_u * margin - dir_v * half_width
 	var count := nu * nv
+	var leave_a := start_direction if start_direction != Vector2.ZERO else dir_u
+	var leave_b := end_direction if end_direction != Vector2.ZERO else -dir_u
 
 	# Höhe und Zusatzkosten (Wasser, Berge) für jeden Rasterpunkt
 	var corridor := Rect2(a, Vector2.ZERO).expand(b).grow(half_width + margin)
@@ -116,20 +134,22 @@ func _find_path() -> PackedVector2Array:
 					if p.distance_to(lake.center) < lake.radius + 15.0:
 						in_lake = true
 				penalty += 100000.0 if in_lake else 250.0
-			# In den ersten und letzten 300 m soll die Straße in einem Kegel von etwa ±45° um die
-			# Richtung zum anderen Ort bleiben. Die Nachbarn eines Orts liegen in vier
-			# verschiedenen Richtungen, so kreuzen sich seine Straßen nicht gegenseitig.
+			# In den ersten und letzten 250 m soll die Straße in einem Kegel von ±30° um ihre
+			# Abfahrtsrichtung bleiben. Die Abfahrtsrichtungen eines Orts liegen mindestens 80°
+			# auseinander (RoadNetwork), so laufen seine Straßen nicht nebeneinander her.
 			var from_a := p - a
 			var from_b := p - b
-			if from_a.length() < 300.0 and from_a.length() > 1.0 and from_a.normalized().dot(dir_u) < 0.72:
+			if from_a.length() < 250.0 and from_a.length() > 1.0 and from_a.normalized().dot(leave_a) < 0.866:
 				penalty += 300.0
-			if from_b.length() < 300.0 and from_b.length() > 1.0 and from_b.normalized().dot(-dir_u) < 0.72:
+			if from_b.length() < 250.0 and from_b.length() > 1.0 and from_b.normalized().dot(leave_b) < 0.866:
 				penalty += 300.0
 			extra[i] = penalty
 
-	var start_index := roundi(half_width / grid_step) * nu + roundi(margin / grid_step)
-	var goal_u := roundi((margin + length) / grid_step)
-	var goal_index := roundi(half_width / grid_step) * nu + mini(goal_u, nu - 1)
+	# Die Wegsuche beginnt und endet am Ende der geraden Kreuzungszufahrten
+	var lead_a := a + leave_a * LEAD
+	var lead_b := b + leave_b * LEAD
+	var start_index := _grid_index(lead_a, grid_origin, dir_u, dir_v, nu, nv)
+	var goal_index := _grid_index(lead_b, grid_origin, dir_u, dir_v, nu, nv)
 
 	# A*: immer den Punkt mit den geringsten (bisherigen + geschätzten) Kosten weiter untersuchen.
 	# Erlaubt sind Schritte in 48 Richtungen (z. B. „4 vor, 1 zur Seite“). Nur so kann der Weg
@@ -213,9 +233,19 @@ func _find_path() -> PackedVector2Array:
 		path.append(grid_origin + dir_u * ((node % nu) * grid_step) + dir_v * ((node / nu) * grid_step))
 		node = came_from[node]
 	path.reverse()
-	path[0] = a
-	path[path.size() - 1] = b
+	path[0] = lead_a
+	path[path.size() - 1] = lead_b
+	path.insert(0, a)
+	path.append(b)
 	return path
+
+
+## Nächster Rasterpunkt zu p
+func _grid_index(p: Vector2, grid_origin: Vector2, dir_u: Vector2, dir_v: Vector2, nu: int, nv: int) -> int:
+	var rel := p - grid_origin
+	var iu := clampi(roundi(rel.dot(dir_u) / grid_step), 0, nu - 1)
+	var iv := clampi(roundi(rel.dot(dir_v) / grid_step), 0, nv - 1)
+	return iv * nu + iu
 
 
 ## Alle erlaubten Schritte: (x, y) mit höchstens 4 Feldern Abstand und ohne gemeinsamen Teiler
@@ -426,6 +456,7 @@ func _tangent_lengths(poly: PackedVector2Array) -> PackedFloat32Array:
 ## Den Knick c mit einem Nachbarn zusammenfassen (über die kürzere Gerade hinweg).
 ## Liegt diese Gerade an einem Ort, wird der Knick einfach entfernt.
 ## Verschiebt sich der Weg dabei um mehr als max_shift Meter, gibt es kein Ergebnis (leer).
+## Die Enden der Kreuzungszufahrten (Punkt 1 und vorletzter) bleiben dabei immer, wo sie sind.
 func _merge_corner(poly: PackedVector2Array, c: int, max_shift: float) -> PackedVector2Array:
 	var last := poly.size() - 1
 	var options: Array[int] = [c - 1, c]
@@ -434,6 +465,8 @@ func _merge_corner(poly: PackedVector2Array, c: int, max_shift: float) -> Packed
 	for leg in options:
 		var result := poly.duplicate()
 		if leg == 0 or leg == last - 1:
+			if c == 1 or c == last - 1:
+				continue
 			if _distance_to_line(poly[c], poly[c - 1], poly[c + 1]) > max_shift:
 				continue
 			result.remove_at(c)
@@ -444,6 +477,16 @@ func _merge_corner(poly: PackedVector2Array, c: int, max_shift: float) -> Packed
 		var turn_a := (poly[a] - poly[a - 1]).angle_to(poly[a + 1] - poly[a])
 		var turn_b := (poly[b] - poly[b - 1]).angle_to(poly[b + 1] - poly[b])
 		var shift := 0.0
+		if a == 1 or b == last - 1:
+			# Ein Ende einer Kreuzungszufahrt: das bleibt, der andere Knick fällt weg
+			if a == 1 and b == last - 1:
+				continue
+			var gone := b if a == 1 else a
+			shift = _distance_to_line(poly[gone], poly[gone - 1], poly[gone + 1])
+			if shift > max_shift:
+				continue
+			result.remove_at(gone)
+			return result
 		if signf(turn_a) != signf(turn_b):
 			# S-Kurve: beide Knicke durch einen in der Mitte ersetzen (die S-Kurve wird gerader)
 			result[a] = (poly[a] + poly[b]) * 0.5
@@ -525,7 +568,7 @@ func _make_bank() -> void:
 	var n := points.size()
 	var raw := PackedFloat32Array()
 	raw.resize(n)
-	for i in range(6, n - 6):
+	for i in range(10, n - 10):
 		raw[i] = max_bank * clampf(curvature[i] * curve_radius, -1.0, 1.0)
 	bank = PackedFloat32Array()
 	bank.resize(n)
@@ -567,17 +610,22 @@ func _make_profile() -> bool:
 		if water > WorldGen.NO_WATER:
 			smooth[i] = maxf(smooth[i], water + 4.5)
 			over_water[i] = 1
-	# Anfang und Ende liegen genau auf den Orten
-	smooth[0] = start.y
-	smooth[n - 1] = end.y
+	# An den Orten liegt die Straße flach auf Ortshöhe (dort ist die Kreuzung)
+	for i in n:
+		if i < JUNCTION_FLAT:
+			smooth[i] = start.y
+		elif i >= n - JUNCTION_FLAT:
+			smooth[i] = end.y
 	# Steigung begrenzen: vorwärts und rückwärts durchgehen
 	var max_step := max_grade * POINT_SPACING
-	for i in range(1, n):
+	for i in range(JUNCTION_FLAT, n - JUNCTION_FLAT):
 		smooth[i] = clampf(smooth[i], smooth[i - 1] - max_step, smooth[i - 1] + max_step)
-	smooth[n - 1] = end.y
-	for i in range(n - 2, -1, -1):
+	for i in range(n - JUNCTION_FLAT - 1, JUNCTION_FLAT - 1, -1):
 		smooth[i] = clampf(smooth[i], smooth[i + 1] - max_step, smooth[i + 1] + max_step)
-	smooth[0] = start.y
+	# Passt es trotzdem nicht (Höhenunterschied zu groß für die Länge), keine Straße
+	for i in range(1, n):
+		if absf(smooth[i] - smooth[i - 1]) > max_step + 0.01:
+			return false
 	# Wenn die Straße tiefe Schluchten oder riesige Brücken bräuchte, lieber keine Straße
 	for i in n:
 		if ground[i] - smooth[i] > MAX_CUT or smooth[i] - ground[i] > MAX_FILL:
@@ -587,9 +635,10 @@ func _make_profile() -> bool:
 	# Nicht direkt an den Orten (dort sind Kreuzungen).
 	bridge = PackedByteArray()
 	bridge.resize(n)
+	var keep_clear := JUNCTION_FLAT + 2
 	for i in n:
 		if over_water[i] == 1 or smooth[i] - ground[i] > BRIDGE_HEIGHT:
-			for j in range(maxi(i - 3, 4), mini(i + 4, n - 4)):
+			for j in range(maxi(i - 3, keep_clear), mini(i + 4, n - keep_clear)):
 				bridge[j] = 1
 	bounds = _points_rect().grow(road_width * 0.5 + shoulder_width + MAX_BANK)
 	return true
@@ -606,32 +655,36 @@ func _points_rect() -> Rect2:
 # 4. Mesh: Querschnitt aus 6 Punkten (Schürze, Bankett, Fahrbahn, Fahrbahn, Bankett, Schürze)
 # ---------------------------------------------------------------------------
 
-func _build_mesh() -> void:
+## Mesh-Daten von Punkt first bis last (dort beginnen bzw. enden die Kreuzungen).
+## Läuft im Hintergrund.
+func build_mesh(first: int, last: int) -> void:
 	var n := points.size()
 	origin = points[n / 2]
 	var half := road_width * 0.5
 	var outer := half + shoulder_width
 	# Seitlicher Abstand (positiv = links), Höhenversatz und u-Koordinate jedes Querschnittspunkts
 	# Der äußerste Punkt liegt schräg tiefer: ein Bankett, das in die Böschung übergeht
-	var verge := outer + 1.8
+	var verge := outer + VERGE_WIDTH
 	var side := [verge, outer, half, -half, -outer, -verge]
-	var drop := [-1.3, -0.06, 0.0, 0.0, -0.06, -1.3]
+	var drop := [VERGE_DROP, SHOULDER_DROP, 0.0, 0.0, SHOULDER_DROP, VERGE_DROP]
 	var u_coord := [-(verge - half) / road_width, -shoulder_width / road_width, 0.0, 1.0,
 		1.0 + shoulder_width / road_width, 1.0 + (verge - half) / road_width]
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var tangents := PackedFloat32Array()
 	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()
 	var lefts := PackedVector3Array()
-	var distance := 0.0
+	lefts.resize(n)
 	for i in n:
-		var forward := direction_at(i)
-		var left := Vector3.UP.cross(forward).normalized()
+		lefts[i] = Vector3.UP.cross(direction_at(i)).normalized()
+	var distance := 0.0
+	for i in range(first, last + 1):
+		var left := lefts[i]
 		# Querneigung: die Fahrbahn kippt zur Kurveninnenseite, die Normale mit ihr
 		var up := (Vector3.UP + left * bank[i]).normalized()
-		if i > 0:
+		if i > first:
 			distance += points[i].distance_to(points[i - 1])
-		lefts.append(left)
 		for k in 6:
 			var offset: float = side[k]
 			var height: float = drop[k]
@@ -650,9 +703,11 @@ func _build_mesh() -> void:
 			var right := -left
 			tangents.append_array([right.x, right.y, right.z, 1.0])
 			uvs.append(Vector2(u_coord[k], distance))
+			# UV2 = 0: normale Straße (Kreuzungsflächen haben hier 1)
+			uv2s.append(Vector2.ZERO)
 	var indices := PackedInt32Array()
 	collision_faces = PackedVector3Array()
-	for i in n - 1:
+	for i in last - first:
 		for k in 5:
 			var a := i * 6 + k
 			var b := (i + 1) * 6 + k
@@ -666,6 +721,7 @@ func _build_mesh() -> void:
 	mesh_arrays[Mesh.ARRAY_NORMAL] = normals
 	mesh_arrays[Mesh.ARRAY_TANGENT] = tangents
 	mesh_arrays[Mesh.ARRAY_TEX_UV] = uvs
+	mesh_arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 	mesh_arrays[Mesh.ARRAY_INDEX] = indices
 	_build_bridges(lefts)
 
@@ -761,6 +817,47 @@ func _pillar(center: Vector3, bottom_y: float) -> void:
 		var c := center + normal * h
 		_quad(Vector3(c.x - t.x * h, y0, c.z - t.z * h), Vector3(c.x + t.x * h, y0, c.z + t.z * h),
 			Vector3(c.x + t.x * h, y1, c.z + t.z * h), Vector3(c.x - t.x * h, y1, c.z - t.z * h), normal)
+
+
+## Kommt diese Straße einer anderen näher als distance (Mittellinien, waagerecht)?
+## Rund um gemeinsame Orte zählt das nicht, dort ist die Kreuzung (clearance Meter).
+func comes_close(other: RoadSegment, distance: float, clearance: float) -> bool:
+	if not bounds.intersects(other.bounds):
+		return false
+	var shared: Array[Vector3] = []
+	for a: Vector3 in [start, end]:
+		for b: Vector3 in [other.start, other.end]:
+			if a.distance_to(b) < 1.0:
+				shared.append(a)
+	# Eigene Punkte in ein Raster einsortieren (Zellgröße = distance)
+	var grid := {}
+	for i in points.size():
+		var p := points[i]
+		if _near_any(p, shared, clearance):
+			continue
+		var cell := Vector2i(floori(p.x / distance), floori(p.z / distance))
+		if not grid.has(cell):
+			grid[cell] = []
+		grid[cell].append(i)
+	var limit := distance * distance
+	for q in other.points:
+		if _near_any(q, shared, clearance):
+			continue
+		var cell := Vector2i(floori(q.x / distance), floori(q.z / distance))
+		for dz in range(-1, 2):
+			for dx in range(-1, 2):
+				for i: int in grid.get(cell + Vector2i(dx, dz), []):
+					var p := points[i]
+					if (p.x - q.x) * (p.x - q.x) + (p.z - q.z) * (p.z - q.z) < limit:
+						return true
+	return false
+
+
+func _near_any(p: Vector3, centers: Array[Vector3], radius: float) -> bool:
+	for c in centers:
+		if Vector2(p.x - c.x, p.z - c.z).length() < radius:
+			return true
+	return false
 
 
 ## Fahrtrichtung am Punkt i (Mittel aus Richtung davor und danach)

@@ -41,14 +41,13 @@ class GrassJob:
 	var grid_size: int
 	var spacing: float
 	var road_segments: Array
-	var road_pads: PackedVector3Array
-	var pad_radius: float
+	var road_pads: PackedVector4Array
 	var buffer := PackedFloat32Array()
 
 	func run() -> void:
 		var origin := Vector2(patch.x * patch_size, patch.y * patch_size)
 		var rect := Rect2(origin, Vector2(patch_size, patch_size))
-		var roads := RoadQuery.new(road_segments, road_pads, pad_radius, rect)
+		var roads := RoadQuery.new(road_segments, road_pads, rect)
 		var lakes: Array = world_gen.lakes_near(rect)
 		var rng := RandomNumberGenerator.new()
 		rng.seed = world_gen.hash_cell(patch.x, patch.y, 505)
@@ -154,7 +153,6 @@ func _start_job(coord: Vector2i) -> void:
 	job.spacing = fine["spacing"]
 	job.road_segments = road_data["segments"]
 	job.road_pads = road_data["pads"]
-	job.pad_radius = roads.pad_radius
 	var patch := Patch.new()
 	patch.job = job
 	patch.task_id = WorkerThreadPool.add_task(job.run, false, "Gras")

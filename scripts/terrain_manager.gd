@@ -154,7 +154,6 @@ func _start_job(chunk: Chunk, lod: int, road_data: Dictionary) -> void:
 	job.chunk_size = chunk_size
 	job.road_segments = road_data["segments"]
 	job.road_pads = road_data["pads"]
-	job.pad_radius = roads.pad_radius
 	job.with_vegetation = lod <= vegetation_max_lod
 	job.tree_spacing = tree_spacing
 	job.rock_spacing = rock_spacing

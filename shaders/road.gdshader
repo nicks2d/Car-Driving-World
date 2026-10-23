@@ -1,6 +1,7 @@
 // Straßen-Shader: Asphalt mit Mittellinie (gestrichelt) und Randlinien, daneben Schotter.
 // UV.x geht quer über die Fahrbahn von 0 (linker Rand) bis 1 (rechter Rand),
 // außerhalb davon liegt das Bankett. UV.y ist die Entfernung entlang der Straße in Metern.
+// Kreuzungsflächen haben UV2.x = 1: keine Markierungen, Schotter steht in UV2.y.
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
 
@@ -49,7 +50,9 @@ void fragment() {
 	// Dunklere Fahrspuren, wo die Reifen rollen
 	float lane = fract(UV.x * 2.0);
 	float wheel_tracks = smoothstep(0.12, 0.0, abs(lane - 0.3)) + smoothstep(0.12, 0.0, abs(lane - 0.72));
-	asphalt *= 1.0 - wheel_tracks * 0.12;
+	float junction = UV2.x;
+	// Kreuzungen haben keine Spuren, sind dafür insgesamt so dunkel wie eine Fahrbahn im Mittel
+	asphalt *= 1.0 - mix(wheel_tracks * 0.12, 0.04, junction);
 
 	// --- Markierungen ---
 	float aa = fwidth(across) * 0.75;
@@ -60,11 +63,13 @@ void fragment() {
 	float edge = 1.0 - smoothstep(edge_line_width * 0.5 - aa, edge_line_width * 0.5 + aa, edge_distance);
 	// Etwas abgefahrene Farbe: nicht überall gleich deckend
 	float paint = max(center * dash, edge) * mix(0.75, 1.0, texture(variation_noise, vec2(across, along) / 4.0).r);
+	paint *= 1.0 - junction;
 
 	// --- Bankett (Schotter) außerhalb der Fahrbahn ---
 	vec3 gravel = texture(gravel_albedo, vec2(across, along) / gravel_scale).rgb;
 	gravel = mix(gravel, vec3(luminance(gravel)) * vec3(0.95, 0.93, 0.88) * 1.3, 0.85);
 	float shoulder = 1.0 - smoothstep(-0.05, 0.05, min(UV.x, 1.0 - UV.x) * road_width);
+	shoulder = mix(shoulder, UV2.y, junction);
 
 	vec3 albedo = mix(asphalt, line_color, paint);
 	albedo = mix(albedo, gravel, shoulder);

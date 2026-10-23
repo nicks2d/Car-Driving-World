@@ -12,8 +12,7 @@ var spacing: float
 var chunk_size: float
 ## Straßen in der Nähe (RoadSegment) und Kreuzungsmittelpunkte
 var road_segments: Array = []
-var road_pads: PackedVector3Array = PackedVector3Array()
-var pad_radius: float = 13.0
+var road_pads: PackedVector4Array = PackedVector4Array()
 ## Bäume, Büsche und Felsen verteilen? (nur für nahe und mittlere Kacheln)
 var with_vegetation: bool = false
 ## Abstand der möglichen Baumplätze und Felsplätze in Metern (kleiner = dichter)
@@ -40,7 +39,7 @@ func run() -> void:
 	var side: int = n + 3  # Raster mit einem Punkt Rand rundherum (für die Normalen)
 	var origin := Vector2(coord.x * chunk_size, coord.y * chunk_size)
 	var lakes: Array = world_gen.lakes_near(Rect2(origin, Vector2(chunk_size, chunk_size)))
-	var roads := RoadQuery.new(road_segments, road_pads, pad_radius,
+	var roads := RoadQuery.new(road_segments, road_pads,
 		Rect2(origin, Vector2(chunk_size, chunk_size)).grow(spacing * 2.0))
 	var has_roads := not roads.is_empty()
 

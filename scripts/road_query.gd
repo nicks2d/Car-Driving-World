@@ -17,8 +17,9 @@ var _bank := PackedFloat32Array()
 var _cells: Dictionary = {}  # Vector2i -> Array von Stück-Nummern
 
 
-## segments: fertige RoadSegments, pads: Mittelpunkte der Kreuzungen, area: gefragter Bereich
-func _init(segments: Array, pads: PackedVector3Array, pad_radius: float, area: Rect2) -> void:
+## segments: fertige RoadSegments, pads: Kreuzungen (Mitte x, y, z und Radius als w),
+## area: gefragter Bereich
+func _init(segments: Array, pads: PackedVector4Array, area: Rect2) -> void:
 	reach = 0.0
 	var grown := area.grow(RoadSegment.MAX_BANK + 15.0)
 	for segment: RoadSegment in segments:
@@ -31,8 +32,9 @@ func _init(segments: Array, pads: PackedVector3Array, pad_radius: float, area: R
 			var piece_bank := (segment.bank[i] + segment.bank[i + 1]) * 0.5
 			_add_piece(segment.points[i], segment.points[i + 1], core, piece_bank, grown)
 	for pad in pads:
-		reach = maxf(reach, pad_radius + RoadSegment.MAX_BANK)
-		_add_piece(pad, pad, pad_radius, 0.0, grown)
+		var center := Vector3(pad.x, pad.y, pad.z)
+		reach = maxf(reach, pad.w + RoadSegment.MAX_BANK)
+		_add_piece(center, center, pad.w, 0.0, grown)
 
 
 func _add_piece(a: Vector3, b: Vector3, core: float, piece_bank: float, area: Rect2) -> void:
