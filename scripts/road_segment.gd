@@ -16,8 +16,8 @@ var world_gen: WorldGen
 var key: Vector3i
 var start: Vector3
 var end: Vector3
-var road_width: float = 7.0
-var shoulder_width: float = 1.2
+var road_width: float = 9.0
+var shoulder_width: float = 1.5
 var max_grade: float = 0.10
 var grid_step: float = 18.0
 

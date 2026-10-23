@@ -14,15 +14,16 @@ extends Node3D
 @export var cell_size: float = 1200.0
 ## Wahrscheinlichkeit, dass zwei benachbarte Orte verbunden sind
 @export_range(0.0, 1.0) var connection_chance: float = 0.8
-## Breite der Fahrbahn (zwei Spuren) und des Banketts daneben
-@export var road_width: float = 7.0
-@export var shoulder_width: float = 1.2
+## Breite der Fahrbahn (zwei Spuren) und des Banketts daneben.
+## Alles andere (Markierungen, Brücken, Böschungen, Bäume) passt sich daran an.
+@export var road_width: float = 9.0
+@export var shoulder_width: float = 1.5
 ## Höchste Steigung (0.10 = 10 %)
 @export var max_grade: float = 0.10
 ## Rasterabstand der Wegsuche (kleiner = genauer, aber langsamer)
 @export var grid_step: float = 18.0
 ## Radius der runden Kreuzungsfläche an einem Ort
-@export var pad_radius: float = 11.0
+@export var pad_radius: float = 13.0
 ## Bis zu dieser Entfernung werden Straßen vorab berechnet
 @export var prefetch_distance: float = 2800.0
 ## Bis zu dieser Entfernung sind Straßen sichtbar
@@ -56,6 +57,9 @@ func start(gen: WorldGen, follow: Node3D) -> void:
 	world_gen = gen
 	target = follow
 	_pad_mesh = _make_pad_mesh()
+	# Der Straßen-Shader braucht die Breite, damit die Markierungen an der richtigen Stelle sitzen
+	if road_material is ShaderMaterial:
+		(road_material as ShaderMaterial).set_shader_parameter("road_width", road_width)
 
 
 func _process(_delta: float) -> void:

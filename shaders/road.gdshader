@@ -10,8 +10,8 @@ uniform sampler2D gravel_albedo : source_color, filter_linear_mipmap_anisotropic
 uniform sampler2D gravel_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D variation_noise : filter_linear_mipmap, repeat_enable;
 
-// Breite der Fahrbahn in Metern (muss zu RoadNetwork.road_width passen)
-uniform float road_width = 7.0;
+// Breite der Fahrbahn in Metern (setzt RoadNetwork beim Start aus seiner road_width)
+uniform float road_width = 9.0;
 // Größe einer Textur-Kachel in Metern
 uniform float asphalt_scale = 3.5;
 uniform float gravel_scale = 2.5;

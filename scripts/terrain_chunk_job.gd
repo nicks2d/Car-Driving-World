@@ -13,7 +13,7 @@ var chunk_size: float
 ## Straßen in der Nähe (RoadSegment) und Kreuzungsmittelpunkte
 var road_segments: Array = []
 var road_pads: PackedVector3Array = PackedVector3Array()
-var pad_radius: float = 11.0
+var pad_radius: float = 13.0
 ## Bäume, Büsche und Felsen verteilen? (nur für nahe und mittlere Kacheln)
 var with_vegetation: bool = false
 ## Abstand der möglichen Baumplätze und Felsplätze in Metern (kleiner = dichter)
