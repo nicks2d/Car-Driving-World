@@ -20,6 +20,8 @@ extends Node
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
 ## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png)
+## --nowait      Foto machen, ohne auf die Gelände-Kacheln zu warten (nur --wait Sekunden)
+## --jump=X,Z    nach dem Laden weit an diese Stelle springen (wie ein Teleport), dann Foto
 ## --weather=ID   Wetter: clear, cloudy, rain, storm, fog, snow (Tests sonst immer klar)
 ## --season=ID    Jahreszeit: spring, summer, autumn, winter (Tests sonst immer Sommer)
 
@@ -34,6 +36,9 @@ var time_of_day: float = -1.0
 var volumetric_fog: bool = false
 
 var _shot_name: String = ""
+var _no_wait: bool = false
+var _jump_to: Vector2 = Vector2.ZERO
+var _has_jump: bool = false
 var _wait: float = 3.0
 var _fly_height: float = 0.0
 var _pitch: float = -10.0
@@ -106,6 +111,12 @@ func _ready() -> void:
 				volumetric_fog = true
 			"benchshot":
 				_bench_shot_time = float(value)
+			"nowait":
+				_no_wait = true
+			"jump":
+				var xz := value.split(",")
+				_jump_to = Vector2(float(xz[0]), float(xz[1]))
+				_has_jump = true
 			"weather":
 				weather_id = value
 			"season":
@@ -127,8 +138,13 @@ func on_world_ready(game: Node3D) -> void:
 		_place_car_view_camera()
 	if _steer != "":
 		Input.action_press("steer_left" if _steer == "left" else "steer_right")
-	if _shot_name != "":
-		_state = "wait_for_terrain"
+	if _has_jump:
+		_has_jump = false
+		game.jump_to(_jump_to)
+		_state = "wait_after_jump"
+	elif _shot_name != "":
+		_state = "wait_extra" if _no_wait else "wait_for_terrain"
+		_timer = _wait
 	elif _bench_seconds > 0.0:
 		# Ohne V-Sync, damit man sieht, wie viel Luft nach oben ist
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
@@ -142,6 +158,13 @@ func on_world_ready(game: Node3D) -> void:
 
 func _process(delta: float) -> void:
 	match _state:
+		"wait_after_jump":
+			# Warten, bis das Spiel nach dem Sprung wieder bereit ist
+			if _game.world_is_ready:
+				_state = "wait_extra" if _no_wait else "wait_for_terrain"
+				_timer = _wait
+				if _fly_height > 0.0:
+					_place_fly_camera()
 		"wait_for_terrain":
 			# Erst warten, bis alle Kacheln ihre endgültige Detailstufe haben
 			if _game.terrain.pending_count() == 0:

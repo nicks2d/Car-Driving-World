@@ -55,6 +55,10 @@ extends Node3D
 ## So oft (Sekunden) wird das Netz rund ums Auto aktualisiert (und sofort, wenn ein
 ## Auftrag fertig wurde). Jedes Bild wäre unnötig teuer.
 @export var update_interval: float = 0.1
+## Abschnitte vor dem Auto zuerst berechnen: Bezugspunkt so viele Sekunden Fahrweg voraus
+## (höchstens max_lookahead Meter)
+@export var lookahead_seconds: float = 4.0
+@export var max_lookahead: float = 600.0
 
 ## Die Schritte eines Abschnitts (in dieser Reihenfolge)
 enum State { BUILDING, BUILT, CHECKING, CHECKED, MESHING, READY }
@@ -80,6 +84,8 @@ var _departures: Dictionary = {}  # Vector2i -> Dictionary (Nachbarzelle -> Rich
 var _missing: Dictionary = {}  # Vector3i -> true
 var _running: int = 0
 var _update_timer: float = 0.0
+var _velocity := Vector2.ZERO
+var _last_target := Vector2.ZERO
 
 
 ## Ein Straßenabschnitt und was dazu in der Szene steht
@@ -124,6 +130,13 @@ func start(gen: WorldGen, follow: Node3D) -> void:
 func _process(delta: float) -> void:
 	if world_gen == null or target == null:
 		return
+	# Tempo messen (weich, ein Sprung zählt nicht)
+	var here := Vector2(target.global_position.x, target.global_position.z)
+	if delta > 0.0:
+		var moved := here - _last_target
+		var now := moved / delta if moved.length() < 100.0 else Vector2.ZERO
+		_velocity = _velocity.lerp(now, clampf(delta * 3.0, 0.0, 1.0))
+	_last_target = here
 	_update_timer -= delta
 	if _collect_finished() == 0 and _update_timer > 0.0:
 		return
@@ -599,7 +612,9 @@ func _prefetch() -> void:
 func _dispatch() -> void:
 	if _wanted.is_empty() or _running >= max_parallel_jobs:
 		return
-	var p := Vector2(target.global_position.x, target.global_position.z)
+	# Bezugspunkt für die Reihenfolge: ein Stück voraus in Fahrtrichtung
+	var p := Vector2(target.global_position.x, target.global_position.z) \
+		+ (_velocity * lookahead_seconds).limit_length(max_lookahead)
 	var keys: Array = _wanted.keys()
 	keys.sort_custom(func(a: Vector3i, b: Vector3i) -> bool:
 		return _edge_area(a).get_center().distance_squared_to(p) < _edge_area(b).get_center().distance_squared_to(p))

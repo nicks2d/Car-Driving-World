@@ -22,6 +22,8 @@ var _car_on_road: bool = false
 var _start_point: Vector2 = Vector2.ZERO
 var _start_heading: float = 0.0
 var _place_timer: float = 0.0
+var _last_car_position := Vector3.ZERO
+var _started: bool = false
 
 
 func _ready() -> void:
@@ -55,7 +57,7 @@ func _ready() -> void:
 		if debug_tools.is_active():
 			weather.set_debug(debug_tools.weather_id, debug_tools.season_id)
 	terrain.start(world_gen, car, roads)
-	horizon.start(world_gen, car)
+	horizon.start(world_gen, car, terrain)
 	water.start(world_gen, car, roads)
 	grass.start(world_gen, car, terrain, roads)
 	loading_screen.visible = true
@@ -66,15 +68,49 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if world_is_ready:
+		_check_for_jump()
 		return
 	if not _car_on_road:
 		_place_car_on_road(delta)
 		return
-	if terrain.is_area_ready(car.global_position) and horizon.is_ready():
+	if terrain.is_area_ready(car.global_position) and horizon.is_ready_at(car.global_position):
 		world_is_ready = true
 		loading_screen.visible = false
 		car.freeze = false
-		debug_tools.on_world_ready(self)
+		_last_car_position = car.global_position
+		# Test-Werkzeuge nur beim ersten Mal starten (nicht nach jedem Sprung)
+		if not _started:
+			_started = true
+			debug_tools.on_world_ready(self)
+
+
+## Ist das Auto gerade weit gesprungen (Reset, Teleport) und fehlt dort noch Gelände?
+## Dann kurz den Ladebildschirm zeigen, bis es da ist (sonst sähe man Löcher und den
+## Horizont-Ring, und das Auto könnte durch den Boden fallen).
+func _check_for_jump() -> void:
+	var here := car.global_position
+	var jumped := here.distance_to(_last_car_position) > 50.0
+	_last_car_position = here
+	if not jumped:
+		return
+	if terrain.is_area_ready(here) and horizon.is_ready_at(here):
+		return
+	world_is_ready = false
+	_car_on_road = true
+	car.freeze = true
+	loading_screen.visible = true
+
+
+## Weiter Sprung (z. B. Teleport im Test): wie beim Start den Ladebildschirm zeigen und
+## warten, bis Straßen und Gelände an der neuen Stelle da sind
+func jump_to(point: Vector2) -> void:
+	world_is_ready = false
+	_car_on_road = false
+	_place_timer = 0.0
+	_start_point = point
+	car.freeze = true
+	car.teleport(find_start(point, _start_heading), true)
+	loading_screen.visible = true
 
 
 ## Setzt das Auto auf die nächste Straße, sobald die Straßen in der Nähe berechnet sind

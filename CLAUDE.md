@@ -179,15 +179,25 @@ assets/
 - Terrain: Kacheln à 256 m, Detailstufen mit 2/4/8/16 m Raster (Grenzen 450/900/1500 m),
   Sichtweite 2 km, Kollision (HeightMapShape3D, skaliert) bis 320 m. Berechnung im
   WorkerThreadPool, max. 2 Kacheln pro Bild einbauen. Schürzen gegen LOD-Lücken.
-- Horizont-Ring 1,2–26 km (110 × 720 Punkte), versinkt im Shader unter den Kacheln.
+- Horizont-Ring 0,4–26 km (110 × 720 Punkte). Er versinkt im Shader nur dort, wo schon
+  Gelände-Kacheln liegen (`TerrainManager.chunk_mask`, 32 × 32 Pixel = Kacheln um das Auto,
+  wird bei jeder fertigen/gelöschten Kachel neu gezeichnet). Am inneren Rand eine Schürze bis
+  -400 m. Früher sank er stur im Umkreis von 1,5 km um die Kamera, mit offenem Innenrand bei
+  1,2 km: Fehlten die Kacheln noch, hing dort ein „schwebender Felsbogen“ in der Luft.
   Ab 700–1500 m blendet der Terrain-Shader auf die Durchschnittsfarben der Texturen um,
   damit Kacheln und Ring gleich aussehen.
+- Sprünge (Reset, Teleport, > 50 m in einem Bild): Fehlt dort Gelände oder liegt der Ring noch
+  nicht passend, zeigt `game.gd` den Ladebildschirm und hält das Auto fest, bis alles da ist.
+- Laden in Fahrtrichtung: Gelände-Kacheln und Straßen werden vom Punkt 3 s Fahrweg voraus
+  (höchstens 400 m) aus sortiert, fehlende Kacheln vor feineren Detailstufen; ab 150 km/h
+  rechnen 8 statt 6 Kacheln gleichzeitig (`lookahead_seconds`, `fast_parallel_jobs`).
 - Leistung (M2, Vollbild 2940×1846): ~93 FPS, Ruckler nur beim allerersten Laden.
   Im Fenster lässt macOS V-Sync nicht abschalten, für FPS-Messungen `--fullscreen` nutzen.
 - Testen: `Godot --path . -- --shot=NAME --pos=X,Z --heading=G --fly=H --time=H` speichert
   `screenshots/NAME.png`. `-- --bench=20` misst FPS (siehe `scripts/debug_tools.gd`).
   `--carview=G` stellt die Kamera neben das Auto (0 = vorne, 180 = hinten), `--steer=left`
-  lenkt dabei (Vorderräder prüfen), `--car=e30` startet mit diesem Auto.
+  lenkt dabei (Vorderräder prüfen), `--car=e30` startet mit diesem Auto. `--nowait` macht das
+  Foto, ohne auf die Kacheln zu warten, `--jump=X,Z` springt nach dem Laden weit weg.
 - Tasten: WASD fahren, Leertaste Handbremse, R aufrichten, T Zeitraffer, F3 FPS,
   C Lackfarbe, K Aufkleber, L Licht, G Garage, M große Karte (Linksklick Ziel, Rechtsklick
   Ziel löschen, Mausrad zoomen, ziehen verschiebt), F5 Wetter (Automatisch → Klar → Bewölkt →

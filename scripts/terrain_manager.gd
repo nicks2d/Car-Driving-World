@@ -28,6 +28,15 @@ extends Node3D
 ## Höchstens so viele wartende Kacheln fragen pro Prüfung, ob ihre Straßen fertig sind
 @export var road_checks_per_update: int = 6
 
+@export_group("Laden bei hohem Tempo")
+## Kacheln vor dem Auto zuerst berechnen: Bezugspunkt so viele Sekunden Fahrweg voraus
+@export var lookahead_seconds: float = 3.0
+## ... aber höchstens so viele Meter voraus
+@export var max_lookahead: float = 400.0
+## Ab diesem Tempo (km/h) dürfen mehr Kacheln gleichzeitig berechnet werden
+@export var fast_speed_kmh: float = 150.0
+@export var fast_parallel_jobs: int = 8
+
 @export_group("Vegetation")
 ## Material für Bäume und Büsche (foliage.gdshader) und für Felsen
 @export var foliage_material: Material
@@ -54,6 +63,19 @@ var _veg_meshes: Dictionary = {}
 ## Laubbäume und Büsche: wie foliage_material, aber mit Herbstfarben (deciduous = true)
 var _deciduous_material: Material
 var _bare_trees: bool = false
+## Karte der fertigen Kacheln (1 Pixel = 1 Kachel, weiß = Kachel da), für den Horizont-Ring:
+## Nur dort versinkt er unter dem Boden. Sie liegt um das Auto und wandert mit.
+var chunk_mask: ImageTexture
+var mask_origin: Vector2 = Vector2.ZERO
+var mask_size: float = 1.0
+const MASK_CELLS: int = 32
+const MASK_HALF: int = 16
+var _mask_image: Image
+var _mask_center := Vector2i(1 << 30, 0)
+var _mask_dirty: bool = true
+## Geschwindigkeit des Ziels (x/z, Meter pro Sekunde), für das Laden in Fahrtrichtung
+var _velocity := Vector2.ZERO
+var _last_target := Vector2.ZERO
 var _trunk_shape := CylinderShape3D.new()
 var _rock_shape := SphereShape3D.new()
 
@@ -103,6 +125,13 @@ func start(gen: WorldGen, follow: Node3D, road_network: RoadNetwork) -> void:
 func _process(delta: float) -> void:
 	if world_gen == null or target == null:
 		return
+	# Tempo messen (weich, ein Sprung zählt nicht)
+	var here := Vector2(target.global_position.x, target.global_position.z)
+	if delta > 0.0:
+		var moved := here - _last_target
+		var now := moved / delta if moved.length() < 100.0 else Vector2.ZERO
+		_velocity = _velocity.lerp(now, clampf(delta * 3.0, 0.0, 1.0))
+	_last_target = here
 	_update_timer -= delta
 	if _collect_finished_jobs() > 0 or _update_timer <= 0.0:
 		_update_timer = update_interval
@@ -123,6 +152,8 @@ func _update_chunks() -> void:
 	var reach := ceili(view_distance / chunk_size)
 	var center_coord := Vector2i(floori(center.x / chunk_size), floori(center.y / chunk_size))
 	var todo: Array = []
+	# Bezugspunkt für die Reihenfolge: ein Stück voraus in Fahrtrichtung
+	var focus := center + (_velocity * lookahead_seconds).limit_length(max_lookahead)
 
 	for dz in range(-reach, reach + 1):
 		for dx in range(-reach, reach + 1):
@@ -137,7 +168,9 @@ func _update_chunks() -> void:
 				_chunks[coord] = chunk
 			var wanted_lod := _lod_for_distance(distance)
 			if chunk.lod != wanted_lod and chunk.task_id == -1:
-				todo.append([distance, chunk, wanted_lod])
+				# Fehlende Kacheln vor feineren Detailstufen, alles vom Bezugspunkt aus gesehen
+				var key := _distance_to_chunk(focus, coord) * (1.0 if chunk.lod == -1 else 1.5)
+				todo.append([key, chunk, wanted_lod])
 			_update_collision(chunk, distance)
 
 	# Kacheln, die weit genug weg sind, wieder löschen (mit etwas Puffer)
@@ -145,11 +178,14 @@ func _update_chunks() -> void:
 		if _distance_to_chunk(center, coord) > view_distance + 200.0:
 			_remove_chunk(_chunks[coord])
 
+	_update_mask(center_coord)
+
 	# Die nächsten Kacheln zuerst berechnen
 	todo.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
 	var road_checks := 0
+	var job_limit := fast_parallel_jobs if _velocity.length() * 3.6 > fast_speed_kmh else max_parallel_jobs
 	for entry: Array in todo:
-		if _running_jobs >= max_parallel_jobs or road_checks >= road_checks_per_update:
+		if _running_jobs >= job_limit or road_checks >= road_checks_per_update:
 			break
 		road_checks += 1
 		var chunk: Chunk = entry[1]
@@ -158,6 +194,31 @@ func _update_chunks() -> void:
 		if road_data.is_empty():
 			continue
 		_start_job(chunk, entry[2], road_data)
+
+
+## Karte der fertigen Kacheln neu zeichnen, wenn sich etwas geändert hat oder das Auto
+## zu weit von ihrer Mitte weg ist
+func _update_mask(center_coord: Vector2i) -> void:
+	if absi(center_coord.x - _mask_center.x) > 4 or absi(center_coord.y - _mask_center.y) > 4:
+		_mask_center = center_coord
+		_mask_dirty = true
+	if not _mask_dirty:
+		return
+	_mask_dirty = false
+	if _mask_image == null:
+		_mask_image = Image.create(MASK_CELLS, MASK_CELLS, false, Image.FORMAT_R8)
+	var first := _mask_center - Vector2i(MASK_HALF, MASK_HALF)
+	for y in MASK_CELLS:
+		for x in MASK_CELLS:
+			var chunk: Chunk = _chunks.get(first + Vector2i(x, y))
+			var loaded := chunk != null and not chunk.removed and chunk.mesh_instance != null
+			_mask_image.set_pixel(x, y, Color.WHITE if loaded else Color.BLACK)
+	if chunk_mask == null:
+		chunk_mask = ImageTexture.create_from_image(_mask_image)
+	else:
+		chunk_mask.update(_mask_image)
+	mask_origin = Vector2(first) * chunk_size
+	mask_size = MASK_CELLS * chunk_size
 
 
 func _chunk_rect(coord: Vector2i) -> Rect2:
@@ -215,6 +276,7 @@ func _apply_job(chunk: Chunk) -> void:
 		chunk.mesh_instance.position = Vector3(chunk.coord.x * chunk_size, 0.0, chunk.coord.y * chunk_size)
 		add_child(chunk.mesh_instance)
 	chunk.mesh_instance.mesh = mesh
+	_mask_dirty = true
 	_apply_water(chunk, job)
 	_apply_vegetation(chunk, job)
 	chunk.lod = job.lod
@@ -362,6 +424,7 @@ func _remove_chunk(chunk: Chunk) -> void:
 	if chunk.removed:
 		return
 	chunk.removed = true
+	_mask_dirty = true
 	if chunk.mesh_instance:
 		chunk.mesh_instance.queue_free()
 		chunk.mesh_instance = null

@@ -202,7 +202,7 @@ uv1_world_triplanar = true
 shader = ExtResource("10_terrain_shader")
 shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 shader_parameter/far_mode = true
-shader_parameter/sink_radius = 1850.0
+shader_parameter/sink_into_chunks = true
 
 [node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water", "grass", "garage", "map_tiles", "weather")]
 script = ExtResource("1_game")

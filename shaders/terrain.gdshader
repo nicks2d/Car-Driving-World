@@ -38,9 +38,13 @@ uniform float rock_slope_end = 0.28;
 uniform float snow_blend = 120.0;
 uniform float tree_line = 800.0;
 
-// Horizont-Ring: ohne Detail-Texturen, und unter den nahen Kacheln versteckt
+// Horizont-Ring: ohne Detail-Texturen. Wo schon Gelände-Kacheln liegen (chunk_mask, eine
+// kleine Karte vom TerrainManager: 1 = Kachel da), versinkt er darunter.
 uniform bool far_mode = false;
-uniform float sink_radius = 0.0;
+uniform bool sink_into_chunks = false;
+uniform sampler2D chunk_mask : filter_nearest;
+uniform vec2 mask_origin = vec2(0.0);
+uniform float mask_size = 1.0;
 
 // Wetter und Jahreszeit (globale Shader-Werte, setzt weather.gd)
 global uniform float wetness;
@@ -56,10 +60,14 @@ varying vec3 world_normal;
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	if (sink_radius > 0.0) {
-		// Ring-Teile innerhalb der Kachel-Sichtweite nach unten schieben
-		float d = length(world_pos.xz - CAMERA_POSITION_WORLD.xz);
-		float sink = clamp((sink_radius - d) / 300.0, 0.0, 1.0) * 120.0 + 4.0;
+	if (sink_into_chunks) {
+		// Ring-Teile unter fertigen Kacheln weit nach unten schieben, sonst nur ein Stück
+		vec2 uv = (world_pos.xz - mask_origin) / mask_size;
+		float loaded = 0.0;
+		if (uv.x >= 0.0 && uv.y >= 0.0 && uv.x < 1.0 && uv.y < 1.0) {
+			loaded = textureLod(chunk_mask, uv, 0.0).r;
+		}
+		float sink = loaded * 120.0 + 4.0;
 		VERTEX.y -= sink;
 		world_pos.y -= sink;
 	}
