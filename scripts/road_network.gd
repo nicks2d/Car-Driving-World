@@ -20,6 +20,11 @@ extends Node3D
 @export var shoulder_width: float = 1.5
 ## Höchste Steigung (0.10 = 10 %)
 @export var max_grade: float = 0.10
+## Wunschradius normaler Kurven und kleinster Radius in engen Kehren (Meter)
+@export var curve_radius: float = 60.0
+@export var min_curve_radius: float = 20.0
+## Querneigung in Kurven (0.05 = 5 %)
+@export var max_bank: float = 0.05
 ## Rasterabstand der Wegsuche (kleiner = genauer, aber langsamer)
 @export var grid_step: float = 18.0
 ## Radius der runden Kreuzungsfläche an einem Ort
@@ -331,6 +336,9 @@ func _dispatch() -> void:
 		segment.shoulder_width = shoulder_width
 		segment.max_grade = max_grade
 		segment.grid_step = grid_step
+		segment.curve_radius = curve_radius
+		segment.min_curve_radius = min_curve_radius
+		segment.max_bank = max_bank
 		var entry := Entry.new()
 		entry.segment = segment
 		entry.task_id = WorkerThreadPool.add_task(segment.build, false, "Straße")

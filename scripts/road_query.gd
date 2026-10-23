@@ -12,6 +12,8 @@ var _a := PackedVector3Array()
 var _b := PackedVector3Array()
 ## Halbe Breite des flachen Teils (Fahrbahn + Bankett) pro Stück
 var _core := PackedFloat32Array()
+## Querneigung pro Stück (positiv = linke Seite tiefer)
+var _bank := PackedFloat32Array()
 var _cells: Dictionary = {}  # Vector2i -> Array von Stück-Nummern
 
 
@@ -26,13 +28,14 @@ func _init(segments: Array, pads: PackedVector3Array, pad_radius: float, area: R
 			# Unter Brücken bleibt das Gelände, wie es ist (Fluss, Tal)
 			if segment.bridge[i] == 1 and segment.bridge[i + 1] == 1:
 				continue
-			_add_piece(segment.points[i], segment.points[i + 1], core, grown)
+			var piece_bank := (segment.bank[i] + segment.bank[i + 1]) * 0.5
+			_add_piece(segment.points[i], segment.points[i + 1], core, piece_bank, grown)
 	for pad in pads:
 		reach = maxf(reach, pad_radius + RoadSegment.MAX_BANK)
-		_add_piece(pad, pad, pad_radius, grown)
+		_add_piece(pad, pad, pad_radius, 0.0, grown)
 
 
-func _add_piece(a: Vector3, b: Vector3, core: float, area: Rect2) -> void:
+func _add_piece(a: Vector3, b: Vector3, core: float, piece_bank: float, area: Rect2) -> void:
 	var box := Rect2(a.x, a.z, 0.0, 0.0).expand(Vector2(b.x, b.z)).grow(core + RoadSegment.MAX_BANK)
 	if not box.intersects(area):
 		return
@@ -40,6 +43,7 @@ func _add_piece(a: Vector3, b: Vector3, core: float, area: Rect2) -> void:
 	_a.append(a)
 	_b.append(b)
 	_core.append(core)
+	_bank.append(piece_bank)
 	var c0 := Vector2i(floori(box.position.x / CELL), floori(box.position.y / CELL))
 	var c1 := Vector2i(floori(box.end.x / CELL), floori(box.end.y / CELL))
 	for cz in range(c0.y, c1.y + 1):
@@ -84,8 +88,13 @@ func carve(x: float, z: float, natural: float) -> Vector2:
 		var over := sqrt(dx * dx + dz * dz) - _core[index]
 		if over > RoadSegment.MAX_BANK:
 			continue
+		# Seitlicher Abstand zur Mittellinie (positiv = links), für die Querneigung
+		var lateral := 0.0
+		if len_sq > 0.0001:
+			lateral = (dx * abz - dz * abx) / sqrt(len_sq)
+		lateral = clampf(lateral, -_core[index], _core[index])
 		# Gelände knapp unter der Fahrbahn, daneben die Böschung
-		var target := lerpf(a.y, b.y, t) - 0.3
+		var target := lerpf(a.y, b.y, t) - _bank[index] * lateral - 0.3
 		if over < nearest_over:
 			nearest_over = over
 			road_height = target

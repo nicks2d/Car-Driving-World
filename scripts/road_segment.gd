@@ -3,7 +3,8 @@ extends RefCounted
 ## Ein Straßenabschnitt zwischen zwei Orten (Knoten). build() läuft im Hintergrund:
 ##  1. Wegsuche übers Gelände (A*): steil und Wasser sind teuer, so entstehen am Hang
 ##     von selbst Serpentinen und in der Ebene weite Bögen.
-##  2. Weg glätten (Ecken abrunden) und alle 4 m einen Punkt setzen.
+##  2. Trassierung wie im echten Straßenbau: Geraden und Kreisbögen, alle 4 m ein Punkt.
+##     Dazu die Querneigung in Kurven.
 ##  3. Höhenprofil glätten und die Steigung begrenzen (Gelände wird später angepasst).
 ##  4. Mesh-Daten für Fahrbahn und Kollision erzeugen.
 
@@ -20,6 +21,11 @@ var road_width: float = 9.0
 var shoulder_width: float = 1.5
 var max_grade: float = 0.10
 var grid_step: float = 18.0
+## Wunschradius normaler Kurven und kleinster erlaubter Radius (enge Kehren)
+var curve_radius: float = 60.0
+var min_curve_radius: float = 20.0
+## Querneigung in Kurven (0.05 = 5 %)
+var max_bank: float = 0.05
 
 # --- Ergebnisse ---
 ## Mittellinie, alle POINT_SPACING Meter ein Punkt, y = Höhe der Fahrbahn
@@ -28,6 +34,10 @@ var points: PackedVector3Array
 var ground: PackedFloat32Array
 ## 1 = an diesem Punkt ist die Straße eine Brücke (über Wasser oder hoch über dem Gelände)
 var bridge: PackedByteArray
+## Krümmung an jedem Punkt (1 / Radius): positiv = Linkskurve, 0 = Gerade
+var curvature: PackedFloat32Array
+## Querneigung an jedem Punkt: positiv = linke Seite tiefer (in Linkskurven), 0.05 = 5 %
+var bank: PackedFloat32Array
 ## Rechteck (x/z), in dem die Straße das Gelände beeinflusst
 var bounds: Rect2
 ## false = es gab keinen vernünftigen Weg, hier entsteht keine Straße
@@ -48,6 +58,8 @@ const BANK_SLOPE: float = 0.65
 const MAX_CUT: float = 35.0
 ## Höchste erlaubte Höhe über dem Gelände (Brücke)
 const MAX_FILL: float = 50.0
+## So lang ist die Straße an beiden Orten mindestens gerade (Platz für die Kreuzung)
+const END_STRAIGHT: float = 30.0
 ## Ab so vielen Metern über dem Gelände wird statt eines Damms eine Brücke gebaut
 const BRIDGE_HEIGHT: float = 7.0
 
@@ -56,12 +68,11 @@ func build() -> void:
 	var path := _find_path()
 	if path.size() < 2:
 		return
-	# Nur leicht vereinfachen: sonst werden die sanften Kehren der Wegsuche wieder zu Ecken
-	path = _simplify(path, 2.5)
-	for i in 3:
-		path = _chaikin(path)
-	_resample(path)
-	_relax(4)
+	# Kleine Zickzacks der Wegsuche entfernen: übrig bleibt ein Polygonzug aus langen Geraden
+	path = _simplify(path, 4.0)
+	if not _fit_curves(path):
+		return
+	_make_bank()
 	if not _make_profile():
 		return
 	_build_mesh()
@@ -177,9 +188,12 @@ func _find_path() -> PackedVector2Array:
 				+ (extra[next] + extra[mid]) * 0.5 * step / grid_step
 			if grade > max_grade:
 				step_cost += step * (grade - max_grade) * 250.0
-			# Scharfe Knicke kosten extra: eine Kehre muss aus mehreren sanften Knicken bestehen,
-			# sonst würden die beiden Straßenhälften übereinander liegen
+			# Knicke über 30° kosten extra, über 45° sind sie verboten: Eine Kehre besteht so
+			# aus mindestens vier Knicken und wird gut 40 m breit. Nur dann passt später ein
+			# Kreisbogen mit mindestens 20 m Radius hinein (siehe _fit_curves).
 			var turn_cos := incoming.dot(move_dirs[m])
+			if previous != -1 and turn_cos < 0.7:
+				continue
 			if turn_cos < 0.866:
 				step_cost += (0.866 - turn_cos) * 250.0
 			var new_cost := cost[current] + step_cost
@@ -317,32 +331,177 @@ func _distance_to_line(p: Vector2, a: Vector2, b: Vector2) -> float:
 	return p.distance_to(a + ab * t)
 
 
-## Chaikin: schneidet jede Ecke ab, der Weg wird mit jeder Runde runder
-func _chaikin(path: PackedVector2Array) -> PackedVector2Array:
-	var result := PackedVector2Array([path[0]])
-	for i in path.size() - 1:
-		var p := path[i]
-		var q := path[i + 1]
-		result.append(p.lerp(q, 0.25))
-		result.append(p.lerp(q, 0.75))
-	result.append(path[path.size() - 1])
+## Wie im echten Straßenbau: Der vereinfachte Weg ist ein Polygonzug aus Geraden. An jeden
+## Knick kommt ein Kreisbogen, der beide Geraden berührt. Der Radius ist so groß wie möglich
+## (mindestens curve_radius, bei kleinen Knicken mehr), die Bögen dürfen sich aber nicht
+## überlappen. Ist ein Bogen zu eng, werden zwei Knicke zu einem zusammengefasst:
+##  - unter min_curve_radius immer (klappt das nicht, gibt es hier keine Straße, false),
+##  - unter curve_radius nur, wenn sich der Weg dadurch höchstens 15 m verschiebt.
+func _fit_curves(poly: PackedVector2Array) -> bool:
+	# Knicke, bei denen sich das Zusammenfassen nicht lohnt (Weg würde zu weit wandern)
+	var keep := PackedVector2Array()
+	for attempt in 300:
+		var tangents := _tangent_lengths(poly)
+		var tightest := -1
+		var tightest_radius := INF
+		var candidate := -1
+		var candidate_radius := curve_radius
+		for c in range(1, poly.size() - 1):
+			var half := _corner_angle(poly, c) * 0.5
+			if half < 0.002:
+				continue
+			var radius := tangents[c] / tan(half)
+			if radius < tightest_radius:
+				tightest_radius = radius
+				tightest = c
+			if radius < candidate_radius and not _is_kept(keep, poly[c]):
+				candidate_radius = radius
+				candidate = c
+		if tightest_radius < min_curve_radius:
+			poly = _merge_corner(poly, tightest, INF)
+			if poly.size() < 2:
+				return false
+		elif candidate != -1:
+			var merged := _merge_corner(poly, candidate, 15.0)
+			if merged.size() < 2:
+				keep.append(poly[candidate])
+			else:
+				poly = merged
+		else:
+			_sample_curves(poly, tangents)
+			return true
+	return false
+
+
+func _is_kept(keep: PackedVector2Array, p: Vector2) -> bool:
+	for k in keep:
+		if k.distance_squared_to(p) < 0.01:
+			return true
+	return false
+
+
+## Knickwinkel (ohne Vorzeichen) am Punkt c des Polygonzugs
+func _corner_angle(poly: PackedVector2Array, c: int) -> float:
+	return absf((poly[c] - poly[c - 1]).angle_to(poly[c + 1] - poly[c]))
+
+
+## Platz auf der Geraden j (von Punkt j zu j+1) für die Bögen an ihren Enden
+func _room(poly: PackedVector2Array, j: int) -> float:
+	var room := poly[j].distance_to(poly[j + 1])
+	if j == 0:
+		room -= END_STRAIGHT
+	if j == poly.size() - 2:
+		room -= END_STRAIGHT
+	return maxf(room, 0.0)
+
+
+## Tangentenlänge jedes Bogens: so weit vor und nach dem Knick beginnt bzw. endet er.
+## Radius r und Knickwinkel w hängen so zusammen: Tangentenlänge = r * tan(w / 2).
+func _tangent_lengths(poly: PackedVector2Array) -> PackedFloat32Array:
+	var count := poly.size()
+	var want := PackedFloat32Array()
+	want.resize(count)
+	for c in range(1, count - 1):
+		var angle := _corner_angle(poly, c)
+		# Kleine Knicke bekommen größere Radien, solange der Bogen höchstens 8 m von der Ecke
+		# abweicht. So entstehen lange, weite Bögen statt kurzer Knicke.
+		var bulge := 1.0 / cos(angle * 0.5) - 1.0
+		var radius := clampf(8.0 / maxf(bulge, 0.00001), curve_radius, 500.0)
+		want[c] = radius * tan(angle * 0.5)
+	# Jede Gerade wird im Verhältnis der Wünsche zwischen ihren beiden Bögen aufgeteilt ...
+	var result := PackedFloat32Array()
+	result.resize(count)
+	for c in range(1, count - 1):
+		var share_in := _room(poly, c - 1) * want[c] / maxf(want[c - 1] + want[c], 0.0001)
+		var share_out := _room(poly, c) * want[c] / maxf(want[c] + want[c + 1], 0.0001)
+		result[c] = minf(want[c], minf(share_in, share_out))
+	# ... und was ein Nachbar nicht braucht, darf der andere nutzen
+	for c in range(1, count - 1):
+		var free_in := _room(poly, c - 1) - result[c - 1]
+		var free_out := _room(poly, c) - result[c + 1]
+		result[c] = maxf(minf(want[c], minf(free_in, free_out)), 0.0)
 	return result
 
 
-## Jeden Punkt etwas in die Mitte seiner Nachbarn ziehen: Kurven werden runder
-func _relax(rounds: int) -> void:
-	for r in rounds:
-		var smoothed := points.duplicate()
-		for i in range(1, points.size() - 1):
-			smoothed[i] = points[i - 1] * 0.25 + points[i] * 0.5 + points[i + 1] * 0.25
-		points = smoothed
+## Den Knick c mit einem Nachbarn zusammenfassen (über die kürzere Gerade hinweg).
+## Liegt diese Gerade an einem Ort, wird der Knick einfach entfernt.
+## Verschiebt sich der Weg dabei um mehr als max_shift Meter, gibt es kein Ergebnis (leer).
+func _merge_corner(poly: PackedVector2Array, c: int, max_shift: float) -> PackedVector2Array:
+	var last := poly.size() - 1
+	var options: Array[int] = [c - 1, c]
+	if _room(poly, c) < _room(poly, c - 1):
+		options = [c, c - 1]
+	for leg in options:
+		var result := poly.duplicate()
+		if leg == 0 or leg == last - 1:
+			if _distance_to_line(poly[c], poly[c - 1], poly[c + 1]) > max_shift:
+				continue
+			result.remove_at(c)
+			return result
+		# Die beiden Knicke an den Enden der Geraden „leg“
+		var a := leg
+		var b := leg + 1
+		var turn_a := (poly[a] - poly[a - 1]).angle_to(poly[a + 1] - poly[a])
+		var turn_b := (poly[b] - poly[b - 1]).angle_to(poly[b + 1] - poly[b])
+		var shift := 0.0
+		if signf(turn_a) != signf(turn_b):
+			# S-Kurve: beide Knicke durch einen in der Mitte ersetzen (die S-Kurve wird gerader)
+			result[a] = (poly[a] + poly[b]) * 0.5
+			shift = maxf(_distance_to_line(poly[a], poly[a - 1], result[a]),
+				_distance_to_line(poly[b], result[a], poly[b + 1]))
+		elif absf(turn_a + turn_b) < deg_to_rad(150.0):
+			# Gleiche Richtung: neuer Knick dort, wo sich die Geraden davor und danach schneiden
+			var d1 := (poly[a] - poly[a - 1]).normalized()
+			var d2 := (poly[b + 1] - poly[b]).normalized()
+			var s := (poly[b] - poly[a]).cross(d2) / d1.cross(d2)
+			result[a] = poly[a] + d1 * s
+			shift = _distance_to_line(result[a], poly[a], poly[b])
+		else:
+			# Fast eine Kehrtwende: daraus lässt sich kein einzelner Knick machen
+			continue
+		if shift > max_shift:
+			continue
+		result.remove_at(b)
+		return result
+	return PackedVector2Array()
 
 
-## Gleichmäßig alle POINT_SPACING Meter einen Punkt setzen
-func _resample(path: PackedVector2Array) -> void:
+## Geraden und Bögen abtasten (Bögen alle ~1 m), dann alle POINT_SPACING Meter einen Punkt
+func _sample_curves(poly: PackedVector2Array, tangents: PackedFloat32Array) -> void:
+	var dense := PackedVector2Array([poly[0]])
+	var dense_curvature := PackedFloat32Array([0.0])
+	for c in range(1, poly.size() - 1):
+		var d_in := (poly[c] - poly[c - 1]).normalized()
+		var turn := d_in.angle_to(poly[c + 1] - poly[c])
+		if tangents[c] < 0.01 or absf(turn) < 0.002:
+			dense.append(poly[c])
+			dense_curvature.append(0.0)
+			continue
+		var radius := tangents[c] / tan(absf(turn) * 0.5)
+		var arc_start := poly[c] - d_in * tangents[c]
+		# Der Kreismittelpunkt liegt auf der Innenseite der Kurve
+		var center := arc_start + d_in.rotated(signf(turn) * PI * 0.5) * radius
+		# Im Spiel zeigt „links“ in die Richtung, in die sich der Weg bei turn < 0 dreht
+		var k := -signf(turn) / radius
+		dense.append(arc_start)
+		dense_curvature.append(0.0)
+		var steps := maxi(ceili(absf(turn) * radius), 1)
+		for i in range(1, steps + 1):
+			dense.append(center + (arc_start - center).rotated(turn * i / steps))
+			dense_curvature.append(k)
+	dense.append(poly[poly.size() - 1])
+	dense_curvature.append(0.0)
+	_resample(dense, dense_curvature)
+
+
+## Gleichmäßig alle POINT_SPACING Meter einen Punkt setzen. Die Krümmung eines Stücks
+## steht beim Punkt an seinem Ende.
+func _resample(path: PackedVector2Array, path_curvature: PackedFloat32Array) -> void:
 	points = PackedVector3Array()
+	curvature = PackedFloat32Array()
 	var carry := 0.0
 	points.append(Vector3(path[0].x, 0.0, path[0].y))
+	curvature.append(0.0)
 	for i in path.size() - 1:
 		var a := path[i]
 		var b := path[i + 1]
@@ -351,11 +510,31 @@ func _resample(path: PackedVector2Array) -> void:
 		while t <= seg_len:
 			var p := a.lerp(b, t / seg_len)
 			points.append(Vector3(p.x, 0.0, p.y))
+			curvature.append(path_curvature[i + 1])
 			t += POINT_SPACING
 		carry = seg_len - (t - POINT_SPACING)
 	var last := path[path.size() - 1]
 	if Vector2(points[points.size() - 1].x, points[points.size() - 1].z).distance_to(last) > 0.5:
 		points.append(Vector3(last.x, 0.0, last.y))
+		curvature.append(0.0)
+
+
+## Querneigung: in Kurven neigt sich die Fahrbahn nach innen (enge Kurven max_bank,
+## weite weniger). Sie baut sich über etwa 50 m sanft auf und ab, an den Orten ist sie 0.
+func _make_bank() -> void:
+	var n := points.size()
+	var raw := PackedFloat32Array()
+	raw.resize(n)
+	for i in range(6, n - 6):
+		raw[i] = max_bank * clampf(curvature[i] * curve_radius, -1.0, 1.0)
+	bank = PackedFloat32Array()
+	bank.resize(n)
+	var window := 6
+	for i in n:
+		var total := 0.0
+		for j in range(i - window, i + window + 1):
+			total += raw[clampi(j, 0, n - 1)]
+		bank[i] = total / (2 * window + 1)
 
 
 # ---------------------------------------------------------------------------
@@ -445,16 +624,14 @@ func _build_mesh() -> void:
 	var uvs := PackedVector2Array()
 	var lefts := PackedVector3Array()
 	var distance := 0.0
-	var turns := _turn_radii()
 	for i in n:
 		var forward := direction_at(i)
 		var left := Vector3.UP.cross(forward).normalized()
-		var up := forward.cross(left).normalized()
+		# Querneigung: die Fahrbahn kippt zur Kurveninnenseite, die Normale mit ihr
+		var up := (Vector3.UP + left * bank[i]).normalized()
 		if i > 0:
 			distance += points[i].distance_to(points[i - 1])
 		lefts.append(left)
-		# In sehr engen Kurven die Innenseite schmaler machen, sonst überschlägt sich das Band
-		var inner_limit := absf(turns[i]) * 0.85
 		for k in 6:
 			var offset: float = side[k]
 			var height: float = drop[k]
@@ -462,11 +639,7 @@ func _build_mesh() -> void:
 			if bridge[i] == 1 and (k == 0 or k == 5):
 				offset = outer if k == 0 else -outer
 				height = -0.06
-			if turns[i] > 0.0 and offset > 0.0:
-				offset = minf(offset, inner_limit)
-			elif turns[i] < 0.0 and offset < 0.0:
-				offset = maxf(offset, -inner_limit)
-			verts.append(points[i] + left * offset + Vector3(0.0, height, 0.0) - origin)
+			verts.append(side_point(i, left, offset, height) - origin)
 			var normal: Vector3 = up
 			if k == 0:
 				normal = (up + left * 0.6).normalized()
@@ -528,16 +701,12 @@ func _build_bridges(lefts: PackedVector3Array) -> void:
 			j += 1
 		# Ein Brückenstück reicht von Punkt i bis j-1, einen Punkt Überlappung auf jeder Seite
 		for k in range(maxi(i - 1, 0), mini(j, n - 1)):
-			var p0 := points[k] - origin
-			var p1 := points[k + 1] - origin
 			for sgn: float in [1.0, -1.0]:
-				var l0: Vector3 = lefts[k] * sgn
-				var l1: Vector3 = lefts[k + 1] * sgn
-				var normal := ((l0 + l1) * 0.5).normalized()
-				var o0 := p0 + l0 * outer
-				var o1 := p1 + l1 * outer
-				var w0 := p0 + l0 * (outer - WALL_THICKNESS)
-				var w1 := p1 + l1 * (outer - WALL_THICKNESS)
+				var normal := ((lefts[k] + lefts[k + 1]) * 0.5 * sgn).normalized()
+				var o0 := side_point(k, lefts[k], outer * sgn, 0.0) - origin
+				var o1 := side_point(k + 1, lefts[k + 1], outer * sgn, 0.0) - origin
+				var w0 := side_point(k, lefts[k], (outer - WALL_THICKNESS) * sgn, 0.0) - origin
+				var w1 := side_point(k + 1, lefts[k + 1], (outer - WALL_THICKNESS) * sgn, 0.0) - origin
 				# Außenseite: Platte und Brüstung in einem Stück
 				_quad(o0 + down, o1 + down, o1 + wall, o0 + wall, normal)
 				# Oberkante und Innenseite der Brüstung
@@ -547,10 +716,10 @@ func _build_bridges(lefts: PackedVector3Array) -> void:
 				collision_faces.append_array([w0 + top + origin, w1 + top + origin, w1 + wall + origin,
 					w0 + top + origin, w1 + wall + origin, w0 + wall + origin])
 			# Unterseite der Platte
-			var a0 := p0 + lefts[k] * outer + down
-			var a1 := p1 + lefts[k + 1] * outer + down
-			var b0 := p0 - lefts[k] * outer + down
-			var b1 := p1 - lefts[k + 1] * outer + down
+			var a0 := side_point(k, lefts[k], outer, 0.0) - origin + down
+			var a1 := side_point(k + 1, lefts[k + 1], outer, 0.0) - origin + down
+			var b0 := side_point(k, lefts[k], -outer, 0.0) - origin + down
+			var b1 := side_point(k + 1, lefts[k + 1], -outer, 0.0) - origin + down
 			_quad(a0, a1, b1, b0, Vector3.DOWN)
 		# Pfeiler bis in den Boden
 		for k in range(i + 2, j - 2, PILLAR_EVERY):
@@ -564,6 +733,11 @@ func _build_bridges(lefts: PackedVector3Array) -> void:
 	bridge_arrays[Mesh.ARRAY_VERTEX] = _b_verts
 	bridge_arrays[Mesh.ARRAY_NORMAL] = _b_normals
 	bridge_arrays[Mesh.ARRAY_INDEX] = _b_indices
+
+
+## Punkt neben der Mittellinie (offset positiv = links), mit Querneigung
+func side_point(i: int, left: Vector3, offset: float, height: float) -> Vector3:
+	return points[i] + left * offset + Vector3(0.0, height - bank[i] * offset, 0.0)
 
 
 ## Viereck mit vier Ecken in Reihenfolge; die Vorderseite zeigt in Richtung normal
@@ -587,32 +761,6 @@ func _pillar(center: Vector3, bottom_y: float) -> void:
 		var c := center + normal * h
 		_quad(Vector3(c.x - t.x * h, y0, c.z - t.z * h), Vector3(c.x + t.x * h, y0, c.z + t.z * h),
 			Vector3(c.x + t.x * h, y1, c.z + t.z * h), Vector3(c.x - t.x * h, y1, c.z - t.z * h), normal)
-
-
-## Kurvenradius an jedem Punkt (kleinster Wert der Umgebung).
-## Positiv = Linkskurve, negativ = Rechtskurve, sehr groß = gerade.
-func _turn_radii() -> PackedFloat32Array:
-	var n := points.size()
-	var raw := PackedFloat32Array()
-	raw.resize(n)
-	raw.fill(100000.0)
-	for i in range(1, n - 1):
-		var d_prev := points[i] - points[i - 1]
-		var d_next := points[i + 1] - points[i]
-		d_prev.y = 0.0
-		d_next.y = 0.0
-		var angle := d_prev.angle_to(d_next)
-		var radius := POINT_SPACING / maxf(angle, 0.0001)
-		raw[i] = radius if d_prev.cross(d_next).y > 0.0 else -radius
-	var result := PackedFloat32Array()
-	result.resize(n)
-	for i in n:
-		var tightest := raw[i]
-		for j in range(maxi(i - 2, 0), mini(i + 3, n)):
-			if absf(raw[j]) < absf(tightest):
-				tightest = raw[j]
-		result[i] = tightest
-	return result
 
 
 ## Fahrtrichtung am Punkt i (Mittel aus Richtung davor und danach)
