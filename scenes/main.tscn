@@ -31,6 +31,7 @@
 [ext_resource type="Shader" path="res://shaders/foliage.gdshader" id="29_foliage"]
 [ext_resource type="Shader" path="res://shaders/grass.gdshader" id="30_grass"]
 [ext_resource type="Script" path="res://scripts/grass_manager.gd" id="31_grass"]
+[ext_resource type="Script" path="res://scripts/tachometer.gd" id="50_tacho"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -255,6 +256,23 @@ text = "0 km/h"
 horizontal_alignment = 2
 vertical_alignment = 2
 script = ExtResource("5_hud")
+car = NodePath("../../Car")
+
+[node name="Tachometer" type="Control" parent="HUD" node_paths=PackedStringArray("car")]
+layout_mode = 3
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -250.0
+offset_top = -330.0
+offset_right = -40.0
+offset_bottom = -120.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("50_tacho")
 car = NodePath("../../Car")
 
 [node name="FpsLabel" type="Label" parent="HUD" node_paths=PackedStringArray("terrain")]
