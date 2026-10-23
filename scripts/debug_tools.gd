@@ -48,6 +48,8 @@ var _timer: float = 0.0
 var _frame_times: PackedFloat32Array = PackedFloat32Array()
 var _gpu_times: PackedFloat32Array = PackedFloat32Array()
 var _cpu_times: PackedFloat32Array = PackedFloat32Array()
+var _process_times: PackedFloat32Array = PackedFloat32Array()
+var _physics_times: PackedFloat32Array = PackedFloat32Array()
 var _load_start_msec: int = 0
 var _route: PackedVector3Array = PackedVector3Array()
 var _route_index: int = 0
@@ -155,6 +157,8 @@ func _process(delta: float) -> void:
 			_cpu_times.append(RenderingServer.viewport_get_measured_render_time_cpu(viewport_rid)
 				+ Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 				+ Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
+			_process_times.append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
+			_physics_times.append(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
 			if _bench_shot_time > 0.0 and _timer >= _bench_shot_time:
 				_bench_shot_time = -1.0
 				_save_image("bench_%d" % int(_timer))
@@ -317,6 +321,8 @@ func _print_bench() -> void:
 	var p99 := sorted[int(count * 0.99)]
 	print("BENCH frames=%d fps_avg=%.1f fps_1pct_low=%.1f worst_frame_ms=%.1f" % [
 		count, count / total, 1.0 / p99, worst * 1000.0])
+	# Aufgeteilt: Skripte (_process) und Physik-Schritte (inkl. _physics_process)
+	print("BENCH process_ms avg=%.2f | physics_ms avg=%.2f" % [_average(_process_times), _average(_physics_times)])
 	# Rechenzeit pro Bild: unter 16,7 ms reicht es für 60 FPS
 	print("BENCH gpu_ms avg=%.2f p99=%.2f | cpu_ms avg=%.2f p99=%.2f" % [
 		_average(_gpu_times), _percentile(_gpu_times, 0.99), _average(_cpu_times), _percentile(_cpu_times, 0.99)])

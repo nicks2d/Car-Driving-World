@@ -22,6 +22,11 @@ extends Node3D
 @export var max_parallel_jobs: int = 6
 ## So viele fertige Kacheln werden pro Bild eingebaut (mehr = schneller, aber Ruckelgefahr)
 @export var max_uploads_per_frame: int = 2
+## So oft (Sekunden) wird geprüft, welche Kacheln gebraucht werden (und sofort, wenn eine
+## Kachel fertig wurde). Jedes Bild wäre unnötig teuer.
+@export var update_interval: float = 0.1
+## Höchstens so viele wartende Kacheln fragen pro Prüfung, ob ihre Straßen fertig sind
+@export var road_checks_per_update: int = 6
 
 @export_group("Vegetation")
 ## Material für Bäume und Büsche (foliage.gdshader) und für Felsen
@@ -41,6 +46,7 @@ var target: Node3D
 var roads: RoadNetwork
 var _chunks: Dictionary = {}  # Vector2i -> Chunk
 var _running_jobs: int = 0
+var _update_timer: float = 0.0
 ## Pflanzen-Modelle: Art -> [nah, fern]
 var _veg_meshes: Dictionary = {}
 var _trunk_shape := CylinderShape3D.new()
@@ -85,11 +91,13 @@ func start(gen: WorldGen, follow: Node3D, road_network: RoadNetwork) -> void:
 	_rock_shape.radius = 1.0
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if world_gen == null or target == null:
 		return
-	_collect_finished_jobs()
-	_update_chunks()
+	_update_timer -= delta
+	if _collect_finished_jobs() > 0 or _update_timer <= 0.0:
+		_update_timer = update_interval
+		_update_chunks()
 
 
 func _exit_tree() -> void:
@@ -130,9 +138,11 @@ func _update_chunks() -> void:
 
 	# Die nächsten Kacheln zuerst berechnen
 	todo.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var road_checks := 0
 	for entry: Array in todo:
-		if _running_jobs >= max_parallel_jobs:
+		if _running_jobs >= max_parallel_jobs or road_checks >= road_checks_per_update:
 			break
+		road_checks += 1
 		var chunk: Chunk = entry[1]
 		# Erst bauen, wenn alle Straßen in der Nähe fertig berechnet sind
 		var road_data := roads.segments_for_rect(_chunk_rect(chunk.coord))
@@ -162,7 +172,8 @@ func _start_job(chunk: Chunk, lod: int, road_data: Dictionary) -> void:
 	_running_jobs += 1
 
 
-func _collect_finished_jobs() -> void:
+## Fertige Hintergrund-Aufträge einbauen. Gibt zurück, wie viele es waren.
+func _collect_finished_jobs() -> int:
 	var uploads := 0
 	for chunk: Chunk in _chunks.values():
 		if chunk.task_id == -1 or not WorkerThreadPool.is_task_completed(chunk.task_id):
@@ -181,6 +192,7 @@ func _collect_finished_jobs() -> void:
 		var chunk: Chunk = _chunks[coord]
 		if chunk.removed and chunk.task_id == -1:
 			_chunks.erase(coord)
+	return uploads
 
 
 func _apply_job(chunk: Chunk) -> void:

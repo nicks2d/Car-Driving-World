@@ -49,6 +49,9 @@ extends Node3D
 @export var collision_distance: float = 600.0
 ## So viele Aufträge laufen gleichzeitig im Hintergrund
 @export var max_parallel_jobs: int = 4
+## So oft (Sekunden) wird das Netz rund ums Auto aktualisiert (und sofort, wenn ein
+## Auftrag fertig wurde). Jedes Bild wäre unnötig teuer.
+@export var update_interval: float = 0.1
 
 ## Die Schritte eines Abschnitts (in dieser Reihenfolge)
 enum State { BUILDING, BUILT, CHECKING, CHECKED, MESHING, READY }
@@ -70,6 +73,7 @@ var _edge_cache: Dictionary = {}  # Vector3i -> bool (gibt es diese Verbindung?)
 var _junctions: Dictionary = {}  # Vector2i -> RoadJunction
 var _departures: Dictionary = {}  # Vector2i -> Dictionary (Nachbarzelle -> Richtung)
 var _running: int = 0
+var _update_timer: float = 0.0
 
 
 ## Ein Straßenabschnitt und was dazu in der Szene steht
@@ -111,10 +115,13 @@ func start(gen: WorldGen, follow: Node3D) -> void:
 		(road_material as ShaderMaterial).set_shader_parameter("road_width", road_width)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if world_gen == null or target == null:
 		return
-	_collect_finished()
+	_update_timer -= delta
+	if _collect_finished() == 0 and _update_timer > 0.0:
+		return
+	_update_timer = update_interval
 	_prefetch()
 	_advance()
 	_dispatch()
@@ -518,13 +525,16 @@ func _dispatch() -> void:
 		_running += 1
 
 
-func _collect_finished() -> void:
+## Fertige Hintergrund-Aufträge übernehmen. Gibt zurück, wie viele es waren.
+func _collect_finished() -> int:
+	var finished := 0
 	for entry: Entry in _entries.values():
 		if entry.task_id == -1 or not WorkerThreadPool.is_task_completed(entry.task_id):
 			continue
 		WorkerThreadPool.wait_for_task_completion(entry.task_id)
 		entry.task_id = -1
 		_running -= 1
+		finished += 1
 		match entry.state:
 			State.BUILDING:
 				entry.state = State.BUILT
@@ -534,6 +544,7 @@ func _collect_finished() -> void:
 				entry.state = State.CHECKED
 			State.MESHING:
 				entry.state = State.READY
+	return finished
 
 
 ## Berechnete Abschnitte prüfen und geprüfte (in Sichtweite) zu Meshes machen

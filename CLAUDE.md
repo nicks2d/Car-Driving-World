@@ -99,6 +99,10 @@ assets/
 - [x] Meilenstein 5 (Flüsse, Seen, Wasser-Shader, Brücken, Auto im Wasser)
 - [x] Meilenstein 6 (Bäume, Büsche, Felsen, Gras mit Wind, Stamm-Kollision)
 - [x] Meilenstein 7 (BMW M2 Competition: Modell, Antrieb, Licht, Spuren, Rauch, Sound)
+- [x] Extra: Autoauswahl mit Garage (5 BMW, Profile, Showroom, Sound pro Motor)
+- [ ] Extra: Minimap mit Navi
+- [ ] Extra: Wetter und Jahreszeiten
+- [ ] Extra: Tunnel
 - [ ] Meilenstein 8
 - [ ] Meilenstein 9
 
@@ -127,7 +131,32 @@ assets/
 - Fahrwerte M7 (Test auf flacher Ebene, Skript im Scratchpad): 0–100 in 4,18 s, 0–200 in
   12,4 s, Spitze 250 km/h (abgeregelt), 100–0 in 33,2 m (`brake_strength` 76).
   Kurve + Vollgas: Heck kommt progressiv bis ~15°, fängt sich nach Gas weg.
-- BMW-Modell (`car_model.gd`): liegt NICHT im Repo (CC BY-NC-ND), Anleitung in
+- Autos: fünf Profile in `cars/*.tres` (`CarProfile`): M2 (F87), M3 (E30), M3 GTS (E92),
+  M5 Competition (F90), M5 (G90). Alles Auto-Spezifische steht dort (Modell, Teile-Muster,
+  Maße, Motor, Getriebe, Allrad-Anteil `front_drive_share`, Bremsen, Sound). `Car.apply_profile()`
+  stellt um, auch während des Spiels. Godot übernimmt den Befestigungspunkt eines Rads nur
+  beim Einhängen (ENTER_TREE) und die Physik überschreibt die Lage der Rad-Knoten (beim
+  eingefrorenen Auto sogar mit Unsinn): deshalb Räder kurz aus- und einhängen und Radmitten
+  immer aus dem Profil rechnen (`Car.resting_wheel_center`).
+- Gemessen (flache Ebene): M2 4,18 s / 250 / 33,2 m; E30 6,75 s / 234 / 37,5 m;
+  E92 4,37 s / 304 / 34,0 m; F90 3,27 s / 250 / 33,1 m; G90 3,52 s / 250 / 33,4 m
+  (0–100, Spitze km/h, Bremsweg 100–0). Stellschraube für 0–100: `max_drive_force`.
+  Kurve + Vollgas: E30 ~20°, E92 ~20° Driftwinkel, beide M5 bleiben bei ~3° (Allrad).
+- Modell-Lader (`car_model.gd`, `CarModel`): lädt im Hintergrund, teilt Rad-Meshes, die alle
+  vier Räder enthalten, nach Ecken (E92, F90; Vertex-Listen werden dabei verkleinert, sonst
+  hat jedes Teil die Bounding-Box des Ganzen), stellt eingeschlagene Vorderräder gerade (E30:
+  Achse = Richtung kleinster Streuung der Punkte), fasst Teile pro Material zusammen (G90:
+  1213 → 33 Draw Calls), trennt Licht-Meshes in vorne/hinten. `measured` enthält die am
+  Modell gemessenen Maße (Radstand, Spur, Radradius) zum Abgleich mit dem Profil.
+- Modell-Texturen: `tools/setup_models.gd` stellt alle auf max. 2048 px, Mipmaps und
+  VRAM-Kompression (vorher waren sogar die M2-Texturen unkomprimiert ohne Mipmaps, die
+  E30-Texturen 8K). Muss nach jedem neuen Modell-Download einmal laufen (README).
+- Garage (`garage.gd`, Taste G, beim Start): eigene 3D-Welt (SubViewport) mit Boden,
+  Licht ohne Glanzpunkte (sonst Flecken im Boden), SSR nur dort. Spiel pausiert, Gelände,
+  Straßen, Wasser, Gras und Horizont laufen mit `process_mode = Always` weiter (die Welt lädt
+  im Hintergrund). Auto und Farbe: `user://einstellungen.cfg`. Tests (`--shot`, `--bench`,
+  `--car=ID`) öffnen keine Garage und fahren das angegebene bzw. erste Auto.
+- BMW-Modelle (`car_model.gd`): liegen NICHT im Repo (Lizenzen), Anleitung in
   `assets/models/README.md`; ohne Modell fährt die Platzhalter-Box mit gleicher Physik.
   Das Modell wird auf die Physik-Räder skaliert (Radstand). Radgruppen `wms13p*` hängen an
   den VehicleWheel3D (drehen/lenken/federn), Bremssättel `polySurface*` an eigenen Haltern,
@@ -158,7 +187,14 @@ assets/
 - Testen: `Godot --path . -- --shot=NAME --pos=X,Z --heading=G --fly=H --time=H` speichert
   `screenshots/NAME.png`. `-- --bench=20` misst FPS (siehe `scripts/debug_tools.gd`).
   `--carview=G` stellt die Kamera neben das Auto (0 = vorne, 180 = hinten), `--steer=left`
-  lenkt dabei (Vorderräder prüfen).
+  lenkt dabei (Vorderräder prüfen), `--car=e30` startet mit diesem Auto.
+- Tasten: WASD fahren, Leertaste Handbremse, R aufrichten, T Zeitraffer, F3 FPS,
+  C Lackfarbe, K Aufkleber, L Licht, G Garage.
+- Leistung: Gelände- und Straßen-Manager prüfen ihre Umgebung nur alle 0,1 s (und sofort,
+  wenn ein Auftrag fertig ist), Gelände fragt pro Prüfung höchstens 6 wartende Kacheln nach
+  Straßen. Vorher kosteten sie 6,7 ms pro Bild, jetzt ~0,9 ms (`update_interval`).
+  Messen: `-- --bench=60` gibt jetzt auch process_ms und physics_ms aus. Achtung: nach einer
+  Stunde Dauertest war selbst der alte Stand (M7) headless 2,5-mal langsamer (Wärme).
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in
