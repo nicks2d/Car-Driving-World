@@ -98,7 +98,7 @@ assets/
 - [x] Meilenstein 4 (Straßennetz mit Serpentinen, Geländeanpassung, Start auf Straße)
 - [x] Meilenstein 5 (Flüsse, Seen, Wasser-Shader, Brücken, Auto im Wasser)
 - [x] Meilenstein 6 (Bäume, Büsche, Felsen, Gras mit Wind, Stamm-Kollision)
-- [ ] Meilenstein 7
+- [x] Meilenstein 7 (BMW M2 Competition: Modell, Antrieb, Licht, Spuren, Rauch, Sound)
 - [ ] Meilenstein 8
 - [ ] Meilenstein 9
 
@@ -114,8 +114,33 @@ assets/
   Beim Auto daher `linear_damp_mode = Replace` mit 0, Luftwiderstand macht `car.gd` selbst.
 - Physik-Interpolation ist an. Was dem Auto folgt (Kamera), bewegt sich in
   `_physics_process`, dann bleibt es auch auf 120-Hz-Bildschirmen flüssig.
-- Fahrwerte laut Testfahrt (Stand M1): 0–100 km/h in 5,8 s, Spitze ca. 220 km/h,
+- Fahrwerte laut Testfahrt (Stand M1, Platzhalter): 0–100 km/h in 5,8 s, Spitze ca. 220 km/h,
   100–0 km/h in 42 m, ca. 1,2 g in Kurven, kippt nicht um.
+- Auto ab M7 = BMW M2 Competition (F87), `car.gd` heißt `Car`: 1575 kg, 50:50 (Schwerpunkt
+  in der Mitte zwischen den Achsen), Radstand 2,69 m, Spur 1,59/1,64 m, Radradius 0,33 m.
+  S55-Drehmomentkurve (550 Nm ab 2350, 302 kW bis 7000, Begrenzer 7600), 7-Gang-DKG mit
+  echten Übersetzungen (Achse 3,462), Schaltpunkte je nach Gas, Kickdown, 0,12 s Schaltpause.
+  Traktionsgrenze `max_drive_force` 11 kN (sonst viel zu schnell: Godots Reifenmodell zählt
+  Antriebskraft nur halb gegen den Seitenhalt). Deshalb nachgebildet: Vollgas in schnellen
+  Kurven kostet hinten bis 12 % Grip (`power_oversteer`, quadratisch mit dem Gas), eine
+  Fahrhilfe nimmt ab 15° Driftwinkel Leistung weg (`drift_angle_limit`).
+- Fahrwerte M7 (Test auf flacher Ebene, Skript im Scratchpad): 0–100 in 4,18 s, 0–200 in
+  12,4 s, Spitze 250 km/h (abgeregelt), 100–0 in 33,2 m (`brake_strength` 76).
+  Kurve + Vollgas: Heck kommt progressiv bis ~15°, fängt sich nach Gas weg.
+- BMW-Modell (`car_model.gd`): liegt NICHT im Repo (CC BY-NC-ND), Anleitung in
+  `assets/models/README.md`; ohne Modell fährt die Platzhalter-Box mit gleicher Physik.
+  Das Modell wird auf die Physik-Räder skaliert (Radstand). Radgruppen `wms13p*` hängen an
+  den VehicleWheel3D (drehen/lenken/federn), Bremssättel `polySurface*` an eigenen Haltern,
+  die nur lenken. Die Karosserie heißt im Modell „painted_carbon“ (Carbon-Widebody) und
+  bekommt den Lack. Motor ausgeblendet, nur Karosserie/Carbon/Reifen werfen Schatten,
+  Innenraum/Felgen/Auspuff mit niedrigerem `lod_bias`. Kostet ca. 3 FPS (74 → 71).
+- Licht: zwei SpotLight3D (nur eins mit Schatten), an bei Sonne unter 4° oder per L.
+  Rücklicht-Emission wird beim Bremsen heller (`Car.braking`).
+- Reifenspuren: MultiMesh-Ringpuffer mit 3000 Stücken, Rauch: GPUParticles3D pro Hinterrad.
+  Rutschen pro Rad = `Car.wheel_slip()` (get_skidinfo + Driftwinkel).
+- Sound prozedural (`engine_sound.gd`, AudioStreamGenerator 22 kHz): Tabelle mit 6 Zündungen
+  pro Arbeitsspiel (720°), je Zylinder etwas andere Lautstärke, Abspielrate = Drehzahl/120.
+  Last-/Schub-Tabelle überblendet, dazu Ansaugrauschen, Turbo, Begrenzer, Schaltknall, Quietschen.
 - Welt-Formel: `scripts/world_gen.gd` (Resource, im Inspector am Main-Node). Seed 1337.
   Höhe = Talboden (großräumig 60–180 m) + Relief (Hügel + Bergketten bis ~1.900 m).
   Flüsse = Null-Linien eines Rauschens, das Relief wird dort zum Tal abgesenkt.
@@ -132,6 +157,10 @@ assets/
   Im Fenster lässt macOS V-Sync nicht abschalten, für FPS-Messungen `--fullscreen` nutzen.
 - Testen: `Godot --path . -- --shot=NAME --pos=X,Z --heading=G --fly=H --time=H` speichert
   `screenshots/NAME.png`. `-- --bench=20` misst FPS (siehe `scripts/debug_tools.gd`).
+  `--carview=G` stellt die Kamera neben das Auto (0 = vorne, 180 = hinten), `--steer=left`
+  lenkt dabei (Vorderräder prüfen).
+- Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
+  meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in
   `day_night.gd` (Sonnenhöhe -18° bis +40°). Nachts wird das Sonnenlicht zum Mondlicht.
   Sky-Radiance `process_mode = Incremental` (Realtime kostet merklich FPS).
