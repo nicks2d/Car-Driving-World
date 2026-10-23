@@ -80,6 +80,5 @@ common/physics_interpolation=true
 
 [rendering]
 
-renderer/rendering_method="forward_plus"
 scaling_3d/mode=4
 scaling_3d/scale=0.75

@@ -19,6 +19,9 @@ Thumbs.db
 # Screenshots vom Screenshot-Werkzeug
 /screenshots/
 
-# BMW-Modell (Lizenz CC BY-NC-ND 4.0, darf nicht weitergegeben werden).
+# Automodelle: Ihre Lizenzen (CC BY, CC BY-NC-ND, CC BY-NC-SA) erlauben keine bzw. nur
+# eingeschränkte Weitergabe, deshalb bleiben alle Modelle aus dem Repo.
 # Download-Anleitung: assets/models/README.md
-/assets/models/bmw_m2/
+/assets/models/*
+!/assets/models/README.md
+!/assets/models/.gitkeep
