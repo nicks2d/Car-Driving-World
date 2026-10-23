@@ -13,6 +13,9 @@ extends Node
 ## --fly=H        Kamera H Meter über das Auto setzen (Überblicks-Bild)
 ## --pitch=G      Neigung dieser Überblicks-Kamera in Grad (Standard -10)
 ## --lookat=X,Z   Überblicks-Kamera schaut auf diesen Punkt (statt in Fahrtrichtung)
+## --carview=G    Kamera neben dem Auto, Blick aufs Auto (0 = von vorne, 90 = von links,
+##                180 = von hinten), z. B. um das Automodell anzuschauen
+## --steer=left   beim Screenshot nach links (oder right) lenken, um die Vorderräder zu prüfen
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
 ## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png)
@@ -33,6 +36,8 @@ var _fly_height: float = 0.0
 var _pitch: float = -10.0
 var _look_at: Vector2 = Vector2.ZERO
 var _has_look_at: bool = false
+var _car_view: float = -1.0
+var _steer: String = ""
 var _bench_seconds: float = 0.0
 var _game: Node3D
 var _state: String = "idle"
@@ -79,6 +84,10 @@ func _ready() -> void:
 				var xz := value.split(",")
 				_look_at = Vector2(float(xz[0]), float(xz[1]))
 				_has_look_at = true
+			"carview":
+				_car_view = float(value)
+			"steer":
+				_steer = value
 			"bench":
 				_bench_seconds = float(value)
 			"volfog":
@@ -93,6 +102,10 @@ func on_world_ready(game: Node3D) -> void:
 	print("Welt geladen nach %.1f s" % ((Time.get_ticks_msec() - _load_start_msec) / 1000.0))
 	if _fly_height > 0.0:
 		_place_fly_camera()
+	if _car_view >= 0.0:
+		_place_car_view_camera()
+	if _steer != "":
+		Input.action_press("steer_left" if _steer == "left" else "steer_right")
 	if _shot_name != "":
 		_state = "wait_for_terrain"
 	elif _bench_seconds > 0.0:
@@ -117,6 +130,8 @@ func _process(delta: float) -> void:
 			_timer -= delta
 			if _fly_height > 0.0:
 				_place_fly_camera()
+			if _car_view >= 0.0:
+				_place_car_view_camera()
 			if _timer <= 0.0:
 				_state = "done"
 				_take_screenshot()
@@ -244,6 +259,19 @@ func _place_fly_camera() -> void:
 	var eye := car.global_position + Vector3.UP * _fly_height - forward * _fly_height * 0.8
 	var yaw := atan2(forward.x, forward.z)
 	camera.global_transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(_pitch), yaw + PI, 0.0)), eye)
+	camera.reset_physics_interpolation()
+
+
+## Kamera 5,5 m neben dem Auto auf Augenhöhe, Blick auf die Automitte
+func _place_car_view_camera() -> void:
+	var car: VehicleBody3D = _game.car
+	camera.set_physics_process(false)
+	var forward := car.global_basis.z
+	forward.y = 0.0
+	var direction := forward.normalized().rotated(Vector3.UP, deg_to_rad(_car_view))
+	var target := car.global_position + Vector3.UP * 0.3
+	var eye := target + direction * 5.5 + Vector3.UP * 0.9
+	camera.global_transform = Transform3D(Basis.looking_at(target - eye), eye)
 	camera.reset_physics_interpolation()
 
 

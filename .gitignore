@@ -18,3 +18,7 @@ Thumbs.db
 
 # Screenshots vom Screenshot-Werkzeug
 /screenshots/
+
+# BMW-Modell (Lizenz CC BY-NC-ND 4.0, darf nicht weitergegeben werden).
+# Download-Anleitung: assets/models/README.md
+/assets/models/bmw_m2/

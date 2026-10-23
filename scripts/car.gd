@@ -45,6 +45,9 @@ extends VehicleBody3D
 ## Fällt das Auto unter diese Höhe (z. B. vom Rand der Welt), geht es zurück zum Start
 @export var fall_limit_y: float = -20.0
 
+## Wird gerade gebremst? (für die Bremslichter)
+var braking: bool = false
+
 var _steer_input: float = 0.0
 var _traction_wheel_count: int = 0
 var _rear_grip: float = 1.0
@@ -119,6 +122,7 @@ func _update_engine_and_brakes(forward_speed: float) -> void:
 	# Godot erwartet die Kraft pro Antriebsrad
 	engine_force = drive_force / maxi(_traction_wheel_count, 1)
 	brake = brake_value
+	braking = brake_value > engine_brake_strength
 
 
 ## Antriebskraft des Motors bei einem bestimmten Tempo (m/s).

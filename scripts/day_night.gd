@@ -67,6 +67,8 @@ var _sky_material: ShaderMaterial
 
 
 func _ready() -> void:
+	# Damit andere (z. B. das Auto für die Scheinwerfer) den Tag-Nacht-Wechsel finden
+	add_to_group("day_night")
 	var env := world_environment.environment
 	_sky_material = env.sky.sky_material as ShaderMaterial
 	env.fog_density = fog_density
