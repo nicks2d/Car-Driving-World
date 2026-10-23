@@ -23,6 +23,9 @@ uniform float wave_strength = 0.5;
 // Fließgeschwindigkeit von Flüssen (Meter pro Sekunde)
 uniform float flow_speed = 1.3;
 
+// Regen raut die Oberfläche auf (globaler Wert vom Wetter)
+global uniform float rain_amount;
+
 varying vec3 world_pos;
 
 void vertex() {
@@ -37,7 +40,7 @@ void fragment() {
 	vec3 n1 = texture(wave_normal_a, base + drift + vec2(TIME * 0.011, TIME * 0.006)).rgb;
 	vec3 n2 = texture(wave_normal_b, base * 1.9 + drift * 1.4 - vec2(TIME * 0.008, -TIME * 0.010)).rgb;
 	NORMAL_MAP = mix(n1, n2, 0.5);
-	NORMAL_MAP_DEPTH = wave_strength;
+	NORMAL_MAP_DEPTH = wave_strength * (1.0 + rain_amount * 1.5);
 
 	// --- Wie viel Wasser liegt zwischen Oberfläche und Boden dahinter? ---
 	float depth_raw = texture(depth_texture, SCREEN_UV).r;
@@ -53,6 +56,6 @@ void fragment() {
 	vec3 color = mix(shallow_color, deep_color, sqrt(deep));
 	ALBEDO = mix(color, foam_color, foam);
 	ALPHA = clamp(mix(0.45, 0.97, deep) + foam, 0.0, 1.0);
-	ROUGHNESS = mix(0.04, 0.6, foam);
+	ROUGHNESS = mix(0.04 + rain_amount * 0.12, 0.6, foam);
 	SPECULAR = 0.6;
 }

@@ -3,6 +3,7 @@ extends Node3D
 ## Spuren: viele kleine dunkle Streifen in einem MultiMesh. Ist der Vorrat aufgebraucht,
 ## wird der älteste Streifen wiederverwendet, so bleibt die Rechenzeit immer gleich.
 ## Rauch: ein Partikelsystem an jedem Hinterrad.
+## Gischt: auf nasser oder verschneiter Straße sprüht hinter den Hinterrädern feiner Nebel.
 
 ## So viele Spur-Stücke gibt es höchstens (je ca. 0,4 m lang)
 @export var max_marks: int = 3000
@@ -13,6 +14,10 @@ extends Node3D
 @export_range(0.0, 1.0) var mark_opacity: float = 0.75
 ## Ab so viel Rutschen raucht es an den Hinterrädern
 @export_range(0.0, 1.0) var smoke_threshold: float = 0.45
+## Gischt ab dieser Nässe (0 bis 1) und diesem Tempo (km/h); volle Stärke bei full_spray_kmh
+@export_range(0.0, 1.0) var spray_wetness: float = 0.25
+@export var spray_min_kmh: float = 25.0
+@export var full_spray_kmh: float = 160.0
 
 const MARK_STEP: float = 0.4
 
@@ -23,6 +28,7 @@ var _last_points: Array = []
 var _marks: MultiMesh
 var _next_mark: int = 0
 var _smokes: Array[GPUParticles3D] = []
+var _sprays: Array[GPUParticles3D] = []
 
 
 func _ready() -> void:
@@ -36,6 +42,7 @@ func _ready() -> void:
 	for wheel in _wheels:
 		if _is_rear(wheel):
 			_smokes.append(_create_smoke(wheel))
+			_sprays.append(_create_spray(wheel))
 	_car.profile_changed.connect(_on_profile_changed)
 
 
@@ -50,6 +57,8 @@ func _on_profile_changed(profile: CarProfile) -> void:
 	# Ecken 2 und 3 sind hinten links und hinten rechts
 	for i in _smokes.size():
 		_smokes[i].position = Car.resting_wheel_center(profile, 2 + i) + Vector3(0.0, -0.2, -0.1)
+	for i in _sprays.size():
+		_sprays[i].position = Car.resting_wheel_center(profile, 2 + i) + Vector3(0.0, -0.2, -0.35)
 
 
 func _physics_process(_delta: float) -> void:
@@ -63,6 +72,10 @@ func _physics_process(_delta: float) -> void:
 			smoke_index += 1
 			smoke.emitting = slip > smoke_threshold
 			smoke.amount_ratio = clampf((slip - smoke_threshold) / (1.0 - smoke_threshold) + 0.3, 0.0, 1.0)
+	var speed_kmh := _car.linear_velocity.length() * 3.6
+	for spray in _sprays:
+		spray.emitting = _car.wetness > spray_wetness and speed_kmh > spray_min_kmh
+		spray.amount_ratio = clampf(speed_kmh / full_spray_kmh, 0.15, 1.0) * clampf(_car.wetness, 0.0, 1.0)
 
 
 ## Spur verlängern: alle MARK_STEP Meter ein neues Stück vom letzten Punkt bis hierher
@@ -120,6 +133,27 @@ func _create_marks() -> void:
 	# Die Spuren können überall liegen: nie wegen der Sichtbarkeitsbox ausblenden
 	instance.custom_aabb = AABB(Vector3(-1e6, -1e4, -1e6), Vector3(2e6, 2e4, 2e6))
 	add_child(instance)
+
+
+## Gischt: feiner, heller Sprühnebel, der nach hinten und oben wegfliegt und schnell verblasst
+func _create_spray(wheel: VehicleWheel3D) -> GPUParticles3D:
+	var particles := _create_smoke(wheel)
+	particles.amount = 70
+	particles.lifetime = 0.9
+	particles.position = wheel.position + Vector3(0.0, -0.2, -0.35)
+	var process := particles.process_material as ParticleProcessMaterial
+	process.direction = Vector3(0.0, 0.5, -1.0)
+	process.spread = 20.0
+	process.initial_velocity_min = 2.0
+	process.initial_velocity_max = 5.0
+	process.gravity = Vector3(0.0, -1.5, 0.0)
+	var fade := Gradient.new()
+	fade.set_color(0, Color(0.82, 0.84, 0.86, 0.22))
+	fade.set_color(1, Color(0.82, 0.84, 0.86, 0.0))
+	var fade_texture := GradientTexture1D.new()
+	fade_texture.gradient = fade
+	process.color_ramp = fade_texture
+	return particles
 
 
 ## Weißgrauer Rauch, der hinter dem Rad aufsteigt, größer wird und verblasst

@@ -59,21 +59,21 @@ func _draw() -> void:
 		* Transform2D(0.0, -center)
 	draw_set_transform_matrix(view)
 	var radius := size.length() * 0.5 * meters_per_pixel
-	var visible := Rect2(center - Vector2(radius, radius), Vector2(radius, radius) * 2.0)
-	_draw_tiles(visible)
+	var view_rect := Rect2(center - Vector2(radius, radius), Vector2(radius, radius) * 2.0)
+	_draw_tiles(view_rect)
 	if show_unknown:
-		_draw_places(visible)
-	_draw_roads(visible)
+		_draw_places(view_rect)
+	_draw_roads(view_rect)
 	_draw_route()
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 	_draw_markers()
 
 
-func _draw_tiles(visible: Rect2) -> void:
+func _draw_tiles(view_rect: Rect2) -> void:
 	var level := tiles.level_for(meters_per_pixel)
 	var tile_size: float = tiles.level_sizes[level]
-	for tz in range(floori(visible.position.y / tile_size), floori(visible.end.y / tile_size) + 1):
-		for tx in range(floori(visible.position.x / tile_size), floori(visible.end.x / tile_size) + 1):
+	for tz in range(floori(view_rect.position.y / tile_size), floori(view_rect.end.y / tile_size) + 1):
+		for tx in range(floori(view_rect.position.x / tile_size), floori(view_rect.end.x / tile_size) + 1):
 			var texture := tiles.get_tile(level, tx, tz)
 			var rect := Rect2(tx * tile_size, tz * tile_size, tile_size, tile_size)
 			if texture == null and level + 1 < tiles.level_sizes.size():
@@ -91,10 +91,10 @@ func _draw_tiles(visible: Rect2) -> void:
 				draw_texture_rect(texture, rect, false)
 
 
-func _draw_roads(visible: Rect2) -> void:
+func _draw_roads(view_rect: Rect2) -> void:
 	var width := maxf(9.0, 2.5 * meters_per_pixel)
 	var lines: Array[PackedVector2Array] = []
-	for pair: Array in roads.loaded_segments(visible):
+	for pair: Array in roads.loaded_segments(view_rect):
 		var segment: RoadSegment = pair[1]
 		if not _road_lines.has(segment):
 			var line := PackedVector2Array()
@@ -115,11 +115,11 @@ func _draw_roads(visible: Rect2) -> void:
 
 
 ## Orte und noch nicht berechnete Verbindungen (große Karte)
-func _draw_places(visible: Rect2) -> void:
+func _draw_places(view_rect: Rect2) -> void:
 	var cell_size := roads.cell_size
 	var dash := maxf(20.0, 8.0 * meters_per_pixel)
-	for cz in range(floori(visible.position.y / cell_size) - 1, floori(visible.end.y / cell_size) + 1):
-		for cx in range(floori(visible.position.x / cell_size) - 1, floori(visible.end.x / cell_size) + 1):
+	for cz in range(floori(view_rect.position.y / cell_size) - 1, floori(view_rect.end.y / cell_size) + 1):
+		for cx in range(floori(view_rect.position.x / cell_size) - 1, floori(view_rect.end.x / cell_size) + 1):
 			var cell := Vector2i(cx, cz)
 			var node: Variant = roads.node_at(cell)
 			if node == null:

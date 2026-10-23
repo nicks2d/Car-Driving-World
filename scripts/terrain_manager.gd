@@ -32,6 +32,8 @@ extends Node3D
 ## Material für Bäume und Büsche (foliage.gdshader) und für Felsen
 @export var foliage_material: Material
 @export var rock_material: Material
+## Kahle Laubbäume im Winter (foliage_bare.gdshader)
+@export var bare_tree_material: Material
 ## Bis zu dieser Detailstufe gibt es Bäume (0 = nur ganz nah, 2 = bis ca. 1,5 km)
 @export_range(0, 3) var vegetation_max_lod: int = 2
 ## Abstand der möglichen Baumplätze in Metern (kleiner = dichterer Wald, langsamer)
@@ -49,6 +51,9 @@ var _running_jobs: int = 0
 var _update_timer: float = 0.0
 ## Pflanzen-Modelle: Art -> [nah, fern]
 var _veg_meshes: Dictionary = {}
+## Laubbäume und Büsche: wie foliage_material, aber mit Herbstfarben (deciduous = true)
+var _deciduous_material: Material
+var _bare_trees: bool = false
 var _trunk_shape := CylinderShape3D.new()
 var _rock_shape := SphereShape3D.new()
 
@@ -86,6 +91,8 @@ func start(gen: WorldGen, follow: Node3D, road_network: RoadNetwork) -> void:
 		"rock1": [VegetationMeshes.rock(8), VegetationMeshes.rock(8)],
 		"rock2": [VegetationMeshes.rock(15), VegetationMeshes.rock(15)],
 	}
+	_deciduous_material = foliage_material.duplicate()
+	(_deciduous_material as ShaderMaterial).set_shader_parameter("deciduous", true)
 	_trunk_shape.radius = 0.4
 	_trunk_shape.height = 6.0
 	_rock_shape.radius = 1.0
@@ -253,7 +260,7 @@ func _apply_vegetation(chunk: Chunk, job: TerrainChunkJob) -> void:
 		var instance: MultiMeshInstance3D = chunk.veg_instances.get(kind)
 		if instance == null:
 			instance = MultiMeshInstance3D.new()
-			instance.material_override = rock_material if kind.begins_with("rock") else foliage_material
+			instance.material_override = _material_for(kind)
 			instance.position = chunk.mesh_instance.position
 			add_child(instance)
 			chunk.veg_instances[kind] = instance
@@ -262,6 +269,28 @@ func _apply_vegetation(chunk: Chunk, job: TerrainChunkJob) -> void:
 		# und Schatten gibt es ohnehin nur bis ca. 300 m. Das spart viel Rechenzeit.
 		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if job.lod <= vegetation_shadow_lod \
 			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+func _material_for(kind: String) -> Material:
+	if kind.begins_with("rock"):
+		return rock_material
+	if kind == "broadleaf" and _bare_trees and bare_tree_material:
+		return bare_tree_material
+	if kind == "broadleaf" or kind == "bush":
+		return _deciduous_material
+	return foliage_material
+
+
+## Winter: Laubbäume ohne Blätter (eigenes Material, das Löcher in die Krone schneidet).
+## Nur im Winter, weil so ein Material mehr Rechenzeit kostet.
+func set_bare_trees(bare: bool) -> void:
+	if bare == _bare_trees or _deciduous_material == null:
+		return
+	_bare_trees = bare
+	for chunk: Chunk in _chunks.values():
+		var instance: MultiMeshInstance3D = chunk.veg_instances.get("broadleaf")
+		if instance:
+			instance.material_override = _material_for("broadleaf")
 
 
 ## Kollision für Baumstämme und große Felsen, direkt im PhysicsServer (ohne Tausende Nodes).

@@ -20,6 +20,8 @@ extends Node
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
 ## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png)
+## --weather=ID   Wetter: clear, cloudy, rain, storm, fog, snow (Tests sonst immer klar)
+## --season=ID    Jahreszeit: spring, summer, autumn, winter (Tests sonst immer Sommer)
 
 @export var camera: Camera3D
 
@@ -41,6 +43,9 @@ var _car_view: float = -1.0
 var _steer: String = ""
 ## Auto aus den Argumenten (leer = nicht angegeben)
 var car_id: String = ""
+## Wetter und Jahreszeit aus den Argumenten (leer = klar bzw. Sommer)
+var weather_id: String = ""
+var season_id: String = ""
 var _bench_seconds: float = 0.0
 var _game: Node3D
 var _state: String = "idle"
@@ -101,11 +106,15 @@ func _ready() -> void:
 				volumetric_fog = true
 			"benchshot":
 				_bench_shot_time = float(value)
+			"weather":
+				weather_id = value
+			"season":
+				season_id = value
 
 
 ## Läuft ein Test (Screenshot, Benchmark, festes Auto)? Dann keine Garage beim Start.
 func is_active() -> bool:
-	return _shot_name != "" or _bench_seconds > 0.0 or car_id != ""
+	return _shot_name != "" or _bench_seconds > 0.0 or car_id != "" or weather_id != "" or season_id != ""
 
 
 ## Das Spiel meldet: Gelände rund ums Auto ist da

@@ -15,6 +15,7 @@ extends Node3D
 @export var roads: RoadNetwork
 @export var water: WaterManager
 @export var grass: GrassManager
+@export var weather: Weather
 
 var world_is_ready: bool = false
 var _car_on_road: bool = false
@@ -48,6 +49,11 @@ func _ready() -> void:
 	roads.start(world_gen, car)
 	if map_tiles:
 		map_tiles.world_gen = world_gen
+	if weather:
+		weather.world_gen = world_gen
+		# Tests: festes Wetter (Standard klar, Sommer), damit Bilder und Messungen vergleichbar sind
+		if debug_tools.is_active():
+			weather.set_debug(debug_tools.weather_id, debug_tools.season_id)
 	terrain.start(world_gen, car, roads)
 	horizon.start(world_gen, car)
 	water.start(world_gen, car, roads)

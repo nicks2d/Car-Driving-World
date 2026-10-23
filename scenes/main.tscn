@@ -44,6 +44,10 @@
 [ext_resource type="Script" path="res://scripts/minimap.gd" id="62_minimap"]
 [ext_resource type="Script" path="res://scripts/nav_banner.gd" id="63_banner"]
 [ext_resource type="Script" path="res://scripts/big_map.gd" id="64_bigmap"]
+[ext_resource type="Script" path="res://scripts/weather.gd" id="65_weather"]
+[ext_resource type="Script" path="res://scripts/precipitation.gd" id="66_precip"]
+[ext_resource type="Script" path="res://scripts/weather_sound.gd" id="67_wsound"]
+[ext_resource type="Shader" path="res://shaders/foliage_bare.gdshader" id="68_bare"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -164,6 +168,10 @@ roughness = 0.4
 shader = ExtResource("29_foliage")
 shader_parameter/leaf_noise = SubResource("NoiseTexture2D_variation")
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_bare"]
+shader = ExtResource("68_bare")
+shader_parameter/leaf_noise = SubResource("NoiseTexture2D_variation")
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_grass"]
 shader = ExtResource("30_grass")
 
@@ -183,7 +191,7 @@ shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 shader_parameter/far_mode = true
 shader_parameter/sink_radius = 1850.0
 
-[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water", "grass", "garage", "map_tiles")]
+[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water", "grass", "garage", "map_tiles", "weather")]
 script = ExtResource("1_game")
 world_gen = SubResource("WorldGen_main")
 terrain = NodePath("Terrain")
@@ -194,6 +202,7 @@ debug_tools = NodePath("DebugTools")
 day_night = NodePath("DayNight")
 garage = NodePath("Garage")
 map_tiles = NodePath("MapTiles")
+weather = NodePath("Weather")
 roads = NodePath("Roads")
 water = NodePath("Water")
 grass = NodePath("Grass")
@@ -208,10 +217,11 @@ shadow_bias = 0.04
 directional_shadow_blend_splits = true
 directional_shadow_max_distance = 300.0
 
-[node name="DayNight" type="Node" parent="." node_paths=PackedStringArray("sun", "world_environment")]
+[node name="DayNight" type="Node" parent="." node_paths=PackedStringArray("sun", "world_environment", "weather")]
 script = ExtResource("20_daynight")
 sun = NodePath("../Sun")
 world_environment = NodePath("../WorldEnvironment")
+weather = NodePath("../Weather")
 
 [node name="Terrain" type="Node3D" parent="."]
 process_mode = 3
@@ -220,6 +230,7 @@ terrain_material = SubResource("ShaderMaterial_terrain")
 water_material = SubResource("ShaderMaterial_water")
 foliage_material = SubResource("ShaderMaterial_foliage")
 rock_material = SubResource("StandardMaterial3D_rock")
+bare_tree_material = SubResource("ShaderMaterial_bare")
 
 [node name="Roads" type="Node3D" parent="."]
 process_mode = 3
@@ -386,3 +397,21 @@ car = NodePath("../Car")
 roads = NodePath("../Roads")
 navigation = NodePath("../Navigation")
 tiles = NodePath("../MapTiles")
+
+[node name="Weather" type="Node" parent="." node_paths=PackedStringArray("day_night", "car", "camera", "world_environment", "garage", "precipitation", "sound", "terrain")]
+script = ExtResource("65_weather")
+day_night = NodePath("../DayNight")
+car = NodePath("../Car")
+camera = NodePath("../Camera")
+world_environment = NodePath("../WorldEnvironment")
+garage = NodePath("../Garage")
+precipitation = NodePath("Precipitation")
+sound = NodePath("WeatherSound")
+terrain = NodePath("../Terrain")
+
+[node name="Precipitation" type="Node3D" parent="Weather" node_paths=PackedStringArray("camera")]
+script = ExtResource("66_precip")
+camera = NodePath("../../Camera")
+
+[node name="WeatherSound" type="Node" parent="Weather"]
+script = ExtResource("67_wsound")

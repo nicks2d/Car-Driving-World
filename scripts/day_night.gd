@@ -3,9 +3,12 @@ extends Node
 ## Tag-Nacht-Wechsel: bewegt Sonne und Mond und färbt Himmel, Licht und Nebel passend
 ## zur Uhrzeit. Ein ganzer Tag dauert day_length_minutes Minuten. Taste T = Zeitraffer.
 ## Nachts wird das Sonnenlicht zum Mondlicht. So reicht ein einziges Licht mit Schatten.
+## Das Wetter (weather.gd) macht den Himmel grauer, die Sonne schwächer, den Nebel dichter
+## und lässt bei Gewitter alles kurz aufblitzen.
 
 @export var sun: DirectionalLight3D
 @export var world_environment: WorldEnvironment
+@export var weather: Weather
 
 @export_group("Zeit")
 ## Aktuelle Uhrzeit in Stunden (0 bis 24)
@@ -63,6 +66,9 @@ extends Node
 	[0.0, Color(0.02, 0.025, 0.04)], [0.3, Color(0.36, 0.26, 0.36)], [0.45, Color(0.5, 0.48, 0.55)],
 	[1.0, Color(0.58, 0.63, 0.72)]])
 
+## 0 = Nacht, 1 = Tag (für andere, z. B. Helligkeit von Regen und Talnebel)
+var daylight: float = 1.0
+
 var _sky_material: ShaderMaterial
 
 
@@ -114,20 +120,31 @@ func _update_lighting() -> void:
 	var t := clampf((elevation + 18.0) / 58.0, 0.0, 1.0)
 	var day := smoothstep(-4.0, 6.0, elevation)
 	var night := 1.0 - smoothstep(-14.0, -3.0, elevation)
+	daylight = day
+	# Wetter: 0 = klar, 1 = ganz grau (Regen, Gewitter); Blitz = kurzes Aufleuchten
+	var overcast := weather.overcast if weather else 0.0
+	var flash := weather.lightning_flash if weather else 0.0
 
 	# --- Licht: tagsüber Sonne, nachts Mond ---
 	if elevation > -4.0:
 		_point_light_from(sun_dir)
 		sun.light_color = sun_colors.sample(t)
-		sun.light_energy = sun_energy * day
+		sun.light_energy = sun_energy * day * (1.0 - overcast * 0.8)
 	else:
 		_point_light_from(moon_dir)
 		sun.light_color = Color(0.62, 0.72, 1.0)
-		sun.light_energy = moon_energy * smoothstep(-4.0, -10.0, elevation) * clampf(moon_dir.y * 4.0, 0.0, 1.0)
+		sun.light_energy = moon_energy * smoothstep(-4.0, -10.0, elevation) * clampf(moon_dir.y * 4.0, 0.0, 1.0) \
+			* (1.0 - overcast * 0.9)
 
-	# --- Himmel ---
-	var zenith := zenith_colors.sample(t)
-	var horizon := horizon_colors.sample(t)
+	# Bei bedecktem Himmel gibt es keine harten Schatten. Ganz ausschalten spart viel
+	# Rechenzeit, die dafür in Regen-Spiegelungen und Partikel geht.
+	var shadow_opacity := 1.0 - smoothstep(0.45, 0.75, overcast)
+	sun.shadow_enabled = shadow_opacity > 0.01
+	sun.shadow_opacity = shadow_opacity
+
+	# --- Himmel (bei trübem Wetter grauer und dunkler) ---
+	var zenith := _overcast_color(zenith_colors.sample(t), overcast)
+	var horizon := _overcast_color(horizon_colors.sample(t), overcast)
 	_sky_material.set_shader_parameter("sun_direction", sun_dir)
 	_sky_material.set_shader_parameter("moon_direction", moon_dir)
 	_sky_material.set_shader_parameter("zenith_color", zenith)
@@ -135,24 +152,41 @@ func _update_lighting() -> void:
 	_sky_material.set_shader_parameter("ground_color", horizon.darkened(0.6))
 	_sky_material.set_shader_parameter("sun_glow_color", glow_colors.sample(t))
 	# Das Glühen ist bei tiefer Sonne viel stärker als mittags
-	_sky_material.set_shader_parameter("sun_glow_strength", lerpf(1.6, 0.35, smoothstep(0.0, 30.0, elevation)) * smoothstep(-10.0, -1.0, elevation))
+	_sky_material.set_shader_parameter("sun_glow_strength", lerpf(1.6, 0.35, smoothstep(0.0, 30.0, elevation))
+		* smoothstep(-10.0, -1.0, elevation) * (1.0 - overcast * 0.85))
 	_sky_material.set_shader_parameter("sun_disk_color", sun_colors.sample(t))
-	_sky_material.set_shader_parameter("night_amount", night)
-	_sky_material.set_shader_parameter("cloud_light_color", cloud_light_colors.sample(t))
-	_sky_material.set_shader_parameter("cloud_shadow_color", cloud_shadow_colors.sample(t))
-	_sky_material.set_shader_parameter("cloud_coverage", cloud_coverage)
+	_sky_material.set_shader_parameter("sun_disk_energy", 40.0 * (1.0 - overcast * 0.97))
+	_sky_material.set_shader_parameter("night_amount", night * (1.0 - overcast))
+	var cloud_light := cloud_light_colors.sample(t)
+	cloud_light = cloud_light.lerp(Color(cloud_light.get_luminance(), cloud_light.get_luminance(), cloud_light.get_luminance()), overcast * 0.6)
+	_sky_material.set_shader_parameter("cloud_light_color", cloud_light * (1.0 - overcast * 0.45))
+	_sky_material.set_shader_parameter("cloud_shadow_color", cloud_shadow_colors.sample(t) * (1.0 - overcast * 0.55))
+	_sky_material.set_shader_parameter("cloud_coverage", weather.clouds if weather else cloud_coverage)
+	_sky_material.set_shader_parameter("sky_energy", 1.0 + flash * 2.5)
 
 	# --- Umgebung: Nebel, Umgebungslicht, Belichtung ---
 	var env := world_environment.environment
 	env.fog_light_color = horizon.lerp(zenith, 0.3)
-	env.fog_sun_scatter = lerpf(0.5, 0.1, smoothstep(0.0, 25.0, elevation)) * day
-	env.ambient_light_energy = lerpf(night_ambient, day_ambient, day)
+	env.fog_sun_scatter = lerpf(0.5, 0.1, smoothstep(0.0, 25.0, elevation)) * day * (1.0 - overcast)
+	# Regen und Nebel: Fernnebel viel dichter, auch der Himmel verschwindet darin
+	var fog_factor := weather.fog_factor if weather else 1.0
+	env.fog_density = fog_density * fog_factor
+	env.fog_sky_affect = lerpf(0.3, 0.95, clampf((fog_factor - 1.0) / 20.0, 0.0, 1.0))
+	env.ambient_light_energy = lerpf(night_ambient, day_ambient, day) + flash * 3.0
 	# Nachts kommt ein Teil des Grundlichts von einer festen Nachtfarbe statt vom Himmel
 	env.ambient_light_color = night_ambient_color
 	env.ambient_light_sky_contribution = lerpf(0.25, 1.0, day)
 	# Nachts sieht das Auge kaum Farben, tagsüber darf es etwas kräftiger sein
 	env.adjustment_saturation = lerpf(night_saturation, day_saturation, smoothstep(-8.0, 4.0, elevation))
-	env.tonemap_exposure = lerpf(night_exposure, day_exposure, smoothstep(-10.0, 2.0, elevation))
+	# Bei trübem Wetter etwas heller belichten (wie das Auge, das sich anpasst)
+	env.tonemap_exposure = lerpf(night_exposure, day_exposure, smoothstep(-10.0, 2.0, elevation)) * (1.0 + overcast * 0.25)
+
+
+## Himmelsfarbe bei trübem Wetter: Richtung Grau (gleiche Helligkeit) und etwas dunkler
+func _overcast_color(color: Color, overcast: float) -> Color:
+	var l := color.get_luminance()
+	var grey := Color(l * 0.95, l * 0.98, l * 1.05) * (1.0 - overcast * 0.4)
+	return color.lerp(grey, overcast)
 
 
 ## Dreht das Licht so, dass es aus dieser Richtung scheint

@@ -101,7 +101,7 @@ assets/
 - [x] Meilenstein 7 (BMW M2 Competition: Modell, Antrieb, Licht, Spuren, Rauch, Sound)
 - [x] Extra: Autoauswahl mit Garage (5 BMW, Profile, Showroom, Sound pro Motor)
 - [x] Extra: Minimap mit Navi (Kartenkacheln, Route über Orts-Graphen, Abbiege-Hinweise)
-- [ ] Extra: Wetter und Jahreszeiten
+- [x] Extra: Wetter und Jahreszeiten (6 Wetterlagen, Regen mit SSR, Talnebel, Schnee, 4 Jahreszeiten)
 - [ ] Extra: Tunnel
 - [ ] Meilenstein 8
 - [ ] Meilenstein 9
@@ -190,7 +190,8 @@ assets/
   lenkt dabei (Vorderräder prüfen), `--car=e30` startet mit diesem Auto.
 - Tasten: WASD fahren, Leertaste Handbremse, R aufrichten, T Zeitraffer, F3 FPS,
   C Lackfarbe, K Aufkleber, L Licht, G Garage, M große Karte (Linksklick Ziel, Rechtsklick
-  Ziel löschen, Mausrad zoomen, ziehen verschiebt).
+  Ziel löschen, Mausrad zoomen, ziehen verschiebt), F5 Wetter (Automatisch → Klar → Bewölkt →
+  Regen → Gewitter → Nebel → Schnee), J Jahreszeit.
 - Karte und Navi: `map_tiles.gd` rechnet das Kartenbild (Höhenfarbe, Schattierung, Wald,
   Wasser) in Kacheln à 128 px im Hintergrund (Stufen 4/16/64 m pro Pixel, max. 400 gemerkt).
   `map_view.gd` zeichnet darüber Straßen, Route, Ziel, Auto in Weltkoordinaten (eine
@@ -208,6 +209,35 @@ assets/
   Straßen. Vorher kosteten sie 6,7 ms pro Bild, jetzt ~0,9 ms (`update_interval`).
   Messen: `-- --bench=60` gibt jetzt auch process_ms und physics_ms aus. Achtung: nach einer
   Stunde Dauertest war selbst der alte Stand (M7) headless 2,5-mal langsamer (Wärme).
+- Wetter (`weather.gd`): 6 Wetterlagen als Wertetabelle (Wolken, Trübheit, Regen, Schnee,
+  Nebelfaktor, Talnebel, Wind, Blitze), Übergang 45 s (F5: 8 s, Garage: sofort), automatischer
+  Wechsel alle 3–6 min, Wahrscheinlichkeit je Jahreszeit (Herbst mehr Regen/Nebel, Winter
+  Schnee). Gespeichert in `user://einstellungen.cfg` (Abschnitt `welt`). Tests (`--shot`,
+  `--bench`) laufen immer klar/Sommer, außer mit `--weather=rain|storm|fog|snow|cloudy` und
+  `--season=spring|autumn|winter`.
+- Die Shader bekommen Wetter und Jahreszeit über globale Shader-Werte (Projekteinstellungen >
+  Shader Globals): `wetness`, `road_snow`, `snow_cover`, `snow_line`, `season_spring/autumn/winter`
+  (weiche Gewichte), `rain_amount`, `weather_wind`. Nässe steigt in 40 s Regen auf 1 und trocknet
+  in 4 min; Schnee auf der Straße liegt nach 60 s, ist 2 min nach dem Schneefall geräumt.
+  Grip: nass 0,7, Schnee 0,5 (`Car.grip_factor`), Gischt hinter den Hinterrädern (`Car.wetness`).
+- Regen-Spiegelungen: SSR nur bei Nässe an. Kostet im Vollbild ~2,5 ms (66 → 54 FPS). Deshalb
+  schaltet DayNight bei bedecktem Himmel (overcast > 0,75) die Sonnenschatten aus (gibt es bei
+  Bedeckung ohnehin nicht): Regen läuft dann so schnell wie klares Wetter.
+- Regen/Schnee (`precipitation.gd`): GPUParticles in einem 36 × 22 × 36-m-Kasten um die Kamera,
+  eigener Partikel-Shader schiebt herausfallende Partikel auf die andere Seite (bei jedem Tempo
+  gleich dicht). `fixed_fps = 0` und `interpolate = false`, sonst Striche beim Umklappen.
+  Regenstriche zeigen in Richtung (Fallgeschwindigkeit − Kamerageschwindigkeit).
+- Talnebel (`valley_fog.gdshader`): Bildschirm-Viereck an der Kamera, rechnet aus dem
+  Tiefenpuffer die Nebelmenge entlang des Blicks (Dichte nimmt über dem Talboden `ground_level`
+  exponentiell ab, Integral exakt). Godots Höhennebel geht nicht: der hängt nicht vom Abstand ab
+  und vernebelt das Auto direkt vor der Kamera. Morgens (2–11 Uhr) je nach Jahreszeit/Wetter.
+- Jahreszeiten: Laubbäume/Büsche bekommen eine Kopie des Blattmaterials mit `deciduous = true`
+  (Frühling hellgrün, Herbst je Baum gelb/orange/rot). Winter: Laubbäume bekommen
+  `foliage_bare.gdshader` (Krone per discard ausgedünnt), nur dann, weil discard Leistung kostet.
+  Schnee auf Bäumen/Gelände dort, wo die Fläche nach oben zeigt. Schneefallgrenze je Jahreszeit
+  750/950/850/250 m. Gras verschwindet unter Schnee.
+- Wetter-Geräusche (`weather_sound.gd`): Regen-/Windschleife und 3 Donner, beim Start im
+  Hintergrund erzeugt. Donner kommt Entfernung/343 s nach dem Blitz.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

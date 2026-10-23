@@ -33,14 +33,22 @@ uniform vec3 alpine_color : source_color = vec3(0.42, 0.40, 0.30);
 // Steigung (1 - Normale.y), ab der Fels erscheint bzw. komplett Fels ist
 uniform float rock_slope_start = 0.16;
 uniform float rock_slope_end = 0.28;
-// Schnee ab dieser Höhe (mit Zufall), weicher Übergang über snow_blend Meter
-uniform float snow_height = 950.0;
+// Schnee ab der Schneefallgrenze (globaler Wert vom Wetter, je nach Jahreszeit; mit Zufall),
+// weicher Übergang über snow_blend Meter
 uniform float snow_blend = 120.0;
 uniform float tree_line = 800.0;
 
 // Horizont-Ring: ohne Detail-Texturen, und unter den nahen Kacheln versteckt
 uniform bool far_mode = false;
 uniform float sink_radius = 0.0;
+
+// Wetter und Jahreszeit (globale Shader-Werte, setzt weather.gd)
+global uniform float wetness;
+global uniform float snow_cover;
+global uniform float snow_line;
+global uniform float season_spring;
+global uniform float season_autumn;
+global uniform float season_winter;
 
 varying vec3 world_pos;
 varying vec3 world_normal;
@@ -106,19 +114,29 @@ void fragment() {
 	// --- Gewichte der Schichten ---
 	float forest = COLOR.r;
 	float rock_w = smoothstep(rock_slope_start, rock_slope_end, slope + (mid_noise - 0.5) * 0.1);
-	float snow_line = snow_height + (big_noise - 0.5) * 300.0;
-	float snow_w = smoothstep(snow_line - snow_blend, snow_line + snow_blend * 0.3, world_pos.y);
+	float line = snow_line + (big_noise - 0.5) * 300.0;
+	float snow_w = smoothstep(line - snow_blend, line + snow_blend * 0.3, world_pos.y);
+	// Schneedecke im Tal (Winter, Schneefall): fleckig, unter Bäumen und am Wasser weniger
+	float cover = snow_cover * (1.0 - COLOR.r * 0.35) * (1.0 - COLOR.b);
+	cover = smoothstep(0.0, 0.35, cover - (1.0 - snow_cover) * small_noise * 0.6);
+	snow_w = max(snow_w, cover);
 	snow_w *= 1.0 - smoothstep(0.30, 0.50, slope + (small_noise - 0.5) * 0.15);
 	// Erde/Schotter: im Wald und als schmaler Streifen neben der Straße (Grün-Kanal)
 	float dirt_w = clamp(forest * 0.45 + smoothstep(0.5, 1.0, COLOR.g) * 0.6, 0.0, 1.0);
 	float alpine_w = smoothstep(tree_line, tree_line + 220.0, world_pos.y + (mid_noise - 0.5) * 120.0);
 	vec3 green = mix(grass_color, dry_grass_color, smoothstep(0.55, 0.9, big_noise) * 0.7);
+	// Jahreszeit: Frühling frisches Grün, Herbst und Winter bräunlich
+	green = mix(green, vec3(0.30, 0.56, 0.10), season_spring * 0.7);
+	green = mix(green, vec3(0.42, 0.40, 0.15), season_autumn * 0.45 + season_winter * 0.5);
 	vec3 alpine = alpine_color * (0.7 + mid_noise * 0.6);
 
 	// --- Ferne Farben (ohne Texturen) ---
 	vec3 far_ground = mix(grade_grass(GRASS_MEAN, green, mid_noise), grade_dirt(DIRT_MEAN), dirt_w);
 	far_ground = mix(far_ground, mix(far_ground, alpine, 0.7), alpine_w);
-	far_ground *= mix(vec3(1.0), vec3(0.55, 0.68, 0.55), forest * far_blend);  // Wälder in der Ferne dunkler
+	// Wälder in der Ferne dunkler (im Herbst bunt, im Winter graubraun)
+	vec3 forest_tint = mix(vec3(0.55, 0.68, 0.55), vec3(0.9, 0.6, 0.35), season_autumn * 0.6);
+	forest_tint = mix(forest_tint, vec3(0.5, 0.48, 0.45), season_winter * 0.5);
+	far_ground *= mix(vec3(1.0), forest_tint, forest * far_blend);
 	vec3 far_albedo = mix(far_ground, grade_rock(ROCK_MEAN, mid_noise), rock_w);
 	far_albedo = mix(far_albedo, grade_snow(SNOW_MEAN), snow_w);
 
@@ -183,6 +201,10 @@ void fragment() {
 		albedo = mix(albedo, albedo * 0.55, smoothstep(0.0, 0.5, wet));
 		albedo = mix(albedo, mud, smoothstep(0.6, 1.0, wet));
 		roughness = mix(roughness, 0.35, wet);
+		// Regen: alles etwas dunkler und glänzender (Schnee nicht)
+		float rain_wet = wetness * (1.0 - snow_w) * (1.0 - far_blend * 0.7);
+		albedo *= 1.0 - rain_wet * 0.25;
+		roughness = mix(roughness, roughness * 0.75, rain_wet);
 	}
 
 	ALBEDO = albedo;

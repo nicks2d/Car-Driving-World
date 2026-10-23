@@ -51,6 +51,9 @@ var engine_rpm: float = 900.0
 var throttle_input: float = 0.0
 ## Driftwinkel in Grad: Winkel zwischen Fahrtrichtung und Blickrichtung des Autos
 var drift_angle: float = 0.0
+## Wie nass (oder verschneit) die Straße unter dem Auto ist, 0 bis 1 (setzt das Wetter;
+## für die Gischt hinter den Reifen)
+var wetness: float = 0.0
 
 var _steer_input: float = 0.0
 var _shift_timer: float = 0.0
