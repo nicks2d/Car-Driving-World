@@ -145,7 +145,7 @@ func run() -> void:
 
 	_build_river_water(origin)
 	if with_vegetation:
-		_place_vegetation(origin, hs, side, lakes, roads if has_roads else null)
+		_place_vegetation(origin, hs, side, lakes, roads)
 
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -155,6 +155,9 @@ func run() -> void:
 
 
 ## Höhe an beliebiger Stelle der Kachel (zwischen den Rasterpunkten gemittelt)
+## Genau wie im Mesh: Jedes Rasterquadrat besteht aus zwei Dreiecken (Diagonale von
+## rechts oben nach links unten), innerhalb eines Dreiecks ist die Fläche eben.
+## So stehen Bäume und Felsen exakt auf dem sichtbaren Boden, in jeder Detailstufe.
 func _height_at(hs: PackedFloat32Array, side: int, lx: float, lz: float) -> float:
 	var fx := lx / spacing + 1.0
 	var fz := lz / spacing + 1.0
@@ -162,16 +165,36 @@ func _height_at(hs: PackedFloat32Array, side: int, lx: float, lz: float) -> floa
 	var iz := clampi(floori(fz), 0, side - 2)
 	var tx := fx - ix
 	var tz := fz - iz
-	var top := lerpf(hs[iz * side + ix], hs[iz * side + ix + 1], tx)
-	var bottom := lerpf(hs[(iz + 1) * side + ix], hs[(iz + 1) * side + ix + 1], tx)
-	return lerpf(top, bottom, tz)
+	var h00 := hs[iz * side + ix]
+	var h10 := hs[iz * side + ix + 1]
+	var h01 := hs[(iz + 1) * side + ix]
+	var h11 := hs[(iz + 1) * side + ix + 1]
+	if tx + tz <= 1.0:
+		return h00 + (h10 - h00) * tx + (h01 - h00) * tz
+	return h11 + (h01 - h11) * (1.0 - tx) + (h10 - h11) * (1.0 - tz)
 
 
-## Steigung (0 = flach) an beliebiger Stelle der Kachel
-func _slope_at(hs: PackedFloat32Array, side: int, lx: float, lz: float) -> float:
+## Wie stark steigt der Boden an (Meter pro Meter, 0 = flach)?
+func _gradient_at(hs: PackedFloat32Array, side: int, lx: float, lz: float) -> float:
 	var gx := (_height_at(hs, side, lx + spacing, lz) - _height_at(hs, side, lx - spacing, lz)) / (2.0 * spacing)
 	var gz := (_height_at(hs, side, lx, lz + spacing) - _height_at(hs, side, lx, lz - spacing)) / (2.0 * spacing)
-	return 1.0 - 1.0 / sqrt(1.0 + gx * gx + gz * gz)
+	return sqrt(gx * gx + gz * gz)
+
+
+## Darf hier nichts wachsen? Nicht auf oder neben Straßen, Brücken und Kreuzungen
+## (margin = Abstand ab dem Bankett, z. B. Kronenradius) und nicht auf Böschungen,
+## also dort, wo das Gelände für die Straße verändert wurde.
+func _blocked_by_road(x: float, z: float, margin: float, roads: RoadQuery, lakes: Array) -> bool:
+	if roads.is_empty():
+		return false
+	# Die Böschungskante reicht 1,3 m über den flachen Teil hinaus
+	if roads.is_on_road(x, z, margin + 1.3):
+		return true
+	# Weiter weg als die breiteste Böschung: Gelände ist sicher unverändert
+	if not roads.is_on_road(x, z, RoadSegment.MAX_BANK):
+		return false
+	var natural := world_gen.terrain_height(x, z, lakes)
+	return absf(roads.carve(x, z, natural).x - natural) > 0.4
 
 
 ## Bäume, Büsche und Felsen auf einem leicht zufällig verschobenen Raster verteilen.
@@ -204,28 +227,38 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 			var x := origin.x + lx
 			var z := origin.y + lz
 			var h := _height_at(hs, side, lx, lz)
-			var slope := _slope_at(hs, side, lx, lz)
+			var gradient := _gradient_at(hs, side, lx, lz)
+			var slope := 1.0 - 1.0 / sqrt(1.0 + gradient * gradient)
 			var low := 1.0 - smoothstep(tree_line - 100.0, tree_line, h)
 			var gentle := 1.0 - smoothstep(0.25, 0.4, slope)
 			var tree_chance := world_gen.forest_density(x, z, h, slope) * 0.8 + 0.02 * low * gentle
 			var bush_chance := 0.035 * gentle * (1.0 - smoothstep(tree_line, tree_line + 120.0, h))
 			if accept >= tree_chance + bush_chance:
 				continue
-			if _is_wet(x, z, h, lakes) or (roads and roads.is_on_road(x, z, 4.0)):
+			if _is_wet(x, z, h, lakes):
 				continue
 			if accept < tree_chance:
 				# Weiter oben mehr Nadelbäume, im Tal mehr Laubbäume
 				var conifer_share := clampf(0.4 + (h - 250.0) / 500.0 + world_gen.variation(x, z) * 0.3, 0.1, 0.95)
-				if kind < conifer_share:
-					var height := lerpf(13.0, 27.0, size)
-					conifers.append_array(_instance(lx, h - 0.3, lz, angle, height * 0.95, height, height * 0.95, shade))
+				var conifer := kind < conifer_share
+				var height := lerpf(13.0, 27.0, size) if conifer else lerpf(9.0, 17.0, size)
+				# Kronenradius und Stammradius aus den Modellen (vegetation_meshes.gd)
+				var crown := height * (0.23 if conifer else 0.34)
+				var trunk := height * (0.022 if conifer else 0.035)
+				if _blocked_by_road(x, z, crown, roads, lakes):
+					continue
+				# Am Hang den Stamm so weit einsinken lassen, dass er talseitig nicht schwebt
+				var base := h - 0.3 - gradient * trunk
+				if conifer:
+					conifers.append_array(_instance(lx, base, lz, angle, height * 0.95, height, height * 0.95, shade))
 				else:
-					var height := lerpf(9.0, 17.0, size)
-					broadleafs.append_array(_instance(lx, h - 0.3, lz, angle, height, height, height, shade))
+					broadleafs.append_array(_instance(lx, base, lz, angle, height, height, height, shade))
 				colliders.append_array([lx, h, lz, 0.4])
 			else:
 				var scale := lerpf(1.0, 2.6, size)
-				bushes.append_array(_instance(lx, h - 0.2, lz, angle, scale, scale * 0.8, scale, shade))
+				if _blocked_by_road(x, z, scale * 0.9, roads, lakes):
+					continue
+				bushes.append_array(_instance(lx, h - 0.2 - gradient * scale * 0.6, lz, angle, scale, scale * 0.8, scale, shade))
 	# Felsen: seltener, häufiger an steilen Hängen und über der Baumgrenze
 	var rock_cells := floori(chunk_size / rock_spacing)
 	for cz in rock_cells:
@@ -240,15 +273,18 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 			var x := origin.x + lx
 			var z := origin.y + lz
 			var h := _height_at(hs, side, lx, lz)
-			var slope := _slope_at(hs, side, lx, lz)
+			var gradient := _gradient_at(hs, side, lx, lz)
+			var slope := 1.0 - 1.0 / sqrt(1.0 + gradient * gradient)
 			var chance := 0.04 + smoothstep(0.12, 0.35, slope) * 0.45 + smoothstep(tree_line, tree_line + 300.0, h) * 0.3
 			if accept >= chance:
 				continue
-			if _is_wet(x, z, h, lakes) or (roads and roads.is_on_road(x, z, 2.5)):
+			if _is_wet(x, z, h, lakes):
 				continue
 			var scale := lerpf(0.6, 3.8, size * size) * (1.0 + slope)
+			if _blocked_by_road(x, z, scale * lerpf(0.8, 1.3, stretch) * 0.6, roads, lakes):
+				continue
 			var shade := Color(stretch, 0.0, 0.0, 0.0)
-			var row := _instance(lx, h - scale * 0.2, lz, angle,
+			var row := _instance(lx, h - scale * 0.2 - gradient * scale * 0.4, lz, angle,
 				scale * lerpf(0.8, 1.3, stretch), scale * lerpf(0.6, 1.0, size), scale, shade)
 			if kind == 0:
 				rocks_a.append_array(row)

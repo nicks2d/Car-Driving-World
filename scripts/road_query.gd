@@ -14,6 +14,8 @@ var _b := PackedVector3Array()
 var _core := PackedFloat32Array()
 ## Querneigung pro Stück (positiv = linke Seite tiefer)
 var _bank := PackedFloat32Array()
+## 1 = das Stück passt das Gelände an, 0 = nur Sperrzone (Brücken: darunter bleibt das Tal)
+var _carves := PackedByteArray()
 var _cells: Dictionary = {}  # Vector2i -> Array von Stück-Nummern
 
 
@@ -26,18 +28,18 @@ func _init(segments: Array, pads: PackedVector4Array, area: Rect2) -> void:
 		var core := segment.road_width * 0.5 + segment.shoulder_width + 0.5
 		reach = maxf(reach, core + RoadSegment.MAX_BANK)
 		for i in segment.points.size() - 1:
-			# Unter Brücken bleibt das Gelände, wie es ist (Fluss, Tal)
-			if segment.bridge[i] == 1 and segment.bridge[i + 1] == 1:
-				continue
+			# Unter Brücken bleibt das Gelände, wie es ist (Fluss, Tal). Dort darf aber auch
+			# nichts wachsen, deshalb zählen Brücken trotzdem als Sperrzone.
+			var carves := not (segment.bridge[i] == 1 and segment.bridge[i + 1] == 1)
 			var piece_bank := (segment.bank[i] + segment.bank[i + 1]) * 0.5
-			_add_piece(segment.points[i], segment.points[i + 1], core, piece_bank, grown)
+			_add_piece(segment.points[i], segment.points[i + 1], core, piece_bank, carves, grown)
 	for pad in pads:
 		var center := Vector3(pad.x, pad.y, pad.z)
 		reach = maxf(reach, pad.w + RoadSegment.MAX_BANK)
-		_add_piece(center, center, pad.w, 0.0, grown)
+		_add_piece(center, center, pad.w, 0.0, true, grown)
 
 
-func _add_piece(a: Vector3, b: Vector3, core: float, piece_bank: float, area: Rect2) -> void:
+func _add_piece(a: Vector3, b: Vector3, core: float, piece_bank: float, carves: bool, area: Rect2) -> void:
 	var box := Rect2(a.x, a.z, 0.0, 0.0).expand(Vector2(b.x, b.z)).grow(core + RoadSegment.MAX_BANK)
 	if not box.intersects(area):
 		return
@@ -46,6 +48,7 @@ func _add_piece(a: Vector3, b: Vector3, core: float, piece_bank: float, area: Re
 	_b.append(b)
 	_core.append(core)
 	_bank.append(piece_bank)
+	_carves.append(1 if carves else 0)
 	var c0 := Vector2i(floori(box.position.x / CELL), floori(box.position.y / CELL))
 	var c1 := Vector2i(floori(box.end.x / CELL), floori(box.end.y / CELL))
 	for cz in range(c0.y, c1.y + 1):
@@ -74,6 +77,8 @@ func carve(x: float, z: float, natural: float) -> Vector2:
 	var nearest_over := INF
 	var road_height := 0.0
 	for index: int in pieces:
+		if _carves[index] == 0:
+			continue
 		var a := _a[index]
 		var b := _b[index]
 		var abx := b.x - a.x

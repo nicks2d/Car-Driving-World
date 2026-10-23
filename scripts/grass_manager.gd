@@ -80,7 +80,7 @@ class GrassJob:
 			buffer.append_array([c * width, 0.0, s * width, x - origin.x, 0.0, height, 0.0, h - 0.05,
 				-s * width, 0.0, c * width, z - origin.y, bright, dryness, 0.0, 0.0])
 
-	## Höhe aus dem feinen Raster der Kachel (zwischen den Punkten gemittelt)
+	## Höhe aus dem feinen Raster der Kachel, genau wie im Mesh (zwei Dreiecke pro Quadrat)
 	func _height(lx: float, lz: float) -> float:
 		var fx := clampf(lx / spacing, 0.0, grid_size - 1.001)
 		var fz := clampf(lz / spacing, 0.0, grid_size - 1.001)
@@ -88,9 +88,13 @@ class GrassJob:
 		var iz := floori(fz)
 		var tx := fx - ix
 		var tz := fz - iz
-		var a := lerpf(heights[iz * grid_size + ix], heights[iz * grid_size + ix + 1], tx)
-		var b := lerpf(heights[(iz + 1) * grid_size + ix], heights[(iz + 1) * grid_size + ix + 1], tx)
-		return lerpf(a, b, tz)
+		var h00 := heights[iz * grid_size + ix]
+		var h10 := heights[iz * grid_size + ix + 1]
+		var h01 := heights[(iz + 1) * grid_size + ix]
+		var h11 := heights[(iz + 1) * grid_size + ix + 1]
+		if tx + tz <= 1.0:
+			return h00 + (h10 - h00) * tx + (h01 - h00) * tz
+		return h11 + (h01 - h11) * (1.0 - tx) + (h10 - h11) * (1.0 - tz)
 
 
 func start(gen: WorldGen, follow: Node3D, terrain_manager: TerrainManager, road_network: RoadNetwork) -> void:
