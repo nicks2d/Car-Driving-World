@@ -50,6 +50,8 @@ var valid: bool = false
 var mesh_arrays: Array = []
 ## Mesh-Daten für Brücken (Beton): Fahrbahnplatte, Brüstungen, Pfeiler. Leer = keine Brücke.
 var bridge_arrays: Array = []
+## Mesh-Daten für Leitplanken (Metall). Leer = keine Leitplanke.
+var rail_arrays: Array = []
 var collision_faces: PackedVector3Array
 ## Mittelpunkt, auf den sich die Mesh-Koordinaten beziehen (für Genauigkeit)
 var origin: Vector3
@@ -724,6 +726,9 @@ func build_mesh(first: int, last: int) -> void:
 	mesh_arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 	mesh_arrays[Mesh.ARRAY_INDEX] = indices
 	_build_bridges(lefts)
+	bridge_arrays = _take_quads()
+	_build_rails(first, last, lefts)
+	rail_arrays = _take_quads()
 
 
 # ---------------------------------------------------------------------------
@@ -783,12 +788,113 @@ func _build_bridges(lefts: PackedVector3Array) -> void:
 			if points[k].y - DECK_THICKNESS - bottom > 1.5:
 				_pillar(points[k] - origin, bottom - origin.y)
 		i = j
-	if _b_indices.is_empty():
-		return
-	bridge_arrays.resize(Mesh.ARRAY_MAX)
-	bridge_arrays[Mesh.ARRAY_VERTEX] = _b_verts
-	bridge_arrays[Mesh.ARRAY_NORMAL] = _b_normals
-	bridge_arrays[Mesh.ARRAY_INDEX] = _b_indices
+
+
+## Die gesammelten Vierecke als Mesh-Daten abgeben (leer = keine) und neu anfangen
+func _take_quads() -> Array:
+	var result: Array = []
+	if not _b_indices.is_empty():
+		result.resize(Mesh.ARRAY_MAX)
+		result[Mesh.ARRAY_VERTEX] = _b_verts
+		result[Mesh.ARRAY_NORMAL] = _b_normals
+		result[Mesh.ARRAY_INDEX] = _b_indices
+	_b_verts = PackedVector3Array()
+	_b_normals = PackedVector3Array()
+	_b_indices = PackedInt32Array()
+	return result
+
+
+# ---------------------------------------------------------------------------
+# 6. Leitplanken: an hohen Dämmen und außen in engen Kurven (Brücken haben Brüstungen)
+# ---------------------------------------------------------------------------
+
+## Leitplanke, wo das Gelände 14 m neben der Straße so viele Meter tiefer liegt ...
+const RAIL_DROP: float = 4.0
+## ... und außen in Kurven, die enger sind als dieser Radius
+const RAIL_RADIUS: float = 45.0
+const RAIL_HEIGHT: float = 0.75
+## Höhe des Stahlbands
+const RAIL_BAND: float = 0.32
+
+
+func _build_rails(first: int, last: int, lefts: PackedVector3Array) -> void:
+	var n := points.size()
+	var lakes: Array = world_gen.lakes_near(_points_rect().grow(20.0))
+	# Auf dem Bankett, kurz vor dem Rand
+	var offset := road_width * 0.5 + shoulder_width - 0.4
+	for side: float in [1.0, -1.0]:
+		# 1. Wo braucht diese Seite eine Leitplanke?
+		var need := PackedByteArray()
+		need.resize(n)
+		for i in range(first, last + 1):
+			if bridge[i] == 1:
+				continue
+			# Diese Seite ist außen, wenn die Kurve zur anderen Seite geht
+			var outside := curvature[i] * side < -1.0 / RAIL_RADIUS
+			var beside := points[i] + lefts[i] * side * 14.0
+			var drop := points[i].y - world_gen.terrain_height(beside.x, beside.z, lakes)
+			if outside or drop > RAIL_DROP:
+				need[i] = 1
+		_close_gaps(need, 4)
+		_drop_short(need, 6)
+		# 2. Pfosten an jedem Punkt, dazwischen das Stahlband. An den Enden taucht es ab.
+		for i in range(first, last + 1):
+			if need[i] == 0:
+				continue
+			var run_end := need[i - 1] == 0 or need[i + 1] == 0
+			var post := side_point(i, lefts[i], side * (offset + 0.12), 0.0) - origin
+			_post(post, lefts[i] * side, RAIL_HEIGHT - 0.08)
+			if i == last or need[i + 1] == 0:
+				continue
+			var top0 := 0.3 if run_end else RAIL_HEIGHT
+			var top1 := 0.3 if need[i + 2] == 0 else RAIL_HEIGHT
+			var a0 := side_point(i, lefts[i], side * offset, maxf(top0 - RAIL_BAND, 0.05))
+			var a1 := side_point(i + 1, lefts[i + 1], side * offset, maxf(top1 - RAIL_BAND, 0.05))
+			var b0 := side_point(i, lefts[i], side * offset, top0)
+			var b1 := side_point(i + 1, lefts[i + 1], side * offset, top1)
+			_quad(a0 - origin, a1 - origin, b1 - origin, b0 - origin, -lefts[i] * side)
+			# Die Leitplanke hält das Auto auf der Straße (vom Boden bis zur Oberkante)
+			var g0 := side_point(i, lefts[i], side * offset, 0.0)
+			var g1 := side_point(i + 1, lefts[i + 1], side * offset, 0.0)
+			collision_faces.append_array([g0, g1, b1, g0, b1, b0])
+
+
+## Lücken bis max_gap Punkte zwischen zwei Leitplanken-Stücken schließen
+func _close_gaps(need: PackedByteArray, max_gap: int) -> void:
+	var last_on := -1
+	for i in need.size():
+		if need[i] == 1:
+			if last_on >= 0 and i - last_on > 1 and i - last_on <= max_gap + 1:
+				for j in range(last_on + 1, i):
+					need[j] = 1
+			last_on = i
+
+
+## Stücke kürzer als min_length Punkte weglassen
+func _drop_short(need: PackedByteArray, min_length: int) -> void:
+	var i := 0
+	while i < need.size():
+		if need[i] == 0:
+			i += 1
+			continue
+		var j := i
+		while j < need.size() and need[j] == 1:
+			j += 1
+		if j - i < min_length:
+			for k in range(i, j):
+				need[k] = 0
+		i = j
+
+
+## Viereckiger Pfosten (0,12 m dick) von base aus nach oben
+func _post(base: Vector3, out: Vector3, height: float) -> void:
+	var w := 0.06
+	var along := Vector3.UP.cross(out).normalized()
+	var top := Vector3(0.0, height, 0.0)
+	for normal: Vector3 in [out, -out, along, -along]:
+		var t := Vector3.UP.cross(normal).normalized() * w
+		var c := base + normal * w
+		_quad(c - t, c + t, c + t + top, c - t + top, normal)
 
 
 ## Punkt neben der Mittellinie (offset positiv = links), mit Querneigung

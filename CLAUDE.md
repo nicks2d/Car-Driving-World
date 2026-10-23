@@ -146,9 +146,29 @@ assets/
   Stadt-Algorithmen (L-Systeme, passen nicht zu Landstraßen) wurden verworfen.
 - Straßen-Details: Orte in 1,2-km-Zellen (flach, im Tal, nicht über 300 m Relief).
   A* auf 18-m-Raster mit 48 Schrittrichtungen (sonst keine Serpentinen möglich), Kosten für
-  Steigung (>10 % sehr teuer), Wasser, scharfe Knicke und Abweichung vom ±45°-Kegel in den
-  ersten/letzten 300 m (sonst kreuzen sich Straßen eines Orts). Danach glätten, Höhenprofil
-  mit max. 10 % Steigung, bei über 35 m Abtrag/Auftrag wird der Abschnitt verworfen.
+  Steigung (>10 % sehr teuer), Wasser und Knicke über 30°; Knicke über 45° pro Schritt sind
+  verboten (dann werden Kehren ≥ 40 m breit). Höhenprofil mit max. 10 % Steigung, bei über
+  35 m Abtrag/50 m Auftrag wird der Abschnitt verworfen (Gebirge: ~15 % der Abschnitte).
+- Straßenbreite (Stand Teil 1 nach M6): Fahrbahn 9 m, Bankett 1,5 m, Böschungskante 1,8 m
+  (`road_width`/`shoulder_width` am Roads-Node, der Shader bekommt die Breite beim Start).
+- Kurven = Trassierung wie im Straßenbau: Weg aus der Wegsuche vereinfachen (Polygonzug),
+  an jedem Knick ein Kreisbogen (Wunsch 60 m, bei kleinen Knicken bis 500 m). Passt er nicht,
+  werden Knicke zusammengefasst: unter 20 m immer, unter 60 m nur bei ≤ 15 m Verschiebung.
+  Kleinster Radius im Test 26 m, ~3 % der Strecke unter 60 m. Querneigung bis 5 % (3/R),
+  sanft über ~50 m aufgebaut; `road_query.gd` berücksichtigt sie beim Gelände.
+- Kreuzungen (`road_junction.gd`): Jeder Ort verteilt Abfahrtsrichtungen für seine bis zu
+  4 Straßen (wie Luftlinie, aber ≥ 80° auseinander), die ersten/letzten 50 m führen genau
+  dorthin (A*-Kegel ±30° bis 250 m). Die Straßen enden 14 m (bei spitzen Winkeln bis 24 m)
+  vor der Mitte, die letzten 24 m liegen flach auf Ortshöhe. Kreuzungsfläche mit
+  Bezier-Ecken (sehr weite Winkel/Sackgasse: Kreisbogen), UV2.x = 1 schaltet im Shader die
+  Markierungen ab. Kreisverkehre gibt es (noch) nicht.
+- Überlappungen: Ein Abschnitt wird erst gebaut, wenn alle Nachbarn berechnet sind
+  (Zustände BUILDING → BUILT → CHECKING → CHECKED → MESHING → READY in `road_network.gd`).
+  Kommen sich zwei Mittellinien außerhalb von 20 m um gemeinsame Orte näher als ~17,6 m,
+  fällt der Abschnitt mit dem größeren Hash weg (deterministisch, unabhängig von der
+  Reihenfolge). Dank der Abfahrtsrichtungen passiert das im Test gar nicht mehr.
+- Leitplanken: außen in Kurven unter 45 m Radius und wo das Gelände 14 m daneben über 4 m
+  tiefer liegt (eigenes Material `rail_material`, mit Kollision). Brücken haben Brüstungen.
 - Gelände an Straßen (`road_query.gd`): Fahrbahn ist immer „hart“, daneben Böschung mit
   Neigung 0,65; bei mehreren Straßen müssen alle Höhenbereiche gleichzeitig gelten
   (sonst Wände zwischen Serpentinen-Ästen).
@@ -173,10 +193,13 @@ assets/
   Hintergrund (festes Zufallsraster pro Kachel, deterministisch), MultiMesh pro Art und Kachel,
   bis Detailstufe 2 (~1,5 km), Schatten nur Detailstufe 0. Gras: `grass_manager.gd`,
   16-m-Felder bis 56 m ums Auto, 3 Büschel/m².
+- Bäume/Büsche/Felsen halten Abstand zur Straße nach Kronenradius (+ Böschungskante), wachsen
+  nicht unter Brücken, auf Kreuzungen oder wo das Gelände für die Straße verändert wurde.
+  Höhe exakt wie im Mesh (zwei Dreiecke pro Quadrat), Stämme sinken am Hang etwas ein.
 - Vertex-Farben kommen im eigenen Shader unverändert an (kein sRGB → linear). Deshalb rechnet
   `foliage.gdshader` sie selbst um, sonst sind die Bäume knallgrün.
 - Kollision von Stämmen/Felsen direkt über den PhysicsServer, ein Körper pro 64 × 64 m.
   Ein Körper mit 1000 Formen kostete 33 ms (Ruckler), so sind es ~3,5 ms pro Kachel.
 - Leistung (Stand M6, Vollbild 2940×1846, MetalFX 75 %, Mac schon warm): ~68 FPS im
-  Schnitt, 1%-Low ~55. Stellschrauben: `vegetation_max_lod`, `tree_spacing`,
+  Schnitt, 1%-Low ~55. Nach dem Straßen-Umbau: 74 FPS, 1%-Low 57. Stellschrauben: `vegetation_max_lod`, `tree_spacing`,
   Gras `radius`/`density`, Render-Skalierung.

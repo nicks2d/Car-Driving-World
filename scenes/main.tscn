@@ -141,6 +141,12 @@ shader_parameter/wave_normal_b = SubResource("NoiseTexture2D_waves_b")
 albedo_color = Color(0.58, 0.57, 0.54, 1)
 roughness = 0.9
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rail"]
+cull_mode = 2
+albedo_color = Color(0.62, 0.64, 0.66, 1)
+metallic = 0.7
+roughness = 0.4
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_foliage"]
 shader = ExtResource("29_foliage")
 shader_parameter/leaf_noise = SubResource("NoiseTexture2D_variation")
@@ -203,6 +209,7 @@ rock_material = SubResource("StandardMaterial3D_rock")
 script = ExtResource("21_roads")
 road_material = SubResource("ShaderMaterial_road")
 bridge_material = SubResource("StandardMaterial3D_concrete")
+rail_material = SubResource("StandardMaterial3D_rail")
 
 [node name="Water" type="Node3D" parent="."]
 script = ExtResource("28_water")

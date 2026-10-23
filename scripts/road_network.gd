@@ -19,6 +19,8 @@ extends Node3D
 @export var road_material: Material
 ## Material für Brücken (Beton)
 @export var bridge_material: Material
+## Material für Leitplanken (Metall)
+@export var rail_material: Material
 ## Größe einer Zelle mit höchstens einem Ort (Meter)
 @export var cell_size: float = 1200.0
 ## Wahrscheinlichkeit, dass zwei benachbarte Orte verbunden sind
@@ -629,6 +631,14 @@ func _update_visuals() -> void:
 					if not segment.bridge_arrays.is_empty() else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				entry.mesh_instance.position = segment.origin
 				add_child(entry.mesh_instance)
+				# Leitplanken als eigenes Mesh, damit nur sie (und Brücken) Schatten werfen
+				if not segment.rail_arrays.is_empty():
+					var rail_mesh := ArrayMesh.new()
+					rail_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, segment.rail_arrays)
+					var rails := MeshInstance3D.new()
+					rails.mesh = rail_mesh
+					rails.material_override = rail_material
+					entry.mesh_instance.add_child(rails)
 		elif entry.mesh_instance:
 			entry.mesh_instance.queue_free()
 			entry.mesh_instance = null
