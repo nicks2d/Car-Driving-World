@@ -16,6 +16,7 @@ extends Node
 ## --carview=G    Kamera neben dem Auto, Blick aufs Auto (0 = von vorne, 90 = von links,
 ##                180 = von hinten), z. B. um das Automodell anzuschauen
 ## --steer=left   beim Screenshot nach links (oder right) lenken, um die Vorderräder zu prüfen
+## --car=ID       mit diesem Auto starten (Profil cars/ID.tres, z. B. e30, e92, f90, g90)
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
 ## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png)
@@ -38,6 +39,8 @@ var _look_at: Vector2 = Vector2.ZERO
 var _has_look_at: bool = false
 var _car_view: float = -1.0
 var _steer: String = ""
+## Auto aus den Argumenten (leer = nicht angegeben)
+var car_id: String = ""
 var _bench_seconds: float = 0.0
 var _game: Node3D
 var _state: String = "idle"
@@ -88,12 +91,19 @@ func _ready() -> void:
 				_car_view = float(value)
 			"steer":
 				_steer = value
+			"car":
+				car_id = value
 			"bench":
 				_bench_seconds = float(value)
 			"volfog":
 				volumetric_fog = true
 			"benchshot":
 				_bench_shot_time = float(value)
+
+
+## Läuft ein Test (Screenshot, Benchmark, festes Auto)? Dann keine Garage beim Start.
+func is_active() -> bool:
+	return _shot_name != "" or _bench_seconds > 0.0 or car_id != ""
 
 
 ## Das Spiel meldet: Gelände rund ums Auto ist da

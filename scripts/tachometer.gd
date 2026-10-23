@@ -17,6 +17,10 @@ var _shown_rpm: float = 0.0
 func _process(delta: float) -> void:
 	if not car:
 		return
+	# Skala passend zum Auto: bis knapp über den Begrenzer, rot kurz davor
+	var redline: float = (car as Car).profile.redline_rpm
+	max_rpm = ceilf((redline + 300.0) / 1000.0) * 1000.0
+	red_rpm = floorf((redline - 400.0) / 500.0) * 500.0
 	# Der Zeiger folgt der Drehzahl schnell, aber nicht ruckartig
 	_shown_rpm = lerpf(_shown_rpm, car.get("engine_rpm"), clampf(delta * 18.0, 0.0, 1.0))
 	queue_redraw()

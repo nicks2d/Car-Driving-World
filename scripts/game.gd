@@ -10,6 +10,7 @@ extends Node3D
 @export var loading_screen: Control
 @export var debug_tools: DebugTools
 @export var day_night: DayNight
+@export var garage: Garage
 @export var roads: RoadNetwork
 @export var water: WaterManager
 @export var grass: GrassManager
@@ -33,6 +34,11 @@ func _ready() -> void:
 		day_night.paused = true
 	if debug_tools.volumetric_fog:
 		day_night.set_volumetric_fog(true)
+	# Tests fahren immer mit dem angegebenen Auto oder dem ersten (nicht dem gespeicherten)
+	if debug_tools.car_id != "":
+		car.apply_profile(load("res://cars/%s.tres" % debug_tools.car_id))
+	elif debug_tools.is_active() and garage and not garage.cars.is_empty():
+		car.apply_profile(garage.cars[0])
 	_start_point = start_point
 	_start_heading = heading
 	car.freeze = true
@@ -44,6 +50,9 @@ func _ready() -> void:
 	water.start(world_gen, car, roads)
 	grass.start(world_gen, car, terrain, roads)
 	loading_screen.visible = true
+	# Beim Start die Garage zeigen (außer bei Tests). Die Welt lädt im Hintergrund weiter.
+	if garage and not debug_tools.is_active():
+		garage.open.call_deferred()
 
 
 func _process(delta: float) -> void:

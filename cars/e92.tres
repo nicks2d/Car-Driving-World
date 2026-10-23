@@ -1,0 +1,65 @@
+[gd_resource type="Resource" script_class="CarProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/car_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+id = "e92"
+display_name = "BMW M3 GTS"
+subtitle = "E92 · 2011"
+model_folder = "2011_bmw_e92_m3_gts"
+credit = "This work is based on \"2011_bmw_e92_m3_gts\" (https://sketchfab.com/3d-models/2011-bmw-e92-m3-gts-5ef0b693916f413ab444fe46b4456a1a) by Car design (https://sketchfab.com/AnswerBlue38) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)"
+power_ps = 450
+drive_text = "Heckantrieb"
+gearbox_text = "7-Gang-Doppelkupplung"
+engine_text = "4,4 l V8, Sauger (S65)"
+measured_0_100 = 4.37
+measured_top_kmh = 304.0
+measured_braking_m = 34.0
+wheel_parts = PackedStringArray("phong11", "*Meshrims", "*Meshdisk")
+caliper_parts = PackedStringArray("*Meshcaliper")
+paint_materials = PackedStringArray("carPaint")
+glass_materials = PackedStringArray("glass")
+headlight_materials = PackedStringArray("ligth")
+taillight_materials = PackedStringArray("red_glass")
+shadow_parts = PackedStringArray("carPaint", "plastic*", "chassis", "phong11")
+low_detail_parts = PackedStringArray("*Meshrims", "*Meshdisk", "internal")
+glass_opacity = 0.6
+paint_colors = Array[Color]([Color(0.85, 0.3, 0.04, 1), Color(0.04, 0.04, 0.045, 1), Color(0.88, 0.89, 0.88, 1), Color(0.05, 0.2, 0.55, 1), Color(0.55, 0.57, 0.58, 1)])
+paint_metallic = 0.4
+paint_roughness = 0.32
+mass = 1530.0
+wheelbase = 2.761
+track_front = 1.546
+track_rear = 1.538
+wheel_radius = 0.341
+body_size = Vector3(1.8, 0.62, 4.5)
+body_center = Vector3(0, 0.05, -0.05)
+cabin_size = Vector3(1.4, 0.42, 2.0)
+cabin_center = Vector3(0, 0.58, -0.4)
+max_torque_nm = 440.0
+max_power_kw = 331.0
+idle_rpm = 1000.0
+torque_plateau_start_rpm = 3750.0
+power_end_rpm = 8300.0
+redline_rpm = 8500.0
+low_end_torque = 0.72
+max_drive_force = 10150.0
+top_speed_kmh = 305.0
+air_drag = 0.47
+downforce = 0.7
+gear_ratios = Array[float]([4.78, 3.06, 2.11, 1.67, 1.28, 1.0, 0.83])
+final_drive = 3.15
+shift_up_rpm = 8300.0
+shift_down_rpm = 4200.0
+shift_time = 0.1
+launch_rpm = 4000.0
+brake_strength = 72.0
+power_oversteer = 0.14
+drift_angle_limit = 15.0
+cylinders = 8
+firing_unevenness = 0.35
+sound_sharpness = 24.0
+sound_rumble = 0.08
+turbo_volume = 0.0
+intake_volume = 0.3

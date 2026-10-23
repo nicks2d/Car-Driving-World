@@ -26,6 +26,8 @@ extends Resource
 @export var gearbox_text: String = ""
 @export var engine_text: String = ""
 @export var measured_0_100: float = 0.0
+@export var measured_top_kmh: float = 0.0
+@export var measured_braking_m: float = 0.0
 
 @export_group("Modell")
 ## Drehung um die Hochachse, damit die Nase nach +Z zeigt (Grad)

@@ -32,6 +32,13 @@
 [ext_resource type="Shader" path="res://shaders/grass.gdshader" id="30_grass"]
 [ext_resource type="Script" path="res://scripts/grass_manager.gd" id="31_grass"]
 [ext_resource type="Script" path="res://scripts/tachometer.gd" id="50_tacho"]
+[ext_resource type="Script" path="res://scripts/garage.gd" id="51_garage"]
+[ext_resource type="Script" path="res://scripts/car_profile.gd" id="57_profile"]
+[ext_resource type="Resource" path="res://cars/m2.tres" id="52_m2"]
+[ext_resource type="Resource" path="res://cars/e30.tres" id="53_e30"]
+[ext_resource type="Resource" path="res://cars/e92.tres" id="54_e92"]
+[ext_resource type="Resource" path="res://cars/f90.tres" id="55_f90"]
+[ext_resource type="Resource" path="res://cars/g90.tres" id="56_g90"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -171,7 +178,7 @@ shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 shader_parameter/far_mode = true
 shader_parameter/sink_radius = 1850.0
 
-[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water", "grass")]
+[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water", "grass", "garage")]
 script = ExtResource("1_game")
 world_gen = SubResource("WorldGen_main")
 terrain = NodePath("Terrain")
@@ -180,6 +187,7 @@ car = NodePath("Car")
 loading_screen = NodePath("HUD/LoadingScreen")
 debug_tools = NodePath("DebugTools")
 day_night = NodePath("DayNight")
+garage = NodePath("Garage")
 roads = NodePath("Roads")
 water = NodePath("Water")
 grass = NodePath("Grass")
@@ -200,6 +208,7 @@ sun = NodePath("../Sun")
 world_environment = NodePath("../WorldEnvironment")
 
 [node name="Terrain" type="Node3D" parent="."]
+process_mode = 3
 script = ExtResource("6_terrain")
 terrain_material = SubResource("ShaderMaterial_terrain")
 water_material = SubResource("ShaderMaterial_water")
@@ -207,20 +216,24 @@ foliage_material = SubResource("ShaderMaterial_foliage")
 rock_material = SubResource("StandardMaterial3D_rock")
 
 [node name="Roads" type="Node3D" parent="."]
+process_mode = 3
 script = ExtResource("21_roads")
 road_material = SubResource("ShaderMaterial_road")
 bridge_material = SubResource("StandardMaterial3D_concrete")
 rail_material = SubResource("StandardMaterial3D_rail")
 
 [node name="Water" type="Node3D" parent="."]
+process_mode = 3
 script = ExtResource("28_water")
 water_material = SubResource("ShaderMaterial_water")
 
 [node name="Grass" type="Node3D" parent="."]
+process_mode = 3
 script = ExtResource("31_grass")
 grass_material = SubResource("ShaderMaterial_grass")
 
 [node name="HorizonRing" type="MeshInstance3D" parent="."]
+process_mode = 3
 cast_shadow = 0
 material_override = SubResource("ShaderMaterial_ring")
 script = ExtResource("7_ring")
@@ -315,3 +328,8 @@ vertical_alignment = 1
 [node name="DebugTools" type="Node" parent="." node_paths=PackedStringArray("camera")]
 script = ExtResource("9_debug")
 camera = NodePath("../Camera")
+
+[node name="Garage" type="CanvasLayer" parent="." node_paths=PackedStringArray("car")]
+script = ExtResource("51_garage")
+car = NodePath("../Car")
+cars = Array[ExtResource("57_profile")]([ExtResource("52_m2"), ExtResource("53_e30"), ExtResource("54_e92"), ExtResource("55_f90"), ExtResource("56_g90")])

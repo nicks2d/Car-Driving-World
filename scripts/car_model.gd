@@ -1,3 +1,4 @@
+class_name CarModel
 extends Node3D
 ## Das sichtbare Auto. Lädt das Modell aus dem Profil des Autos (CarProfile) und baut es ein:
 ##  - Teile nach den Mustern im Profil einordnen (Räder, Bremssättel, Aufkleber, ausblenden)
@@ -38,6 +39,9 @@ signal model_ready
 
 ## Aktuelle Lackfarbe (Index in profile.paint_colors)
 var paint_index: int = 0
+## Gemessen am Modell (in Metern, nach dem Einpassen): Radstand, Spurweiten, Radradius.
+## Hilft beim Einstellen der Profile, damit Physik und Modell zusammenpassen.
+var measured: Dictionary = {}
 
 var _root: Node3D
 var _car: Car
@@ -76,15 +80,21 @@ func _ready() -> void:
 	_root = get_parent() as Node3D
 	_car = _root as Car
 	if _car:
-		_car.profile_changed.connect(show_profile)
-		if _car.profile:
-			# Erst im nächsten Moment: Während _ready() richtet das Auto noch seine Kind-Nodes
-			# ein und nimmt keine neuen an
-			show_profile.call_deferred(_car.profile)
+		# Erst im nächsten Moment: Während _ready() richtet das Auto noch seine Kind-Nodes
+		# ein und nimmt keine neuen an. Dann das Auto zeigen, das in dem Moment gewählt ist.
+		_car.profile_changed.connect(func(_p: CarProfile) -> void: _show_current.call_deferred())
+		_show_current.call_deferred()
+
+
+func _show_current() -> void:
+	if _car.profile and (_profile != _car.profile or (_model == null and _loading_path == "")):
+		show_profile(_car.profile)
 
 
 ## Modell eines Autos laden und einbauen (das alte wird freigegeben)
 func show_profile(profile: CarProfile) -> void:
+	if _root == null:
+		_root = get_parent() as Node3D
 	_clear()
 	_profile = profile
 	paint_index = clampi(paint_index, 0, maxi(profile.paint_colors.size() - 1, 0))
@@ -189,6 +199,13 @@ func _make_preview_anchors() -> void:
 		_extra_nodes.append(anchor)
 
 
+## Modell freigeben (z. B. die Vorschau in der Garage beim Schließen)
+func clear() -> void:
+	_clear()
+	_profile = null
+	_loading_path = ""
+
+
 func _clear() -> void:
 	if _pivot:
 		_pivot.queue_free()
@@ -258,6 +275,7 @@ func _build(scene: PackedScene) -> void:
 		for corner in 2:
 			_straighten(corner_parts[corner], corner_parts[corner] + caliper_corners[corner], corner_centers[corner])
 	_fit(corner_centers)
+	_measure(corner_centers, corner_parts)
 	# Räder an die Physik-Räder (bzw. Vorschau-Halter) hängen, Sättel an eigene Halter
 	for corner in 4:
 		var anchor := _anchors[corner]
@@ -277,6 +295,13 @@ func _build(scene: PackedScene) -> void:
 	_make_materials()
 	if _profile.merge_static_parts:
 		body = _merge_static(body)
+		# Auch die vielen kleinen Radteile pro Ecke zusammenfassen
+		wheels = []
+		calipers = []
+		for corner in 4:
+			wheels.append_array(_merge_attached(_anchors[corner]))
+		for pair: Array in _calipers:
+			calipers.append_array(_merge_attached(pair[0]))
 	for mi in body + wheels + calipers:
 		_setup_mesh(mi)
 	_setup_headlights()
@@ -351,9 +376,14 @@ func _split_all(meshes: Array[MeshInstance3D], middle: Vector3, size: Vector3) -
 	return result
 
 
-## Ein Mesh in bis zu vier Meshes aufteilen: jedes Dreieck kommt in die Ecke, in der seine
-## Mitte liegt. Die neuen Meshes stehen an derselben Stelle wie das alte.
 func _split_by_corner(mi: MeshInstance3D, middle: Vector3) -> Array[MeshInstance3D]:
+	return _split_mesh(mi, func(p: Vector3) -> int: return _corner_of(p, middle))
+
+
+## Ein Mesh in bis zu vier Meshes aufteilen: classify(Mitte eines Dreiecks, relativ zum Auto)
+## sagt, in welches Teil (0 bis 3) das Dreieck kommt. Die neuen Meshes stehen an derselben
+## Stelle wie das alte.
+func _split_mesh(mi: MeshInstance3D, classify: Callable) -> Array[MeshInstance3D]:
 	var to_root := _to_root(mi)
 	var pieces: Array[ArrayMesh] = [ArrayMesh.new(), ArrayMesh.new(), ArrayMesh.new(), ArrayMesh.new()]
 	for s in mi.mesh.get_surface_count():
@@ -374,7 +404,7 @@ func _split_by_corner(mi: MeshInstance3D, middle: Vector3) -> Array[MeshInstance
 			var b := indices[t + 1]
 			var c := indices[t + 2]
 			var center := to_root * ((verts[a] + verts[b] + verts[c]) / 3.0)
-			match _corner_of(center, middle):
+			match classify.call(center):
 				0: c0.append_array([a, b, c])
 				1: c1.append_array([a, b, c])
 				2: c2.append_array([a, b, c])
@@ -383,8 +413,7 @@ func _split_by_corner(mi: MeshInstance3D, middle: Vector3) -> Array[MeshInstance
 		for corner in 4:
 			if per_corner[corner].is_empty():
 				continue
-			var part := arrays.duplicate()
-			part[Mesh.ARRAY_INDEX] = per_corner[corner]
+			var part := _compact(arrays, per_corner[corner])
 			pieces[corner].add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, part)
 			pieces[corner].surface_set_material(pieces[corner].get_surface_count() - 1, mi.mesh.surface_get_material(s))
 	var result: Array[MeshInstance3D] = []
@@ -392,12 +421,68 @@ func _split_by_corner(mi: MeshInstance3D, middle: Vector3) -> Array[MeshInstance
 		if pieces[corner].get_surface_count() == 0:
 			continue
 		var piece := MeshInstance3D.new()
-		piece.name = "%s_Ecke%d" % [mi.name, corner]
+		piece.name = "%s_Teil%d" % [mi.name, corner]
 		piece.mesh = pieces[corner]
 		mi.get_parent().add_child(piece)
 		piece.transform = mi.transform
 		result.append(piece)
 	mi.queue_free()
+	return result
+
+
+## Nur die Punkte behalten, die die Dreiecke in indices wirklich benutzen (sonst wäre jedes
+## Teilstück so groß wie das ganze Mesh)
+func _compact(arrays: Array, indices: PackedInt32Array) -> Array:
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var new_index := PackedInt32Array()
+	new_index.resize(verts.size())
+	new_index.fill(-1)
+	var used := PackedInt32Array()
+	var remapped := PackedInt32Array()
+	remapped.resize(indices.size())
+	for i in indices.size():
+		var old := indices[i]
+		if new_index[old] == -1:
+			new_index[old] = used.size()
+			used.append(old)
+		remapped[i] = new_index[old]
+	var result := []
+	result.resize(Mesh.ARRAY_MAX)
+	result[Mesh.ARRAY_INDEX] = remapped
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL] if arrays[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
+	var tangents: PackedFloat32Array = arrays[Mesh.ARRAY_TANGENT] if arrays[Mesh.ARRAY_TANGENT] != null else PackedFloat32Array()
+	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR] if arrays[Mesh.ARRAY_COLOR] != null else PackedColorArray()
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV] if arrays[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
+	var uv2s: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2] if arrays[Mesh.ARRAY_TEX_UV2] != null else PackedVector2Array()
+	var new_verts := PackedVector3Array()
+	var new_normals := PackedVector3Array()
+	var new_tangents := PackedFloat32Array()
+	var new_colors := PackedColorArray()
+	var new_uvs := PackedVector2Array()
+	var new_uv2s := PackedVector2Array()
+	for old in used:
+		new_verts.append(verts[old])
+		if not normals.is_empty():
+			new_normals.append(normals[old])
+		if not tangents.is_empty():
+			new_tangents.append_array([tangents[old * 4], tangents[old * 4 + 1], tangents[old * 4 + 2], tangents[old * 4 + 3]])
+		if not colors.is_empty():
+			new_colors.append(colors[old])
+		if not uvs.is_empty():
+			new_uvs.append(uvs[old])
+		if not uv2s.is_empty():
+			new_uv2s.append(uv2s[old])
+	result[Mesh.ARRAY_VERTEX] = new_verts
+	if not new_normals.is_empty():
+		result[Mesh.ARRAY_NORMAL] = new_normals
+	if not new_tangents.is_empty():
+		result[Mesh.ARRAY_TANGENT] = new_tangents
+	if not new_colors.is_empty():
+		result[Mesh.ARRAY_COLOR] = new_colors
+	if not new_uvs.is_empty():
+		result[Mesh.ARRAY_TEX_UV] = new_uvs
+	if not new_uv2s.is_empty():
+		result[Mesh.ARRAY_TEX_UV2] = new_uv2s
 	return result
 
 
@@ -431,6 +516,20 @@ func _straighten(wheel_parts: Array, parts: Array, center: Vector3) -> void:
 		* Transform3D(Basis.IDENTITY, -center)
 	for mi: MeshInstance3D in parts:
 		mi.global_transform = _root.global_transform * turn * _to_root(mi)
+
+
+## Maße des eingepassten Modells merken (siehe measured)
+func _measure(corner_centers: Array[Vector3], corner_parts: Array) -> void:
+	var s := _pivot.transform.basis.get_scale().x
+	var radius := 0.0
+	for mi: MeshInstance3D in corner_parts[2]:
+		radius = maxf(radius, (_to_root(mi) * mi.get_aabb()).size.y * 0.5)
+	measured = {"scale": s,
+		"wheelbase": ((corner_centers[0].z + corner_centers[1].z) - (corner_centers[2].z + corner_centers[3].z)) * 0.5 * s,
+		"track_front": (corner_centers[0].x - corner_centers[1].x) * s,
+		"track_rear": (corner_centers[2].x - corner_centers[3].x) * s,
+		"wheel_radius": radius,
+		"length": (_box_of(_meshes_under(_model)).size.z)}
 
 
 ## Modell so skalieren und verschieben, dass seine Radmitten auf den Physik-Rädern sitzen
@@ -487,6 +586,34 @@ func _merge_static(meshes: Array[MeshInstance3D]) -> Array[MeshInstance3D]:
 	return keep
 
 
+## Alle Meshes, die an einem Rad (oder Bremssattel-Halter) hängen, pro Material zu einem
+## Mesh zusammenfassen
+func _merge_attached(holder: Node3D) -> Array[MeshInstance3D]:
+	var by_material := {}
+	for child in holder.get_children():
+		var mi := child as MeshInstance3D
+		if mi == null or mi.mesh == null or mi.is_queued_for_deletion():
+			continue
+		for s in mi.mesh.get_surface_count():
+			var material := mi.mesh.surface_get_material(s)
+			if not by_material.has(material):
+				var tool := SurfaceTool.new()
+				tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+				by_material[material] = tool
+			(by_material[material] as SurfaceTool).append_from(mi.mesh, s, mi.transform)
+		mi.queue_free()
+	var result: Array[MeshInstance3D] = []
+	for material: Material in by_material:
+		var mesh := (by_material[material] as SurfaceTool).commit()
+		mesh.surface_set_material(0, material)
+		var merged := MeshInstance3D.new()
+		merged.mesh = mesh
+		holder.add_child(merged)
+		_extra_nodes.append(merged)
+		result.append(merged)
+	return result
+
+
 ## Eigene Materialien für Lack, Glas, Felgen, Reifen und Lichter
 func _make_materials() -> void:
 	_paint = StandardMaterial3D.new()
@@ -512,16 +639,18 @@ var _tire: StandardMaterial3D
 var _exhaust: StandardMaterial3D
 
 
-func _replacement_for(material: Material) -> Material:
+## front: liegt das Teil in der vorderen Hälfte des Autos? (Scheinwerfer leuchten nur vorne,
+## Rücklichter nur hinten)
+func _replacement_for(material: Material, front: bool) -> Material:
 	if material == null:
 		return null
 	var material_name := material.resource_name
 	if _any_match(material_name, _profile.paint_materials):
 		return _paint
 	if _any_match(material_name, _profile.headlight_materials):
-		return _head_glow
+		return _head_glow if front else null
 	if _any_match(material_name, _profile.taillight_materials):
-		return _tail_glow
+		return _tail_glow if not front else null
 	if _any_match(material_name, _profile.glass_materials):
 		if _glass == null:
 			_glass = StandardMaterial3D.new()
@@ -564,8 +693,15 @@ func _any_match(text: String, patterns: PackedStringArray) -> bool:
 func _setup_mesh(mi: MeshInstance3D) -> void:
 	if not is_instance_valid(mi) or mi.is_queued_for_deletion():
 		return
+	var box := _to_root(mi) * mi.get_aabb()
+	# Lichter-Meshes, die vorne und hinten zugleich liegen, in zwei Hälften teilen
+	if box.position.z < -0.5 and box.end.z > 0.5 and _has_light(mi):
+		for piece in _split_mesh(mi, func(p: Vector3) -> int: return 0 if p.z > 0.0 else 1):
+			_setup_mesh(piece)
+		return
+	var front := box.get_center().z > 0.0
 	for s in mi.mesh.get_surface_count():
-		var replacement := _replacement_for(mi.mesh.surface_get_material(s))
+		var replacement := _replacement_for(mi.mesh.surface_get_material(s), front)
 		if replacement:
 			mi.set_surface_override_material(s, replacement)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if _matches(mi, _profile.shadow_parts) \
@@ -574,6 +710,15 @@ func _setup_mesh(mi: MeshInstance3D) -> void:
 		mi.lod_bias = low_detail_lod_bias
 	if _matches(mi, _profile.sticker_parts):
 		_stickers.append(mi)
+
+
+func _has_light(mi: MeshInstance3D) -> bool:
+	for s in mi.mesh.get_surface_count():
+		var material := mi.mesh.surface_get_material(s)
+		if material and (_any_match(material.resource_name, _profile.headlight_materials)
+				or _any_match(material.resource_name, _profile.taillight_materials)):
+			return true
+	return false
 
 
 func _set_stickers(on: bool) -> void:
