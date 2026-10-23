@@ -222,7 +222,9 @@ assets/
   Grip: nass 0,7, Schnee 0,5 (`Car.grip_factor`), Gischt hinter den Hinterrädern (`Car.wetness`).
 - Regen-Spiegelungen: SSR nur bei Nässe an. Kostet im Vollbild ~2,5 ms (66 → 54 FPS). Deshalb
   schaltet DayNight bei bedecktem Himmel (overcast > 0,75) die Sonnenschatten aus (gibt es bei
-  Bedeckung ohnehin nicht): Regen läuft dann so schnell wie klares Wetter.
+  Bedeckung ohnehin nicht). Schlussmessung (Vollbild, `--bench=60`, Mac warm): klar 68,8 FPS,
+  Regen 61,3 FPS, 1%-Low ~50 (Ruckler beim Kachel-Laden, wie vorher). SSR abschalten:
+  `wet_reflections` am Weather-Node.
 - Regen/Schnee (`precipitation.gd`): GPUParticles in einem 36 × 22 × 36-m-Kasten um die Kamera,
   eigener Partikel-Shader schiebt herausfallende Partikel auf die andere Seite (bei jedem Tempo
   gleich dicht). `fixed_fps = 0` und `interpolate = false`, sonst Striche beim Umklappen.
