@@ -54,6 +54,8 @@ var drift_angle: float = 0.0
 ## Wie nass (oder verschneit) die Straße unter dem Auto ist, 0 bis 1 (setzt das Wetter;
 ## für die Gischt hinter den Reifen)
 var wetness: float = 0.0
+## Fährt das Auto gerade durch einen Tunnel? (setzt TunnelEffects; schaltet das Licht an)
+var in_tunnel: bool = false
 
 var _steer_input: float = 0.0
 var _shift_timer: float = 0.0

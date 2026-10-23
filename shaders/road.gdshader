@@ -5,6 +5,7 @@
 // Wetter (globale Shader-Werte): Nässe macht den Asphalt dunkel und glatt, in Senken und
 // Fahrspuren bilden sich Pfützen, die spiegeln (mit SSR). Schnee bedeckt die Straße
 // außer in den Reifenspuren, im Winter liegt er auch auf dem Bankett.
+// Im Tunnel (UV2.y = überdacht, nur bei normaler Straße) bleibt die Fahrbahn trocken.
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
 
@@ -86,22 +87,26 @@ void fragment() {
 	float roughness = mix(mix(0.82, 0.6, paint), 0.95, shoulder);
 	float normal_depth = mix(mix(0.6, 0.2, paint), 1.0, shoulder);
 
-	// --- Nässe und Pfützen ---
+	// --- Nässe und Pfützen (nicht im Tunnel) ---
+	float open_sky = 1.0 - UV2.y * (1.0 - junction);
+	float wet = wetness * open_sky;
+	float snow_road = road_snow * open_sky;
+	float snow_side = snow_cover * open_sky;
 	float puddle_noise = texture(variation_noise, world_pos.xz / 9.0).r * 0.75
 		+ texture(variation_noise, world_pos.xz / 2.3).r * 0.25 + wheel_tracks * 0.06 * (1.0 - junction);
 	float puddle = smoothstep(1.0 - puddle_amount - 0.04, 1.0 - puddle_amount + 0.04, puddle_noise)
-		* smoothstep(0.35, 0.9, wetness) * (1.0 - shoulder);
-	albedo *= 1.0 - wetness * mix(0.45, 0.3, shoulder);
-	roughness = mix(roughness, mix(0.22, 0.6, shoulder), wetness);
+		* smoothstep(0.35, 0.9, wet) * (1.0 - shoulder);
+	albedo *= 1.0 - wet * mix(0.45, 0.3, shoulder);
+	roughness = mix(roughness, mix(0.22, 0.6, shoulder), wet);
 	albedo *= 1.0 - puddle * 0.3;
 	roughness = mix(roughness, 0.02, puddle);
 	normal_depth *= 1.0 - puddle * 0.95;
 
 	// --- Schnee: auf der Fahrbahn außer in den Reifenspuren, im Winter auf dem Bankett ---
 	float snow_noise = texture(variation_noise, vec2(across, along) / 3.0).r;
-	float tracks_clear = wheel_tracks * (1.0 - junction) * smoothstep(0.95, 0.6, road_snow);
-	float snow = clamp(road_snow * 1.3 - tracks_clear * 1.2 - (1.0 - road_snow) * snow_noise, 0.0, 1.0);
-	snow = max(snow * (1.0 - shoulder), shoulder * smoothstep(0.2, 0.6, max(snow_cover, road_snow) + snow_noise * 0.3 - 0.15));
+	float tracks_clear = wheel_tracks * (1.0 - junction) * smoothstep(0.95, 0.6, snow_road);
+	float snow = clamp(snow_road * 1.3 - tracks_clear * 1.2 - (1.0 - snow_road) * snow_noise, 0.0, 1.0);
+	snow = max(snow * (1.0 - shoulder), shoulder * smoothstep(0.2, 0.6, max(snow_side, snow_road) + snow_noise * 0.3 - 0.15));
 	albedo = mix(albedo, vec3(0.78, 0.8, 0.84) * mix(0.85, 1.0, snow_noise), snow);
 	roughness = mix(roughness, 0.6, snow);
 
@@ -111,5 +116,5 @@ void fragment() {
 	NORMAL_MAP_DEPTH = normal_depth * (1.0 - snow * 0.7);
 	ALBEDO = albedo;
 	ROUGHNESS = roughness;
-	SPECULAR = mix(0.4, 0.5, wetness);
+	SPECULAR = mix(0.4, 0.5, wet);
 }

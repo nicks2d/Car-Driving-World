@@ -48,6 +48,7 @@
 [ext_resource type="Script" path="res://scripts/precipitation.gd" id="66_precip"]
 [ext_resource type="Script" path="res://scripts/weather_sound.gd" id="67_wsound"]
 [ext_resource type="Shader" path="res://shaders/foliage_bare.gdshader" id="68_bare"]
+[ext_resource type="Script" path="res://scripts/tunnel_effects.gd" id="69_tunnelfx"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -164,6 +165,18 @@ albedo_color = Color(0.62, 0.64, 0.66, 1)
 metallic = 0.7
 roughness = 0.4
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_tunnel"]
+cull_mode = 2
+vertex_color_use_as_albedo = true
+vertex_color_is_srgb = true
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_lamp"]
+albedo_color = Color(0, 0, 0, 1)
+emission_enabled = true
+emission = Color(1, 0.86, 0.64, 1)
+emission_energy_multiplier = 8.0
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_foliage"]
 shader = ExtResource("29_foliage")
 shader_parameter/leaf_noise = SubResource("NoiseTexture2D_variation")
@@ -238,6 +251,8 @@ script = ExtResource("21_roads")
 road_material = SubResource("ShaderMaterial_road")
 bridge_material = SubResource("StandardMaterial3D_concrete")
 rail_material = SubResource("StandardMaterial3D_rail")
+tunnel_material = SubResource("StandardMaterial3D_tunnel")
+lamp_material = SubResource("StandardMaterial3D_lamp")
 
 [node name="Water" type="Node3D" parent="."]
 process_mode = 3
@@ -415,3 +430,11 @@ camera = NodePath("../../Camera")
 
 [node name="WeatherSound" type="Node" parent="Weather"]
 script = ExtResource("67_wsound")
+
+[node name="TunnelEffects" type="Node" parent="." node_paths=PackedStringArray("roads", "car", "camera", "day_night", "weather")]
+script = ExtResource("69_tunnelfx")
+roads = NodePath("../Roads")
+car = NodePath("../Car")
+camera = NodePath("../Camera")
+day_night = NodePath("../DayNight")
+weather = NodePath("../Weather")

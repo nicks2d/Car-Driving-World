@@ -120,8 +120,9 @@ var lightning_flash: float = 0.0
 var wetness: float = 0.0
 var snow_ground: float = 0.0
 var road_snow: float = 0.0
-## 1 = Auto ist überdacht (Tunnel): kein Regen, trockene Reifen
+## 1 = Kamera bzw. Auto im Tunnel (setzt TunnelEffects): kein Regen, trockene Reifen
 var shelter: float = 0.0
+var car_shelter: float = 0.0
 
 var world_gen: WorldGen
 var _current: Dictionary = STATES[Kind.CLEAR].duplicate()
@@ -351,7 +352,7 @@ func _apply(delta: float) -> void:
 
 	# Auto: nasse Straße ~70 % Grip, Schnee ~50 %; im Tunnel trocken
 	if car:
-		var dry := shelter
+		var dry := car_shelter
 		var grip := lerpf(1.0, wet_grip, wetness * (1.0 - dry))
 		grip = minf(grip, lerpf(1.0, snow_grip, road_snow * (1.0 - dry)))
 		car.grip_factor = grip

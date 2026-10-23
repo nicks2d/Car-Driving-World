@@ -21,6 +21,9 @@ extends Node3D
 @export var bridge_material: Material
 ## Material für Leitplanken (Metall)
 @export var rail_material: Material
+## Material für Tunnelröhren und Portale (Beton, Farbe aus den Punktfarben) und Deckenlampen
+@export var tunnel_material: Material
+@export var lamp_material: Material
 ## Größe einer Zelle mit höchstens einem Ort (Meter)
 @export var cell_size: float = 1200.0
 ## Wahrscheinlichkeit, dass zwei benachbarte Orte verbunden sind
@@ -428,6 +431,60 @@ func _next_segment_at(cell: Vector2i, visited: Dictionary, arriving: Vector3) ->
 
 
 # ---------------------------------------------------------------------------
+# Tunnel
+# ---------------------------------------------------------------------------
+
+## Wie weit ist dieser Punkt in einem Tunnel? 0 = draußen, 1 = tief drin (ab ~20 m hinter
+## dem Portal). Für Licht, Hall, Regen und Grip.
+func tunnel_cover(pos: Vector3) -> float:
+	var best := 0.0
+	var p := Vector2(pos.x, pos.z)
+	for entry: Entry in _entries.values():
+		if entry.state != State.READY or not entry.kept or entry.segment.tunnel_ranges.is_empty():
+			continue
+		var segment := entry.segment
+		if not segment.bounds.has_point(p):
+			continue
+		var half := segment.tube_half_width() + 0.5
+		for r in segment.tunnel_ranges:
+			# Bis zwei Punkte vor dem Portal mitzählen (dort beginnt es langsam)
+			var i := maxi(r.x - 2, 0)
+			var last := mini(r.y + 2, segment.points.size() - 1)
+			while i <= last:
+				var q := segment.points[i]
+				var d := Vector2(q.x - pos.x, q.z - pos.z).length()
+				if d > half:
+					# Die Punkte liegen 4 m auseinander: so viele kann man sicher überspringen
+					i += maxi(int((d - half) / RoadSegment.POINT_SPACING), 1)
+					continue
+				if pos.y > q.y - 3.0 and pos.y < q.y + RoadSegment.TUBE_APEX + 1.0:
+					var depth := minf(i - r.x, r.y - i) * RoadSegment.POINT_SPACING
+					best = maxf(best, clampf((depth + 6.0) / 26.0, 0.0, 1.0))
+				i += 1
+	return best
+
+
+## Lichtpunkte in Tunneln rund um pos (bis radius Meter), die nächsten zuerst
+func tunnel_lights_near(pos: Vector3, radius: float) -> PackedVector3Array:
+	var found: Array = []
+	var area := Rect2(pos.x - radius, pos.z - radius, radius * 2.0, radius * 2.0)
+	for entry: Entry in _entries.values():
+		if entry.state != State.READY or not entry.kept or entry.segment.tunnel_lights.is_empty():
+			continue
+		if not entry.segment.bounds.intersects(area):
+			continue
+		for light in entry.segment.tunnel_lights:
+			var d := light.distance_squared_to(pos)
+			if d < radius * radius:
+				found.append([d, light])
+	found.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var result := PackedVector3Array()
+	for item: Array in found:
+		result.append(item[1])
+	return result
+
+
+# ---------------------------------------------------------------------------
 # Für Karte und Navi
 # ---------------------------------------------------------------------------
 
@@ -688,12 +745,19 @@ func _update_visuals() -> void:
 				mesh.surface_set_material(0, road_material)
 				if not segment.bridge_arrays.is_empty():
 					mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, segment.bridge_arrays)
-					mesh.surface_set_material(1, bridge_material)
+					mesh.surface_set_material(mesh.get_surface_count() - 1, bridge_material)
+				if not segment.tunnel_arrays.is_empty():
+					mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, segment.tunnel_arrays)
+					mesh.surface_set_material(mesh.get_surface_count() - 1, tunnel_material)
 				entry.mesh_instance = MeshInstance3D.new()
 				entry.mesh_instance.mesh = mesh
-				# Brücken werfen Schatten, flache Straßen brauchen das nicht
-				entry.mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
-					if not segment.bridge_arrays.is_empty() else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				# Brücken werfen Schatten, flache Straßen brauchen das nicht. Tunnelröhren werfen
+				# beidseitig Schatten, sonst scheint die Sonne durch die Wand hinein.
+				entry.mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				if not segment.tunnel_arrays.is_empty():
+					entry.mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_DOUBLE_SIDED
+				elif not segment.bridge_arrays.is_empty():
+					entry.mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 				entry.mesh_instance.position = segment.origin
 				add_child(entry.mesh_instance)
 				# Leitplanken als eigenes Mesh, damit nur sie (und Brücken) Schatten werfen
@@ -704,6 +768,15 @@ func _update_visuals() -> void:
 					rails.mesh = rail_mesh
 					rails.material_override = rail_material
 					entry.mesh_instance.add_child(rails)
+				# Deckenlampen leuchten selbst und werfen keinen Schatten
+				if not segment.lamp_arrays.is_empty():
+					var lamp_mesh := ArrayMesh.new()
+					lamp_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, segment.lamp_arrays)
+					var lamps := MeshInstance3D.new()
+					lamps.mesh = lamp_mesh
+					lamps.material_override = lamp_material
+					lamps.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					entry.mesh_instance.add_child(lamps)
 		elif entry.mesh_instance:
 			entry.mesh_instance.queue_free()
 			entry.mesh_instance = null

@@ -68,6 +68,17 @@ extends Node
 
 ## 0 = Nacht, 1 = Tag (für andere, z. B. Helligkeit von Regen und Talnebel)
 var daylight: float = 1.0
+## Wie tief die Kamera in einem Tunnel ist (setzt TunnelEffects): 0 = draußen, 1 = drin
+var tunnel_cover: float = 0.0
+
+@export_group("Tunnel")
+## So viel heller belichtet das Auge nach einer Weile im Tunnel
+@export var tunnel_exposure: float = 2.4
+## So schnell passt sich das Auge an (höher = schneller; Hell → Dunkel dauert länger)
+@export var adapt_to_dark: float = 0.8
+@export var adapt_to_light: float = 2.0
+
+var _adaptation: float = 0.0
 
 var _sky_material: ShaderMaterial
 
@@ -90,6 +101,9 @@ func _process(delta: float) -> void:
 	elif not paused:
 		time_of_day += delta * hours_per_second
 	time_of_day = fposmod(time_of_day, 24.0)
+	# Augen-Anpassung: im Tunnel langsam heller, draußen schneller wieder normal
+	var speed := adapt_to_dark if tunnel_cover > _adaptation else adapt_to_light
+	_adaptation = move_toward(_adaptation, tunnel_cover, delta * speed)
 	_update_lighting()
 
 
@@ -141,6 +155,9 @@ func _update_lighting() -> void:
 	var shadow_opacity := 1.0 - smoothstep(0.45, 0.75, overcast)
 	sun.shadow_enabled = shadow_opacity > 0.01
 	sun.shadow_opacity = shadow_opacity
+	# Ohne Schatten würde die Sonne durch die Tunnelwände scheinen
+	if not sun.shadow_enabled:
+		sun.light_energy *= 1.0 - tunnel_cover
 
 	# --- Himmel (bei trübem Wetter grauer und dunkler) ---
 	var zenith := _overcast_color(zenith_colors.sample(t), overcast)
@@ -180,6 +197,13 @@ func _update_lighting() -> void:
 	env.adjustment_saturation = lerpf(night_saturation, day_saturation, smoothstep(-8.0, 4.0, elevation))
 	# Bei trübem Wetter etwas heller belichten (wie das Auge, das sich anpasst)
 	env.tonemap_exposure = lerpf(night_exposure, day_exposure, smoothstep(-10.0, 2.0, elevation)) * (1.0 + overcast * 0.25)
+	# Im Tunnel: kein Licht vom Himmel (auch keine Himmels-Spiegelung), das Auge passt sich an.
+	# Nachts ist es draußen ohnehin dunkel, dann braucht es keine Anpassung.
+	env.ambient_light_energy *= 1.0 - tunnel_cover * 0.92
+	env.ambient_light_sky_contribution *= 1.0 - tunnel_cover
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED if tunnel_cover > 0.5 \
+		else Environment.REFLECTION_SOURCE_SKY
+	env.tonemap_exposure *= lerpf(1.0, tunnel_exposure, _adaptation * day)
 
 
 ## Himmelsfarbe bei trübem Wetter: Richtung Grau (gleiche Helligkeit) und etwas dunkler

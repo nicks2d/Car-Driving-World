@@ -20,9 +20,11 @@ const ROAD_COLOR := Color(0.93, 0.92, 0.88)
 const ROAD_EDGE := Color(0.15, 0.15, 0.16)
 const ROUTE_COLOR := Color(0.2, 0.6, 1.0)
 const UNKNOWN_COLOR := Color(0.95, 0.95, 0.95, 0.55)
+const TUNNEL_COLOR := Color(0.78, 0.76, 0.72)
 
-## Ausgedünnte Straßenlinien pro Abschnitt (Welt x/z)
-var _road_lines: Dictionary = {}  # RoadSegment -> PackedVector2Array
+## Ausgedünnte Straßenlinien pro Abschnitt (Welt x/z), aufgeteilt in Stücke:
+## [[Linie, true = Tunnel], ...]
+var _road_lines: Dictionary = {}  # RoadSegment -> Array
 var _route_line := PackedVector2Array()
 var _route_known := PackedByteArray()
 
@@ -94,24 +96,56 @@ func _draw_tiles(view_rect: Rect2) -> void:
 func _draw_roads(view_rect: Rect2) -> void:
 	var width := maxf(9.0, 2.5 * meters_per_pixel)
 	var lines: Array[PackedVector2Array] = []
+	var tunnels: Array[PackedVector2Array] = []
 	for pair: Array in roads.loaded_segments(view_rect):
 		var segment: RoadSegment = pair[1]
 		if not _road_lines.has(segment):
-			var line := PackedVector2Array()
-			for i in range(0, segment.points.size(), 3):
-				line.append(Vector2(segment.points[i].x, segment.points[i].z))
-			var last := segment.points[segment.points.size() - 1]
-			line.append(Vector2(last.x, last.z))
-			_road_lines[segment] = line
-		lines.append(_road_lines[segment])
+			_road_lines[segment] = _split_line(segment)
+		for part: Array in _road_lines[segment]:
+			if part[1]:
+				tunnels.append(part[0])
+			else:
+				lines.append(part[0])
 	# Erst alle dunklen Ränder, dann alle hellen Fahrbahnen (sonst überdecken sich Kreuzungen)
 	for line in lines:
 		draw_polyline(line, ROAD_EDGE, width * 1.6, true)
 	for line in lines:
 		draw_polyline(line, ROAD_COLOR, width, true)
+	# Tunnel gestrichelt
+	var dash := maxf(25.0, 7.0 * meters_per_pixel)
+	for line in tunnels:
+		_draw_dashed_polyline(line, ROAD_EDGE, width * 1.6, dash)
+		_draw_dashed_polyline(line, TUNNEL_COLOR, width, dash)
 	# Gemerkte Linien von Abschnitten, die es nicht mehr gibt, vergessen
 	if _road_lines.size() > lines.size() + 200:
 		_road_lines.clear()
+
+
+## Linie eines Abschnitts (jeder dritte Punkt), in Stücke geteilt: draußen und im Tunnel
+func _split_line(segment: RoadSegment) -> Array:
+	var parts: Array = []
+	var line := PackedVector2Array()
+	var in_tunnel := false
+	var n := segment.points.size()
+	var i := 0
+	while i < n:
+		var here := segment.tunnel[i] == 1
+		if here != in_tunnel and not line.is_empty():
+			line.append(Vector2(segment.points[i].x, segment.points[i].z))
+			parts.append([line, in_tunnel])
+			line = PackedVector2Array()
+		in_tunnel = here
+		line.append(Vector2(segment.points[i].x, segment.points[i].z))
+		# Normal jeden dritten Punkt, aber kein Tunnelanfang oder -ende überspringen
+		var next := mini(i + 3, n - 1) if i < n - 1 else n
+		for k in range(i + 1, mini(next, n)):
+			if (segment.tunnel[k] == 1) != in_tunnel:
+				next = k
+				break
+		i = next
+	if line.size() >= 2:
+		parts.append([line, in_tunnel])
+	return parts
 
 
 ## Orte und noch nicht berechnete Verbindungen (große Karte)

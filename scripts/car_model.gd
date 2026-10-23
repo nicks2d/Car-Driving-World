@@ -143,7 +143,7 @@ func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("toggle_stickers") and not _stickers.is_empty():
 		_set_stickers(not _stickers[0].visible)
 	# Licht: schaltet sich bei Dämmerung an und morgens aus, L schaltet von Hand
-	var night := _is_night()
+	var night := _is_night() or _car.in_tunnel
 	if night != _was_night:
 		_was_night = night
 		_lights_on = night

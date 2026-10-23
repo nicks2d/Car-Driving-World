@@ -24,6 +24,9 @@ var rock_spacing: float = 22.0
 var arrays: Array = []
 ## Höhen des Rasters (ohne Rand), Zeile für Zeile. Für Kollision und später Vegetation.
 var heights: PackedFloat32Array
+## Wie heights, aber mit NaN, wo das Gelände ein Loch hat (Tunnelportale). Für die Kollision:
+## Jolt lässt dort die Dreiecke weg. Leer = keine Löcher.
+var collision_heights: PackedFloat32Array
 ## Anzahl Rasterpunkte pro Seite
 var grid_size: int = 0
 ## Mesh-Daten der Flussoberfläche in dieser Kachel (leer = kein Fluss)
@@ -48,12 +51,20 @@ func run() -> void:
 	hs.resize(side * side)
 	var road_near := PackedFloat32Array()
 	road_near.resize(side * side)
+	# Löcher für Tunnelportale (1 = hier ist kein Gelände)
+	var holes := PackedByteArray()
+	holes.resize(side * side)
+	var any_hole := false
+	var check_holes := has_roads and roads.has_tunnels()
 	var i := 0
 	for gz in range(-1, n + 2):
 		var wz := origin.y + gz * spacing
 		for gx in range(-1, n + 2):
 			var wx := origin.x + gx * spacing
 			var h := world_gen.terrain_height(wx, wz, lakes)
+			if check_holes and roads.tunnel_hole(wx, wz, h):
+				holes[i] = 1
+				any_hole = true
 			if has_roads:
 				var carved := roads.carve(wx, wz, h)
 				h = carved.x
@@ -75,6 +86,9 @@ func run() -> void:
 	heights.resize(grid_count)
 
 	var v := 0
+	# Loch-Kennung für die Punkte des eigentlichen Rasters (ohne Rand)
+	var grid_holes := PackedByteArray()
+	grid_holes.resize(grid_count + skirt_count)
 	for gz in grid_size:
 		for gx in grid_size:
 			var c := (gz + 1) * side + gx + 1
@@ -91,6 +105,7 @@ func run() -> void:
 			# Farbe: Rot = Wald, Grün = Nähe zur Straße, Blau = nass (Ufer, Grund von Flüssen und Seen)
 			colors[v] = Color(forest, near_road, wet, 1.0)
 			heights[v] = h
+			grid_holes[v] = holes[c]
 			v += 1
 
 	# 3. Dreiecke: zwei pro Rasterquadrat
@@ -100,6 +115,10 @@ func run() -> void:
 	for gz in n:
 		for gx in n:
 			var a := gz * grid_size + gx
+			# Dreiecke, die einen Loch-Punkt berühren, fallen weg
+			if any_hole and (grid_holes[a] == 1 or grid_holes[a + 1] == 1 or grid_holes[a + grid_size] == 1 \
+					or grid_holes[a + grid_size + 1] == 1):
+				continue
 			indices[k] = a
 			indices[k + 1] = a + 1
 			indices[k + 2] = a + grid_size
@@ -125,6 +144,8 @@ func run() -> void:
 		for e in n:
 			var top_a := _edge_vertex(edge, e)
 			var top_b := _edge_vertex(edge, e + 1)
+			if any_hole and (grid_holes[top_a] == 1 or grid_holes[top_b] == 1):
+				continue
 			var bottom_a := first + e
 			var bottom_b := first + e + 1
 			if flip:
@@ -142,6 +163,14 @@ func run() -> void:
 				indices[k + 4] = bottom_b
 				indices[k + 5] = bottom_a
 			k += 6
+
+	indices.resize(k)
+	collision_heights = PackedFloat32Array()
+	if any_hole:
+		collision_heights = heights.duplicate()
+		for p in grid_count:
+			if grid_holes[p] == 1:
+				collision_heights[p] = NAN
 
 	_build_river_water(origin)
 	if with_vegetation:

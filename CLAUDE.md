@@ -102,7 +102,7 @@ assets/
 - [x] Extra: Autoauswahl mit Garage (5 BMW, Profile, Showroom, Sound pro Motor)
 - [x] Extra: Minimap mit Navi (Kartenkacheln, Route über Orts-Graphen, Abbiege-Hinweise)
 - [x] Extra: Wetter und Jahreszeiten (6 Wetterlagen, Regen mit SSR, Talnebel, Schnee, 4 Jahreszeiten)
-- [ ] Extra: Tunnel
+- [x] Extra: Tunnel (statt verworfener Abschnitte, Röhre mit Lampen, Portale, Hall, Augen-Anpassung)
 - [ ] Meilenstein 8
 - [ ] Meilenstein 9
 
@@ -238,6 +238,34 @@ assets/
   750/950/850/250 m. Gras verschwindet unter Schnee.
 - Wetter-Geräusche (`weather_sound.gd`): Regen-/Windschleife und 3 Donner, beim Start im
   Hintergrund erzeugt. Donner kommt Entfernung/343 s nach dem Blitz.
+- Tunnel (`road_segment.gd`): Liegt die Fahrbahn mehr als 25 m unter dem Gelände
+  (`TUNNEL_DEPTH`), wird ein Tunnel daraus, verlängert bis dorthin, wo es nur noch 12 m sind
+  (`PORTAL_DEPTH`, dort sind die Portale). Lücken bis 32 m werden geschlossen, im Tunnel ist die
+  Steigung gleichmäßig. Früher fielen solche Abschnitte weg (MAX_CUT 35 m), jetzt nur noch bei
+  Tunneln über 3 km. Ist der normale Weg 1,15-mal länger als die Luftlinie (oder ungültig),
+  rechnet die Wegsuche eine zweite Variante, die Berge durchbohren darf (Gelände über dem
+  tiefsten Punkt im Umkreis von 216 m + 20 m zählt als Tunnel, kostet doppelt + 150 pro Tunnel).
+  Sie gewinnt nur mit Tunnel und wenn sie 10 % günstiger ist, sonst bleibt die Straße wie vorher.
+  Ergebnis rund um den Start: ~6 % der Abschnitte mit Tunnel, meist 0,5–2,9 km lang.
+- Tunnel-Mesh: Röhre (Wand 4,6 m, Scheitel 7,6 m, unten helle Verkleidung mit orangem Streifen,
+  Punktfarben, Material ohne Backface-Culling), Portal = Betonkragen + Stirnwand (31 × 12 m),
+  Deckenlampen alle 8 m (leuchtendes Material), Lichtpunkte alle 16 m. Fahrbahn im Tunnel bis an
+  die Wand, UV2.y = überdacht (Straßen-Shader: trocken, kein Schnee). Wände und Stirnwand mit
+  Kollision. Die Röhre wirft beidseitig Schatten (sonst scheint die Sonne hinein).
+- Gelände an Tunneln (`road_query.gd`): Tunnelstücke graben nichts ab (der Berg bleibt).
+  Hinter der Portal-Ebene wird aus der Böschung eine Felswand mit Steigung 3. Löcher im Gelände
+  (`tunnel_hole`): die ersten 4 m hinter dem Portal und überall, wo das Gelände über der Röhre
+  zu dünn ist; Dreiecke an Loch-Punkten fallen weg, die Kollision bekommt dort NaN (Jolt lässt
+  die Dreiecke weg). Bäume/Felsen/Gras halten 20 m hinter den Portalen Abstand.
+- Im Tunnel (`tunnel_effects.gd`): Abdeckung 0–1 aus `RoadNetwork.tunnel_cover()` (ab dem
+  Portal über ~20 m), 8 echte OmniLights an den nächsten Lichtpunkten (alle 0,2 s neu verteilt),
+  Audio-Bus „Tunnel“ mit Reverb für alle Geräusche des Autos, Weather.shelter (kein Regen,
+  trockene Reifen), DayNight: kein Himmelslicht und keine Himmels-Spiegelung, Augen-Anpassung
+  (Belichtung bis 2,4-fach, dunkel werden langsamer als hell), ohne Sonnenschatten keine Sonne.
+  Abblendlicht geht im Tunnel automatisch an (`Car.in_tunnel`). Karte: Tunnel gestrichelt.
+- Testen: Tunnel nahe am Start, z. B. `-- --shot=t --pos=-1562,-8360 --heading=-29` (vor dem
+  Portal, 500 m lang), innen `--pos=-1798,-8254 --heading=-64`. Leistung im Vollbild: Tunnel-
+  strecke 67 FPS, Startstrecke 66,8 (Mac warm). Im Fenster begrenzt macOS auf 60 (V-Sync).
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

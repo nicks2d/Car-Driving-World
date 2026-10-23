@@ -70,6 +70,8 @@ class Chunk:
 	var removed: bool = false
 	## Feine Höhen (Detailstufe 0), für Kollision und Vegetation
 	var heights: PackedFloat32Array
+	## Höhen für die Kollision, mit NaN an Tunnelportalen (leer = wie heights)
+	var collision_heights: PackedFloat32Array
 	var grid_size: int = 0
 	## Bäume und Felsen: Art -> MultiMeshInstance3D
 	var veg_instances: Dictionary = {}
@@ -218,6 +220,7 @@ func _apply_job(chunk: Chunk) -> void:
 	chunk.lod = job.lod
 	if job.lod == 0:
 		chunk.heights = job.heights
+		chunk.collision_heights = job.collision_heights
 		chunk.grid_size = job.grid_size
 		chunk.colliders = job.colliders
 
@@ -343,7 +346,7 @@ func _create_collision(chunk: Chunk) -> void:
 	var shape := HeightMapShape3D.new()
 	shape.map_width = chunk.grid_size
 	shape.map_depth = chunk.grid_size
-	shape.map_data = chunk.heights
+	shape.map_data = chunk.heights if chunk.collision_heights.is_empty() else chunk.collision_heights
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	collision.scale = Vector3(lod_spacings[0], 1.0, lod_spacings[0])
