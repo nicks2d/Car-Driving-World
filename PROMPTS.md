@@ -235,3 +235,201 @@ mit diesem Projekt und pushe den aktuellen Stand.
 Erklär mir, wie ich aus dem Projekt eine Version exportiere, die ich
 ohne Godot starten und an Freunde schicken kann.
 ```
+
+---
+
+# Sammel-Prompts (große Brocken)
+
+## Die ganze Welt (Meilensteine 2 bis 6 am Stück)
+
+Großer Prompt, der lange läuft und einiges vom Nutzungslimit braucht.
+Am besten in einer frischen Sitzung abschicken.
+
+```
+Lies die CLAUDE.md und die PROMPTS.md. Meilenstein 0 und 1 sind fertig.
+Heute machst du ausnahmsweise mehrere Meilensteine am Stück: 2 (Terrain),
+3 (Himmel, Licht, Tag-Nacht), 4 (Straßen), 5 (Wasser) und 6 (Vegetation).
+Die genauen Anforderungen pro Meilenstein stehen in der PROMPTS.md.
+
+Ziel am Ende: Ich fahre durch eine endlose, glaubwürdige Landschaft.
+Große Bergketten mit Schnee am Horizont, Täler mit Wäldern, Seen und
+Flüsse mit Brücken, Landstraßen und Serpentinen, die sauber im Gelände
+liegen, und ein Himmel mit Sonnenauf- und -untergang. Die Stimmung soll
+an Forza Horizon erinnern. Am Horizont sollen immer Berge zu sehen sein,
+auch hinter der Sichtweite (z. B. ein grober, weit entfernter Gelände-Ring),
+damit die Welt nicht einfach im Nebel endet.
+
+So gehst du vor:
+- Mach zuerst einen Gesamtplan für alle fünf Meilensteine und zeig ihn mir.
+  Nach meinem OK arbeitest du alles nacheinander ab, ohne bei jedem
+  Meilenstein auf mich zu warten.
+- Den Ansatz für die Straßen wählst du selbst. Schreib in der CLAUDE.md
+  kurz auf, warum.
+- Nach jedem Meilenstein: Spiel über den Godot-MCP starten, Fehler und
+  Warnungen beheben, committen, Fortschritt in der CLAUDE.md abhaken.
+- Bau dir eine Screenshot-Funktion: ein Startargument, das das Auto an eine
+  bestimmte Stelle setzt, die Tageszeit einstellt, nach ein paar Sekunden
+  ein PNG speichert und das Spiel beendet. Schau dir die Bilder selbst an
+  und verbessere die Optik, bevor du weitermachst. Die Bilder kommen in
+  einen Ordner screenshots/, der in die .gitignore gehört.
+- Performance: FPS-Anzeige einbauen und nach jedem Meilenstein prüfen.
+  Ziel sind 60 FPS auf meinem Mac (Apple Silicon). Wenn es eng wird, lieber
+  Sichtweite und Dichte über @export-Werte runterdrehen als Features streichen.
+- Das Auto und seine Fahrphysik nicht verändern, außer etwas ist kaputt.
+  Das Auto muss immer auf einer Straße starten.
+- Assets: Du darfst CC0-Texturen, HDRIs und Modelle von Poly Haven,
+  ambientCG und Kenney selbst herunterladen (frag mich vorher) und trägst
+  sie in assets/CREDITS.md ein. Wo das nicht geht: Platzhalter nehmen und
+  mir am Ende sagen, was ich wo herunterladen soll.
+- Wenn du feststeckst oder etwas Großes umbauen musst: aufhören und mich fragen.
+
+Am Ende: kurze Zusammenfassung, was jetzt drin ist, welche Tasten es gibt,
+was ich noch herunterladen muss und was dir optisch noch nicht gefällt.
+```
+
+## Das Auto als BMW M2 Competition (F87)
+
+Das 3D-Modell liegt schon in `assets/models/bmw_m2/`.
+Erst abschicken, wenn der Welt-Prompt fertig ist, und in einer neuen Sitzung.
+
+```
+Lies die CLAUDE.md. Wir machen Meilenstein 7: Das Auto soll aussehen und
+sich fahren wie ein BMW M2 Competition (F87). Das 3D-Modell liegt unter
+assets/models/bmw_m2/ (scene.gltf mit scene.bin und Texturen).
+
+Was ich schon über das Modell weiß:
+- „BMW M2 Competition [Grays Widebody]“ von blakebella (Sketchfab),
+  Lizenz CC BY-NC-ND 4.0. Den Credit-Text aus license.txt in
+  assets/CREDITS.md übernehmen.
+- Wegen der Lizenz kommt das Modell nicht ins Git-Repo: Nimm
+  assets/models/bmw_m2/ in die .gitignore auf und schreib in eine
+  README.md, wo man das Modell herunterlädt und wohin es gehört.
+  Ohne das Modell soll das Spiel trotzdem starten (dann mit Platzhalter-Box).
+- Es hat ca. 713.000 Dreiecke, viel davon Innenraum, Motor und Auspuff.
+  Teile, die man von außen nicht sieht, ausblenden oder vereinfachen und
+  LODs nutzen. Das Auto darf die FPS nicht spürbar drücken.
+- Die vier Räder sind eigene Gruppen (Nodes „wms13p“ bis „wms13p.003“,
+  jeweils Reifen, Felge und Bremsscheibe). Prüf, wo ihr Drehpunkt liegt:
+  Zum Drehen und Lenken braucht jedes Rad einen Drehpunkt in der Radmitte.
+  Die Bremssättel (polySurface…) drehen sich nicht mit.
+- Es ist eine Widebody-Version mit Rennaufklebern (Greddy, Bosch usw.).
+  Mach die Aufkleber per Taste K ein- und ausschaltbar, Standard: an.
+
+Modell einbauen:
+- Schau dir zuerst an, wie das Modell aufgebaut ist (Nodes, Meshes,
+  Materialien, Anzahl Dreiecke), und erzähl mir kurz, was du gefunden hast.
+- Platzhalter-Box durch das Modell ersetzen, richtig skalieren (echtes Auto:
+  ca. 4,46 m lang, 1,41 m hoch, Radstand ca. 2,69 m; der Widebody ist
+  breiter als das Serienauto) und so ausrichten, dass die Nase in
+  Fahrtrichtung zeigt. Die Physik-Räder an die Position der Modell-Räder setzen.
+- Die vier Räder müssen sich sichtbar drehen und die Vorderräder lenken.
+- Kollisionsform an die Karosserie anpassen.
+
+Optik:
+- Echter Autolack: metallisch, mit Klarlack (clearcoat) und Spiegelungen
+  der Umgebung. Standardfarbe kräftiges Blau, Taste C wechselt durch ein
+  paar Farben.
+- Scheiben leicht getönt und spiegelnd, Felgen dunkel, Reifen matt.
+- Scheinwerfer (SpotLight3D mit Schatten) gehen nachts automatisch an,
+  Taste L schaltet manuell. Scheinwerfer und Rücklichter leuchten
+  (Emission), Rücklichter beim Bremsen heller.
+- Reifenspuren und etwas Rauch, wenn das Heck beim Driften ausbricht.
+
+Fahrgefühl wie ein M2 Competition (die aktuellen Werte stehen in der CLAUDE.md):
+- Heckantrieb, ca. 410 PS, 550 Nm, ca. 1.575 kg, Gewicht etwa 50:50 verteilt.
+- Ziel: 0–100 km/h in ca. 4,2 s, Spitze 250 km/h (abgeregelt).
+- 7-Gang-Automatik mit Drehzahl und Schaltpunkten, Drehzahlmesser im HUD.
+- Das Heck darf bei viel Gas in Kurven ausbrechen, soll aber
+  kontrollierbar bleiben.
+- Danach 0–100, Spitze und Bremsweg neu messen und in die CLAUDE.md eintragen.
+
+Sound:
+- Motorsound, der mit Drehzahl und Gas mitgeht (Reihensechszylinder-
+  Charakter), Schaltgeräusch, Reifenquietschen beim Driften. Wenn du keine
+  passenden CC0-Sounds findest, sag mir, wo ich welche herbekomme.
+
+Plan zuerst, dann bauen. Falls es noch keine Screenshot-Funktion gibt, bau
+eine und schau dir das Auto damit bei Tag und bei Nacht selbst an.
+Commit nach jedem funktionierenden Schritt.
+```
+
+## Straßen und Bäume reparieren + BMW (nach Meilenstein 6)
+
+In einer neuen Sitzung abschicken.
+
+```
+Lies die CLAUDE.md. Meilensteine 0 bis 6 sind fertig. In dieser Sitzung
+machst du zwei Sachen nacheinander: Teil 1 repariert Straßen und Bäume,
+Teil 2 ist der BMW (Meilenstein 7). Mach zuerst einen Plan für beide Teile.
+Nach meinem OK arbeitest du alles am Stück ab und committest nach jedem
+funktionierenden Schritt.
+
+TEIL 1: STRASSEN UND BÄUME
+
+Was mir beim Fahren auffällt:
+- Die Straßen sind zu schmal.
+- In Kurven sehen sie unsauber aus und werden enger.
+- Straßen laufen ineinander, vor allem an Kreuzungen.
+- Bäume kommen von unten durch den Boden bzw. die Straße.
+
+Was im Code schon gefunden wurde (bitte prüfen):
+- road_query.gd überspringt Brückenstücke komplett (continue bei bridge).
+  Dadurch weiß is_on_road() nichts von Brücken, und unter Brücken und
+  Viadukten wachsen Bäume und Felsen, die durch die Fahrbahn stechen.
+  Für die Geländeanpassung ist das Überspringen richtig, für Bäume und
+  Felsen nicht.
+- road_segment.gd macht in engen Kurven die Innenseite schmaler
+  (inner_limit), statt die Kurve selbst weiter zu machen. Deshalb wird
+  die Straße in Kurven eng und unsauber.
+- Der Weg aus der A*-Suche wird nur leicht geglättet (_simplify mit 2,5 m,
+  Chaikin, _relax). Das lässt kleine Wackler und zu enge Radien übrig.
+- Kreuzungen sind nur eine flache runde Scheibe (pad_radius 11 m), die
+  3 cm über den Straßenenden liegt. Darunter überlappen sich die Straßen
+  samt Markierungen.
+- Straßen von verschiedenen Orten können sich unterwegs kreuzen, ohne dass
+  dort eine Kreuzung entsteht.
+
+So soll es danach sein:
+1. Breiter: Fahrbahn ca. 9 m (zwei Spuren) plus Bankett ca. 1,5 m pro
+   Seite, über die @export-Werte einstellbar. Geländeanpassung, Bäume,
+   Autopilot und Startposition passen sich automatisch an.
+2. Saubere Kurven: Mindestradius für die Mittellinie, auf normalen
+   Straßen ca. 60 m, nur in Serpentinen-Kehren kleiner, aber mindestens
+   ca. 20 m. Die Breite bleibt in Kurven immer gleich. Idee: den Weg aus
+   der Wegsuche auf wenige Kontrollpunkte vereinfachen und dann eine glatte
+   Kurve (z. B. Catmull-Rom-Spline) durchlegen. Ziel sind lange Geraden und
+   weite, fließende Bögen wie bei echten Landstraßen, keine Schlangenlinien.
+3. Leichte Querneigung in Kurven (ein paar Prozent), damit es sich
+   natürlich fährt.
+4. Echte Kreuzungen statt der Scheibe: Die Straßen enden am Rand der
+   Kreuzung, die Kreuzung hat eine eigene Asphaltfläche mit sauberen
+   Übergängen, ohne Überlappung und ohne Flackern (Z-Fighting).
+   Markierungen enden vor der Kreuzung. Wenn es damit sauberer wird,
+   gerne ein kleiner Kreisverkehr bei 3 oder mehr Straßen.
+5. Keine Straße darf eine andere unterwegs überlappen. Wenn sich zwei
+   Abschnitte kreuzen: entweder richtige Kreuzung auf gleicher Höhe,
+   Brücke bei großem Höhenunterschied oder einen der beiden
+   deterministisch weglassen. Entscheide selbst, was am saubersten ist,
+   und trag es in der CLAUDE.md ein.
+6. Bäume und Felsen: Nichts darf durch Fahrbahn, Brücken, Böschungen oder
+   Kreuzungen wachsen. Prüf auch, ob Bäume beim Wechsel der Detailstufe
+   oder an steilen Hängen schweben oder im Boden versinken.
+7. Wenn noch Zeit ist: Leitplanken an hohen Böschungen, auf Brücken und
+   in Serpentinen.
+
+Prüfen: Mit dem Screenshot-Werkzeug eine Serpentine, eine Kreuzung, eine
+Brücke und eine lange Gerade anschauen, auch von oben (--fly). Mit
+--bench=60 sicherstellen, dass der Autopilot weiterhin am Stück
+durchfährt. Die FPS dürfen nicht spürbar sinken. Danach committen und die
+Notizen in der CLAUDE.md aktualisieren.
+
+TEIL 2: DER BMW
+
+Danach machst du den Abschnitt „Das Auto als BMW M2 Competition (F87)“
+aus der PROMPTS.md. Das Modell liegt schon in assets/models/bmw_m2/.
+Denk dran: Mein Mac ist ein MacBook Air ohne Lüfter, das Auto darf die
+FPS nicht spürbar drücken.
+
+Am Ende: kurze Zusammenfassung, was sich geändert hat, welche Tasten es
+gibt und was dir optisch noch nicht gefällt.
+```
