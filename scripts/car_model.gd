@@ -1,30 +1,25 @@
 extends Node3D
-## Das sichtbare Auto. Lädt das BMW-Modell (falls es in assets/models/bmw_m2/ liegt) und
-## baut es ins Auto ein: passend skaliert, Räder drehen und lenken mit, eigene Materialien
-## (Lack, Glas, Felgen, Lichter), Scheinwerfer. Ohne Modell bleibt die Platzhalter-Box.
+## Das sichtbare Auto. Lädt das Modell aus dem Profil des Autos (CarProfile) und baut es ein:
+##  - Teile nach den Mustern im Profil einordnen (Räder, Bremssättel, Aufkleber, ausblenden)
+##  - Rad-Meshes, die alle vier Räder enthalten, nach Ecken aufteilen
+##  - eingeschlagene Vorderräder gerade stellen (wenn das Profil es sagt)
+##  - Modell so skalieren und verschieben, dass seine Räder auf den Physik-Rädern sitzen
+##  - Räder an die Physik-Räder hängen (drehen, lenken, federn), Bremssättel nur lenken lassen
+##  - unbewegliche Teile pro Material zusammenfassen (weniger Draw Calls, wenn gewünscht)
+##  - eigene Materialien (Lack, Glas, Felgen, Reifen, Lichter), Schatten nur für große Teile
+## Ohne Modell bleibt die Platzhalter-Box. Als Kind eines Car fährt es mit; sonst (Vorschau
+## in der Garage) stellt es die Räder einfach an ihre Plätze.
 ##
-## Tasten: C = Lackfarbe wechseln, K = Aufkleber an/aus, L = Licht an/aus.
+## Tasten (nur am Car): C = Lackfarbe wechseln, K = Aufkleber an/aus, L = Licht an/aus.
 
-## Pfad zum Modell (siehe assets/models/README.md)
-@export var model_path: String = "res://assets/models/bmw_m2/scene.gltf"
+## Wird gesendet, wenn das Modell fertig eingebaut ist (oder keins da ist)
+signal model_ready
 
 @export_group("Lack")
-## Farben, durch die Taste C schaltet (die erste ist die Startfarbe)
-@export var paint_colors: Array[Color] = [
-	Color(0.02, 0.24, 0.66),  # Long Beach Blue
-	Color(0.88, 0.89, 0.88),  # Alpine White
-	Color(0.015, 0.015, 0.02),  # Black Sapphire
-	Color(0.62, 0.64, 0.65),  # Hockenheim Silver
-	Color(0.85, 0.3, 0.04),  # Sunset Orange
-	Color(0.48, 0.02, 0.04),  # Melbourne Red
-]
-## Metallic-Anteil und Rauheit der Lackschicht unter dem Klarlack
-@export_range(0.0, 1.0) var paint_metallic: float = 0.6
-@export_range(0.0, 1.0) var paint_roughness: float = 0.38
 ## Klarlack: Stärke und Rauheit (klein = spiegelt klar)
 @export_range(0.0, 1.0) var clearcoat: float = 1.0
 @export_range(0.0, 1.0) var clearcoat_roughness: float = 0.06
-## Aufkleber (Greddy, Bosch, ...) beim Start sichtbar?
+## Aufkleber beim Start sichtbar?
 @export var stickers_visible: bool = true
 
 @export_group("Licht")
@@ -38,26 +33,19 @@ extends Node3D
 @export var brake_glow: float = 6.0
 ## Licht geht automatisch an, wenn die Sonne tiefer als so viele Grad steht
 @export var lights_on_below_sun_degrees: float = 4.0
+## Diese Teile wechseln früher auf vereinfachte Versionen (LOD), Wert < 1 = früher
+@export var low_detail_lod_bias: float = 0.35
 
-## Welche Teile des Modells wie behandelt werden (Namen aus der glTF-Datei)
-const WHEEL_PREFIX := "wms13p"
-const CALIPER_PREFIX := "polySurface"
-const HIDDEN_PREFIXES: Array[String] = ["b_Engine_Geo"]
-const STICKER_NAMES: Array[String] = ["bmw-m-power-logo", "Bosch-logo_svg", "greddy", "show"]
-const STICKER_PREFIX := "stickers_white"
-## Diese Teile werfen Schatten (die großen Karosserieteile und Reifen). Alles andere nicht:
-## Innenraum, Felgen, Lichter usw. spart so viel Rechenzeit.
-const SHADOW_MATERIALS: Array[String] = ["coloured", "painted_carbon", "carbon1", "tire__spec"]
-## Diese Teile sieht man nur klein oder durch die Scheiben: Sie wechseln früher auf ihre
-## vereinfachten Versionen (LOD). Wert < 1 = früher vereinfachen.
-const LOD_BIAS := {"bBMW_M2Competition_2018InteriorA_Material1": 0.25, "coloured_exhaust": 0.25,
-	"tire__spec": 0.5, "Matte__FF114182__sec_env_8_spec": 0.5, "Matte__FFBFBFBF__env_9_spec": 0.5,
-	"Matte__FFBFBF00__env_7_spec": 0.5}
+## Aktuelle Lackfarbe (Index in profile.paint_colors)
+var paint_index: int = 0
 
+var _root: Node3D
 var _car: Car
+var _profile: CarProfile
+var _loading_path: String = ""
+var _pivot: Node3D
 var _model: Node3D
 var _paint: StandardMaterial3D
-var _paint_index: int = 0
 var _stickers: Array[Node3D] = []
 var _head_glow: StandardMaterial3D
 var _tail_glow: StandardMaterial3D
@@ -65,54 +53,84 @@ var _spots: Array[SpotLight3D] = []
 var _lights_on: bool = false
 var _was_night: bool = false
 var _day_night: DayNight
+## Radplätze in der Reihenfolge der Ecken (vorne links, vorne rechts, hinten links,
+## hinten rechts): bei einem Car die VehicleWheel3D, in der Vorschau einfache Knoten
+var _anchors: Array[Node3D] = []
 ## Bremssättel: lenken mit, drehen sich aber nicht mit dem Rad. [Halter, Rad]
 var _calipers: Array = []
+## Alles, was beim Wechsel wieder weg muss (Halter, Scheinwerfer, Vorschau-Räder)
+var _extra_nodes: Array[Node] = []
+
+
+## Pfad zum Modell eines Profils
+static func model_path(profile: CarProfile) -> String:
+	return "res://assets/models/%s/scene.gltf" % profile.model_folder
+
+
+## Liegt das Modell dieses Autos im Projekt?
+static func is_available(profile: CarProfile) -> bool:
+	return ResourceLoader.exists(model_path(profile))
 
 
 func _ready() -> void:
-	_car = get_parent() as Car
-	# Erst im nächsten Moment einbauen: Während _ready() richtet das Auto noch seine
-	# Kind-Nodes ein und nimmt keine neuen an
-	_build.call_deferred()
+	_root = get_parent() as Node3D
+	_car = _root as Car
+	if _car:
+		_car.profile_changed.connect(show_profile)
+		if _car.profile:
+			# Erst im nächsten Moment: Während _ready() richtet das Auto noch seine Kind-Nodes
+			# ein und nimmt keine neuen an
+			show_profile.call_deferred(_car.profile)
 
 
-func _build() -> void:
-	_day_night = get_tree().get_first_node_in_group("day_night") as DayNight
-	if not ResourceLoader.exists(model_path):
-		print("BMW-Modell nicht gefunden, fahre mit Platzhalter (siehe assets/models/README.md)")
+## Modell eines Autos laden und einbauen (das alte wird freigegeben)
+func show_profile(profile: CarProfile) -> void:
+	_clear()
+	_profile = profile
+	paint_index = clampi(paint_index, 0, maxi(profile.paint_colors.size() - 1, 0))
+	if _car == null:
+		_make_preview_anchors()
+	else:
+		_anchors.assign(_car.corner_wheels())
+	if not is_available(profile):
+		print("Modell für %s nicht gefunden (siehe assets/models/README.md)" % profile.display_name)
+		_set_placeholder(true)
+		model_ready.emit()
 		return
-	var scene := load(model_path) as PackedScene
-	if scene == null:
-		return
-	_model = scene.instantiate() as Node3D
-	add_child(_model)
-	_fit_to_wheels()
-	_setup_parts(_model)
-	_setup_headlights()
-	_set_stickers(stickers_visible)
-	# Platzhalter ausblenden
-	for path in ["BodyMesh", "CabinMesh", "HeadlightLeft", "HeadlightRight"]:
-		(_car.get_node(path) as Node3D).visible = false
-	for wheel in _wheels():
-		for child in ["Tire", "Spoke"]:
-			(wheel.get_node(child) as Node3D).visible = false
+	# Im Hintergrund laden, damit das Spiel nicht hängt
+	_loading_path = model_path(profile)
+	ResourceLoader.load_threaded_request(_loading_path)
+
+
+## Wird das Modell gerade geladen?
+func is_loading() -> bool:
+	return _loading_path != ""
+
+
+func set_paint(index: int) -> void:
+	paint_index = index
+	if _paint and _profile and index < _profile.paint_colors.size():
+		_paint.albedo_color = _profile.paint_colors[index]
 
 
 func _physics_process(_delta: float) -> void:
 	# Bremssättel folgen Federung und Lenkung, drehen sich aber nicht mit
 	for pair: Array in _calipers:
 		var holder: Node3D = pair[0]
-		var wheel: VehicleWheel3D = pair[1]
-		holder.transform = Transform3D(Basis(Vector3.UP, wheel.steering), wheel.transform.origin)
+		var wheel := pair[1] as VehicleWheel3D
+		if wheel:
+			holder.transform = Transform3D(Basis(Vector3.UP, wheel.steering), wheel.transform.origin)
 
 
 func _process(_delta: float) -> void:
-	if _model == null:
+	if _loading_path != "":
+		_check_loading()
+		return
+	if _model == null or _car == null:
 		return
 	if Input.is_action_just_pressed("cycle_paint"):
-		_paint_index = (_paint_index + 1) % paint_colors.size()
-		_paint.albedo_color = paint_colors[_paint_index]
-	if Input.is_action_just_pressed("toggle_stickers"):
+		set_paint((paint_index + 1) % _profile.paint_colors.size())
+	if Input.is_action_just_pressed("toggle_stickers") and not _stickers.is_empty():
 		_set_stickers(not _stickers[0].visible)
 	# Licht: schaltet sich bei Dämmerung an und morgens aus, L schaltet von Hand
 	var night := _is_night()
@@ -124,11 +142,29 @@ func _process(_delta: float) -> void:
 	for spot in _spots:
 		spot.visible = _lights_on
 	_head_glow.emission_energy_multiplier = headlight_glow if _lights_on else 0.15
-	var braking := _car.braking
-	_tail_glow.emission_energy_multiplier = brake_glow if braking else (taillight_glow if _lights_on else 0.1)
+	_tail_glow.emission_energy_multiplier = brake_glow if _car.braking else (taillight_glow if _lights_on else 0.1)
+
+
+func _check_loading() -> void:
+	var status := ResourceLoader.load_threaded_get_status(_loading_path)
+	if status == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+		return
+	var path := _loading_path
+	_loading_path = ""
+	var scene := ResourceLoader.load_threaded_get(path) as PackedScene
+	# Inzwischen wurde vielleicht schon ein anderes Auto gewählt
+	if scene == null or path != model_path(_profile):
+		if scene == null:
+			_set_placeholder(true)
+			model_ready.emit()
+		return
+	_build(scene)
+	model_ready.emit()
 
 
 func _is_night() -> bool:
+	if _day_night == null:
+		_day_night = get_tree().get_first_node_in_group("day_night") as DayNight
 	if _day_night == null:
 		return false
 	return _day_night.sun_direction().y < sin(deg_to_rad(lights_on_below_sun_degrees))
@@ -136,30 +172,116 @@ func _is_night() -> bool:
 
 func _wheels() -> Array[VehicleWheel3D]:
 	var result: Array[VehicleWheel3D] = []
-	for child in _car.get_children():
+	for child in _root.get_children():
 		if child is VehicleWheel3D:
 			result.append(child)
 	return result
 
 
-## Wo die Radmitte steht, wenn das Auto ruhig auf der Straße steht (relativ zum Auto).
-## Die Federung ist dann etwas eingedrückt: um Gewicht / Federhärte (Godot rechnet die
-## Federkraft mal Masse, deshalb hängt das nicht vom Gewicht ab).
-func _resting_center(wheel: VehicleWheel3D) -> Vector3:
-	var sag := 9.81 / (4.0 * wheel.suspension_stiffness)
-	return wheel.position - Vector3(0.0, wheel.wheel_rest_length - sag, 0.0)
+## Vorschau ohne Physik: vier Knoten dort, wo die Radmitten stehen würden
+func _make_preview_anchors() -> void:
+	_anchors.clear()
+	for corner in 4:
+		var anchor := Node3D.new()
+		anchor.position = Car.resting_wheel_center(_profile, corner)
+		_root.add_child(anchor)
+		_anchors.append(anchor)
+		_extra_nodes.append(anchor)
 
 
-## Mittelpunkt aller Meshes unter node, relativ zum Auto
-func _center_in_car(node: Node) -> Vector3:
-	var box := AABB()
-	var first := true
-	var to_car := _car.global_transform.affine_inverse()
-	for mi in _meshes_under(node):
-		var part := (to_car * mi.global_transform) * mi.get_aabb()
-		box = part if first else box.merge(part)
-		first = false
-	return box.get_center()
+func _clear() -> void:
+	if _pivot:
+		_pivot.queue_free()
+	for node in _extra_nodes:
+		if is_instance_valid(node):
+			node.queue_free()
+	_extra_nodes.clear()
+	_pivot = null
+	_model = null
+	_stickers.clear()
+	_spots.clear()
+	_calipers.clear()
+	_anchors.clear()
+
+
+func _set_placeholder(on: bool) -> void:
+	if _car == null:
+		return
+	for path in ["BodyMesh", "CabinMesh", "HeadlightLeft", "HeadlightRight"]:
+		(_car.get_node(path) as Node3D).visible = on
+	for wheel in _wheels():
+		for child in ["Tire", "Spoke"]:
+			(wheel.get_node(child) as Node3D).visible = on
+
+
+# ---------------------------------------------------------------------------
+# Einbauen
+# ---------------------------------------------------------------------------
+
+func _build(scene: PackedScene) -> void:
+	_pivot = Node3D.new()
+	_pivot.name = "ModelPivot"
+	_pivot.rotation.y = deg_to_rad(_profile.model_rotation_deg)
+	add_child(_pivot)
+	_model = scene.instantiate() as Node3D
+	_pivot.add_child(_model)
+	var wheels: Array[MeshInstance3D] = []
+	var calipers: Array[MeshInstance3D] = []
+	var body: Array[MeshInstance3D] = []
+	for mi in _meshes_under(_model):
+		if _matches(mi, _profile.hidden_parts):
+			mi.queue_free()
+		elif _matches(mi, _profile.wheel_parts):
+			wheels.append(mi)
+		elif _matches(mi, _profile.caliper_parts):
+			calipers.append(mi)
+		else:
+			body.append(mi)
+	# Mitte zwischen den Rädern (noch in Modellgröße): daran werden Ecken unterschieden
+	var wheel_box := _box_of(wheels)
+	var middle := wheel_box.get_center()
+	wheels = _split_all(wheels, middle, wheel_box.size)
+	calipers = _split_all(calipers, middle, wheel_box.size)
+	# Vier Ecken: 0 = vorne links (+x, +z), 1 = vorne rechts, 2 = hinten links, 3 = hinten rechts
+	var corner_parts: Array = [[], [], [], []]
+	for mi in wheels:
+		corner_parts[_corner_of(_center_in_root(mi), middle)].append(mi)
+	var corner_centers: Array[Vector3] = []
+	for corner in 4:
+		var parts: Array[MeshInstance3D] = []
+		parts.assign(corner_parts[corner])
+		corner_centers.append(_box_of(parts).get_center())
+	var caliper_corners: Array = [[], [], [], []]
+	for mi in calipers:
+		caliper_corners[_corner_of(_center_in_root(mi), middle)].append(mi)
+	if _profile.straighten_front_wheels:
+		for corner in 2:
+			_straighten(corner_parts[corner], corner_parts[corner] + caliper_corners[corner], corner_centers[corner])
+	_fit(corner_centers)
+	# Räder an die Physik-Räder (bzw. Vorschau-Halter) hängen, Sättel an eigene Halter
+	for corner in 4:
+		var anchor := _anchors[corner]
+		var center := Car.resting_wheel_center(_profile, corner)
+		for mi: MeshInstance3D in corner_parts[corner]:
+			_attach(mi, anchor, center)
+		if caliper_corners[corner].is_empty():
+			continue
+		var holder := Node3D.new()
+		holder.name = "Caliper" + anchor.name
+		_root.add_child(holder)
+		holder.position = center
+		_extra_nodes.append(holder)
+		for mi: MeshInstance3D in caliper_corners[corner]:
+			_attach(mi, holder, center)
+		_calipers.append([holder, anchor])
+	_make_materials()
+	if _profile.merge_static_parts:
+		body = _merge_static(body)
+	for mi in body + wheels + calipers:
+		_setup_mesh(mi)
+	_setup_headlights()
+	_set_stickers(stickers_visible)
+	_set_placeholder(false)
 
 
 func _meshes_under(node: Node) -> Array[MeshInstance3D]:
@@ -167,103 +289,213 @@ func _meshes_under(node: Node) -> Array[MeshInstance3D]:
 	var stack: Array[Node] = [node]
 	while not stack.is_empty():
 		var current: Node = stack.pop_back()
-		if current is MeshInstance3D:
+		if current is MeshInstance3D and (current as MeshInstance3D).mesh:
 			result.append(current)
 		stack.append_array(current.get_children())
 	return result
 
 
-## Modell so skalieren und verschieben, dass seine Räder genau auf den Physik-Rädern sitzen
-func _fit_to_wheels() -> void:
-	var groups: Array[Node3D] = []
-	for child in _model.find_children(WHEEL_PREFIX + "*", "Node3D", true, false):
-		groups.append(child)
-	var model_centers: Array[Vector3] = []
-	for group in groups:
-		model_centers.append(_center_in_car(group))
-	# Radstand im Modell und in der Physik: daraus die Skalierung
-	var front := _average_where(model_centers, true)
-	var rear := _average_where(model_centers, false)
-	var wheels := _wheels()
-	var physics_centers: Array[Vector3] = []
-	for wheel in wheels:
-		physics_centers.append(_resting_center(wheel))
-	var physics_front := _average_where(physics_centers, true)
-	var physics_rear := _average_where(physics_centers, false)
+## Passt eins der Muster auf den Knoten, einen seiner Eltern oder eins seiner Materialien?
+func _matches(mi: MeshInstance3D, patterns: PackedStringArray) -> bool:
+	if patterns.is_empty():
+		return false
+	var names: Array[String] = []
+	var node: Node = mi
+	while node and node != _pivot:
+		names.append(String(node.name))
+		node = node.get_parent()
+	for s in mi.mesh.get_surface_count():
+		var material := mi.mesh.surface_get_material(s)
+		if material:
+			names.append(material.resource_name)
+	for text in names:
+		for pattern in patterns:
+			if text.matchn(pattern):
+				return true
+	return false
+
+
+## Lage eines Mesh relativ zum Auto
+func _to_root(node: Node3D) -> Transform3D:
+	return _root.global_transform.affine_inverse() * node.global_transform
+
+
+func _center_in_root(mi: MeshInstance3D) -> Vector3:
+	return (_to_root(mi) * mi.get_aabb()).get_center()
+
+
+func _box_of(meshes: Array[MeshInstance3D]) -> AABB:
+	var box := AABB()
+	for i in meshes.size():
+		var part := _to_root(meshes[i]) * meshes[i].get_aabb()
+		box = part if i == 0 else box.merge(part)
+	return box
+
+
+## 0 = vorne links (+x, +z), 1 = vorne rechts, 2 = hinten links, 3 = hinten rechts
+func _corner_of(p: Vector3, middle: Vector3) -> int:
+	return (0 if p.x > middle.x else 1) + (0 if p.z > middle.z else 2)
+
+
+## Meshes, die über mehrere Ecken reichen (z. B. alle vier Reifen in einem Mesh), aufteilen
+func _split_all(meshes: Array[MeshInstance3D], middle: Vector3, size: Vector3) -> Array[MeshInstance3D]:
+	var result: Array[MeshInstance3D] = []
+	for mi in meshes:
+		var box := _to_root(mi) * mi.get_aabb()
+		var spans_x := box.position.x < middle.x - size.x * 0.1 and box.end.x > middle.x + size.x * 0.1
+		var spans_z := box.position.z < middle.z - size.z * 0.1 and box.end.z > middle.z + size.z * 0.1
+		if spans_x or spans_z:
+			result.append_array(_split_by_corner(mi, middle))
+		else:
+			result.append(mi)
+	return result
+
+
+## Ein Mesh in bis zu vier Meshes aufteilen: jedes Dreieck kommt in die Ecke, in der seine
+## Mitte liegt. Die neuen Meshes stehen an derselben Stelle wie das alte.
+func _split_by_corner(mi: MeshInstance3D, middle: Vector3) -> Array[MeshInstance3D]:
+	var to_root := _to_root(mi)
+	var pieces: Array[ArrayMesh] = [ArrayMesh.new(), ArrayMesh.new(), ArrayMesh.new(), ArrayMesh.new()]
+	for s in mi.mesh.get_surface_count():
+		var arrays := mi.mesh.surface_get_arrays(s)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		if indices.is_empty():
+			indices.resize(verts.size())
+			for i in verts.size():
+				indices[i] = i
+		# Packed-Arrays sind Werte: vier einzelne Listen statt einer Liste von Listen
+		var c0 := PackedInt32Array()
+		var c1 := PackedInt32Array()
+		var c2 := PackedInt32Array()
+		var c3 := PackedInt32Array()
+		for t in range(0, indices.size() - 2, 3):
+			var a := indices[t]
+			var b := indices[t + 1]
+			var c := indices[t + 2]
+			var center := to_root * ((verts[a] + verts[b] + verts[c]) / 3.0)
+			match _corner_of(center, middle):
+				0: c0.append_array([a, b, c])
+				1: c1.append_array([a, b, c])
+				2: c2.append_array([a, b, c])
+				3: c3.append_array([a, b, c])
+		var per_corner: Array[PackedInt32Array] = [c0, c1, c2, c3]
+		for corner in 4:
+			if per_corner[corner].is_empty():
+				continue
+			var part := arrays.duplicate()
+			part[Mesh.ARRAY_INDEX] = per_corner[corner]
+			pieces[corner].add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, part)
+			pieces[corner].surface_set_material(pieces[corner].get_surface_count() - 1, mi.mesh.surface_get_material(s))
+	var result: Array[MeshInstance3D] = []
+	for corner in 4:
+		if pieces[corner].get_surface_count() == 0:
+			continue
+		var piece := MeshInstance3D.new()
+		piece.name = "%s_Ecke%d" % [mi.name, corner]
+		piece.mesh = pieces[corner]
+		mi.get_parent().add_child(piece)
+		piece.transform = mi.transform
+		result.append(piece)
+	mi.queue_free()
+	return result
+
+
+## Eingeschlagene Räder gerade stellen: Die Achse eines Rads ist die Richtung, in der es am
+## dünnsten ist. Ihren Winkel misst man an den Punkten des Meshes und dreht ihn zurück.
+func _straighten(wheel_parts: Array, parts: Array, center: Vector3) -> void:
+	# Kovarianz der Punkte in der x-z-Ebene: die Richtung mit der kleinsten Streuung ist die Achse
+	var sxx := 0.0
+	var szz := 0.0
+	var sxz := 0.0
+	var count := 0
+	for mi: MeshInstance3D in wheel_parts:
+		var to_root := _to_root(mi)
+		for s in mi.mesh.get_surface_count():
+			var verts: PackedVector3Array = mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+			for i in range(0, verts.size(), 5):
+				var p := to_root * verts[i] - center
+				sxx += p.x * p.x
+				szz += p.z * p.z
+				sxz += p.x * p.z
+				count += 1
+	if count == 0:
+		return
+	# Hauptachsen-Winkel der Punktwolke (Winkel der größten Streuung = Rollrichtung)
+	var roll_angle := 0.5 * atan2(2.0 * sxz, sxx - szz)
+	# Die Rollrichtung sollte entlang z liegen (Winkel 90°); die Abweichung ist der Lenkwinkel
+	var steer := wrapf(roll_angle - PI * 0.5, -PI * 0.5, PI * 0.5)
+	if absf(steer) < deg_to_rad(1.5):
+		return
+	var turn := Transform3D(Basis.IDENTITY, center) * Transform3D(Basis(Vector3.UP, steer), Vector3.ZERO) \
+		* Transform3D(Basis.IDENTITY, -center)
+	for mi: MeshInstance3D in parts:
+		mi.global_transform = _root.global_transform * turn * _to_root(mi)
+
+
+## Modell so skalieren und verschieben, dass seine Radmitten auf den Physik-Rädern sitzen
+func _fit(corner_centers: Array[Vector3]) -> void:
+	var front := (corner_centers[0] + corner_centers[1]) * 0.5
+	var rear := (corner_centers[2] + corner_centers[3]) * 0.5
+	var physics_front := (Car.resting_wheel_center(_profile, 0) + Car.resting_wheel_center(_profile, 1)) * 0.5
+	var physics_rear := (Car.resting_wheel_center(_profile, 2) + Car.resting_wheel_center(_profile, 3)) * 0.5
 	var scale_factor := (physics_front.z - physics_rear.z) / (front.z - rear.z)
 	var model_middle := (front + rear) * 0.5
 	var physics_middle := (physics_front + physics_rear) * 0.5
-	_model.transform = Transform3D(Basis.from_scale(Vector3.ONE * scale_factor),
+	_pivot.transform = Transform3D(_pivot.transform.basis.scaled(Vector3.ONE * scale_factor),
 		physics_middle - model_middle * scale_factor)
-	# Jede Radgruppe an das passende Physik-Rad hängen (gleiche Seite, gleiche Achse).
-	# Das Physik-Rad dreht und lenkt sich um seine Mitte, die Gruppe dreht sich mit.
-	for group in groups:
-		var center := _center_in_car(group)
-		var wheel := _nearest_wheel(center)
-		_attach(group, wheel, _resting_center(wheel))
-	# Bremssättel: eigener Halter pro Rad, der nur lenkt und federt
-	for caliper in _model.find_children(CALIPER_PREFIX + "*", "Node3D", true, false):
-		var wheel := _nearest_wheel(_center_in_car(caliper))
-		var holder := Node3D.new()
-		holder.name = "Caliper" + wheel.name
-		_car.add_child(holder)
-		holder.position = _resting_center(wheel)
-		_attach(caliper, holder, _resting_center(wheel))
-		_calipers.append([holder, wheel])
 
 
 ## part an new_parent hängen, ohne dass es sich bewegt (new_parent steht später bei center)
 func _attach(part: Node3D, new_parent: Node3D, center: Vector3) -> void:
-	var in_car := _car.global_transform.affine_inverse() * part.global_transform
+	var in_root := _to_root(part)
 	part.get_parent().remove_child(part)
 	new_parent.add_child(part)
-	part.transform = Transform3D(Basis.IDENTITY, center).affine_inverse() * in_car
+	part.transform = Transform3D(Basis.IDENTITY, center).affine_inverse() * in_root
+	# Hängt jetzt außerhalb des Modells: beim Autowechsel extra freigeben
+	_extra_nodes.append(part)
 
 
-func _nearest_wheel(point: Vector3) -> VehicleWheel3D:
-	var best: VehicleWheel3D = null
-	for wheel in _wheels():
-		if best == null or _resting_center(wheel).distance_to(point) < _resting_center(best).distance_to(point):
-			best = wheel
-	return best
+## Unbewegliche Teile pro Material zu einem Mesh zusammenfassen
+func _merge_static(meshes: Array[MeshInstance3D]) -> Array[MeshInstance3D]:
+	var by_material := {}  # Material -> SurfaceTool
+	var keep: Array[MeshInstance3D] = []
+	var to_model := _model.global_transform.affine_inverse()
+	for mi in meshes:
+		# Aufkleber bleiben einzeln (Taste K)
+		if _matches(mi, _profile.sticker_parts):
+			keep.append(mi)
+			continue
+		var relative := to_model * mi.global_transform
+		for s in mi.mesh.get_surface_count():
+			var material := mi.mesh.surface_get_material(s)
+			if not by_material.has(material):
+				var tool := SurfaceTool.new()
+				tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+				by_material[material] = tool
+			(by_material[material] as SurfaceTool).append_from(mi.mesh, s, relative)
+		mi.queue_free()
+	for material: Material in by_material:
+		var tool: SurfaceTool = by_material[material]
+		var mesh := tool.commit()
+		mesh.surface_set_material(0, material)
+		var merged := MeshInstance3D.new()
+		merged.name = "Merged_" + (material.resource_name if material else "ohne")
+		merged.mesh = mesh
+		_model.add_child(merged)
+		keep.append(merged)
+	return keep
 
 
-## Mittelwert der Punkte vorne (z > 0) oder hinten
-func _average_where(points: Array[Vector3], front: bool) -> Vector3:
-	var total := Vector3.ZERO
-	var count := 0
-	for p in points:
-		if (p.z > 0.0) == front:
-			total += p
-			count += 1
-	return total / maxi(count, 1)
-
-
-## Materialien ersetzen, Schatten einstellen, Unsichtbares ausblenden, Aufkleber merken
-func _setup_parts(root: Node) -> void:
+## Eigene Materialien für Lack, Glas, Felgen, Reifen und Lichter
+func _make_materials() -> void:
 	_paint = StandardMaterial3D.new()
-	_paint.albedo_color = paint_colors[0]
-	_paint.metallic = paint_metallic
-	_paint.roughness = paint_roughness
+	_paint.albedo_color = _profile.paint_colors[paint_index] if not _profile.paint_colors.is_empty() else Color.GRAY
+	_paint.metallic = _profile.paint_metallic
+	_paint.roughness = _profile.paint_roughness
 	_paint.clearcoat_enabled = true
 	_paint.clearcoat = clearcoat
 	_paint.clearcoat_roughness = clearcoat_roughness
-	var glass := StandardMaterial3D.new()
-	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass.albedo_color = Color(0.03, 0.04, 0.05, 0.55)
-	glass.metallic = 0.2
-	glass.roughness = 0.03
-	var rim := StandardMaterial3D.new()
-	rim.albedo_color = Color(0.06, 0.06, 0.065)
-	rim.metallic = 0.85
-	rim.roughness = 0.3
-	var tire := StandardMaterial3D.new()
-	tire.albedo_color = Color(0.03, 0.03, 0.03)
-	tire.roughness = 0.95
-	var exhaust := StandardMaterial3D.new()
-	exhaust.albedo_color = Color(0.32, 0.3, 0.28)
-	exhaust.metallic = 1.0
-	exhaust.roughness = 0.25
 	_head_glow = StandardMaterial3D.new()
 	_head_glow.albedo_color = Color(0.9, 0.92, 0.95)
 	_head_glow.emission_enabled = true
@@ -272,46 +504,76 @@ func _setup_parts(root: Node) -> void:
 	_tail_glow.albedo_color = Color(0.5, 0.02, 0.02)
 	_tail_glow.emission_enabled = true
 	_tail_glow.emission = Color(1.0, 0.05, 0.03)
-	var replacements := {
-		# Die Karosserie des Widebody-Modells ist aus Carbon („painted_carbon“), nur ein paar
-		# Leisten sind farbig („coloured“). Beides bekommt den Lack, Anbauteile bleiben Carbon.
-		"coloured": _paint, "window_coloured": _paint, "painted_carbon": _paint,
-		"windscreen": glass, "coloured_exhaust": exhaust, "tire__spec": tire,
-		"Matte__FF114182__sec_env_8_spec": rim, "Matte__FFBFBFBF__env_9_spec": rim,
-		"Matte__FFBFBF00__env_7_spec": rim,
-		"whitelights": _head_glow, "redlights": _tail_glow,
-	}
-	var stack: Array[Node] = [root]
-	while not stack.is_empty():
-		var node: Node = stack.pop_back()
-		stack.append_array(node.get_children())
-		if _starts_with_any(node.name, HIDDEN_PREFIXES):
-			(node as Node3D).visible = false
-			continue
-		if String(node.name) in STICKER_NAMES or String(node.name).begins_with(STICKER_PREFIX):
-			_stickers.append(node as Node3D)
-		if not node is MeshInstance3D:
-			continue
-		var mi := node as MeshInstance3D
-		var casts := false
-		for s in mi.mesh.get_surface_count():
-			var original := mi.mesh.surface_get_material(s)
-			var material_name := original.resource_name if original else ""
-			if replacements.has(material_name):
-				mi.set_surface_override_material(s, replacements[material_name])
-			if material_name in SHADOW_MATERIALS:
-				casts = true
-			if LOD_BIAS.has(material_name):
-				mi.lod_bias = LOD_BIAS[material_name]
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if casts \
-			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
-func _starts_with_any(text: String, prefixes: Array[String]) -> bool:
-	for prefix in prefixes:
-		if text.begins_with(prefix):
+var _glass: StandardMaterial3D
+var _rim: StandardMaterial3D
+var _tire: StandardMaterial3D
+var _exhaust: StandardMaterial3D
+
+
+func _replacement_for(material: Material) -> Material:
+	if material == null:
+		return null
+	var material_name := material.resource_name
+	if _any_match(material_name, _profile.paint_materials):
+		return _paint
+	if _any_match(material_name, _profile.headlight_materials):
+		return _head_glow
+	if _any_match(material_name, _profile.taillight_materials):
+		return _tail_glow
+	if _any_match(material_name, _profile.glass_materials):
+		if _glass == null:
+			_glass = StandardMaterial3D.new()
+			_glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			_glass.albedo_color = Color(0.03, 0.04, 0.05, _profile.glass_opacity)
+			_glass.metallic = 0.2
+			_glass.roughness = 0.03
+		return _glass
+	if _any_match(material_name, _profile.rim_materials):
+		if _rim == null:
+			_rim = StandardMaterial3D.new()
+			_rim.albedo_color = Color(0.06, 0.06, 0.065)
+			_rim.metallic = 0.85
+			_rim.roughness = 0.3
+		return _rim
+	if _any_match(material_name, _profile.tire_materials):
+		if _tire == null:
+			_tire = StandardMaterial3D.new()
+			_tire.albedo_color = Color(0.03, 0.03, 0.03)
+			_tire.roughness = 0.95
+		return _tire
+	if _any_match(material_name, _profile.exhaust_materials):
+		if _exhaust == null:
+			_exhaust = StandardMaterial3D.new()
+			_exhaust.albedo_color = Color(0.32, 0.3, 0.28)
+			_exhaust.metallic = 1.0
+			_exhaust.roughness = 0.25
+		return _exhaust
+	return null
+
+
+func _any_match(text: String, patterns: PackedStringArray) -> bool:
+	for pattern in patterns:
+		if text.matchn(pattern):
 			return true
 	return false
+
+
+## Materialien ersetzen, Schatten und Detailstufe einstellen, Aufkleber merken
+func _setup_mesh(mi: MeshInstance3D) -> void:
+	if not is_instance_valid(mi) or mi.is_queued_for_deletion():
+		return
+	for s in mi.mesh.get_surface_count():
+		var replacement := _replacement_for(mi.mesh.surface_get_material(s))
+		if replacement:
+			mi.set_surface_override_material(s, replacement)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if _matches(mi, _profile.shadow_parts) \
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if _matches(mi, _profile.low_detail_parts):
+		mi.lod_bias = low_detail_lod_bias
+	if _matches(mi, _profile.sticker_parts):
+		_stickers.append(mi)
 
 
 func _set_stickers(on: bool) -> void:
@@ -321,14 +583,13 @@ func _set_stickers(on: bool) -> void:
 
 ## Zwei Scheinwerfer vorne am Auto. Nur einer wirft Schatten (spart Rechenzeit).
 func _setup_headlights() -> void:
-	var lamps := _model.find_children("*", "MeshInstance3D", true, false)
-	var front := 2.0
-	var height := 0.6
-	for lamp: MeshInstance3D in lamps:
-		if lamp.mesh.get_surface_count() > 0 and lamp.get_surface_override_material(0) == _head_glow:
-			var center := _center_in_car(lamp)
-			front = center.z
-			height = center.y
+	var lamps: Array[MeshInstance3D] = []
+	for mi in _meshes_under(_pivot):
+		for s in mi.mesh.get_surface_count():
+			if mi.get_surface_override_material(s) == _head_glow:
+				lamps.append(mi)
+	var box := _box_of(lamps) if not lamps.is_empty() else AABB(Vector3(-0.7, 0.6, 2.1), Vector3(1.4, 0.1, 0.1))
+	var spacing := box.size.x * 0.5 * 0.75
 	for side: float in [1.0, -1.0]:
 		var spot := SpotLight3D.new()
 		spot.light_color = Color(1.0, 0.95, 0.86)
@@ -337,11 +598,11 @@ func _setup_headlights() -> void:
 		spot.spot_angle = headlight_angle
 		spot.spot_attenuation = 0.6
 		spot.shadow_enabled = side > 0.0
-		# SpotLight3D leuchtet entlang -Z: umdrehen, damit es nach vorne (+Z) zeigt,
-		# und etwas nach unten neigen. Etwas vor das Auto setzen, damit der Scheinwerfer
-		# nicht im eigenen Gehäuse steckt.
+		# SpotLight3D leuchtet entlang -Z: umdrehen, damit es nach vorne (+Z) zeigt, etwas
+		# nach unten neigen und vor das Auto setzen (nicht ins eigene Gehäuse)
 		spot.transform = Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, deg_to_rad(-3.0)),
-			Vector3(side * 0.6, height, front + 0.25))
+			Vector3(side * spacing, box.get_center().y, box.end.z + 0.25))
 		spot.visible = false
-		_car.add_child(spot)
+		_root.add_child(spot)
 		_spots.append(spot)
+		_extra_nodes.append(spot)

@@ -1,10 +1,12 @@
 extends Node
 ## Motorsound ohne Sounddateien: Der Klang wird laufend berechnet (AudioStreamGenerator).
 ##
-## So funktioniert es: Ein Reihensechszylinder zündet 6-mal pro Arbeitsspiel (zwei
-## Kurbelwellen-Umdrehungen). Eine solche Periode wird einmal als Tabelle berechnet:
-## 6 kurze Druckstöße, jeder Zylinder minimal anders (das gibt das typische Brabbeln).
+## So funktioniert es: Ein Viertaktmotor zündet in jedem Zylinder einmal pro Arbeitsspiel
+## (zwei Kurbelwellen-Umdrehungen), ein Sechszylinder also 6-mal, ein V8 8-mal. Eine solche
+## Periode wird einmal als Tabelle berechnet: kurze Druckstöße, jeder Zylinder etwas anders
+## laut und etwas früher oder später (beim V8 mit Kreuzwelle besonders: das Blubbern).
 ## Beim Abspielen läuft die Tabelle je nach Drehzahl schneller oder langsamer durch.
+## Zylinderzahl, Klang und Turbo stehen im Profil des Autos (CarProfile).
 ## Unter Last klingt es härter (Tabelle mit spitzen Stößen), ohne Gas weicher.
 ## Dazu kommen Ansauggeräusch, Turbo-Pfeifen, Begrenzer-Stottern, ein „Krack“ beim
 ## Hochschalten unter Vollgas und Reifenquietschen, wenn die Räder rutschen.
@@ -13,8 +15,6 @@ extends Node
 @export var volume_db: float = -4.0
 ## Anteile der einzelnen Geräusche (0 bis 1)
 @export_range(0.0, 1.0) var engine_volume: float = 0.6
-@export_range(0.0, 1.0) var intake_volume: float = 0.18
-@export_range(0.0, 1.0) var turbo_volume: float = 0.04
 @export_range(0.0, 1.0) var shift_volume: float = 0.5
 @export_range(0.0, 1.0) var squeal_volume: float = 0.22
 ## Abtastrate: 22050 reicht für einen Motor und spart Rechenzeit
@@ -45,8 +45,9 @@ func _ready() -> void:
 	for child in _car.get_children():
 		if child is VehicleWheel3D:
 			_wheels.append(child)
-	_load_table = _make_table(18.0, 7.0)
-	_coast_table = _make_table(6.0, 3.0)
+	_car.profile_changed.connect(_on_profile_changed)
+	if _car.profile:
+		_on_profile_changed(_car.profile)
 	var stream := AudioStreamGenerator.new()
 	stream.mix_rate = mix_rate
 	stream.buffer_length = 0.12
@@ -59,21 +60,38 @@ func _ready() -> void:
 	_car.gear_changed.connect(_on_gear_changed)
 
 
-## Eine Periode (720° Kurbelwinkel) mit 6 Zündungen. sharpness: wie spitz ein Druckstoß
-## ansteigt, decay: wie schnell er abklingt (größer = härterer, hellerer Klang)
-func _make_table(sharpness: float, decay: float) -> PackedFloat32Array:
+func _on_profile_changed(profile: CarProfile) -> void:
+	_load_table = _make_table(profile, profile.sound_sharpness, 7.0)
+	_coast_table = _make_table(profile, profile.sound_sharpness * 0.35, 3.0)
+
+
+## Eine Periode (720° Kurbelwinkel) mit einer Zündung pro Zylinder. sharpness: wie spitz ein
+## Druckstoß ansteigt, decay: wie schnell er abklingt (größer = härterer, hellerer Klang)
+func _make_table(profile: CarProfile, sharpness: float, decay: float) -> PackedFloat32Array:
+	var cylinders := maxi(profile.cylinders, 1)
+	# Feste „Zufalls“-Werte pro Zylinder (bei jedem Start gleich): Lautstärke und Zeitpunkt
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7919 * cylinders
+	var gains := PackedFloat32Array()
+	var starts := PackedFloat32Array()
+	for c in cylinders:
+		gains.append(1.0 + rng.randf_range(-1.0, 1.0) * (0.05 + 0.15 * profile.firing_unevenness))
+		starts.append((c + rng.randf_range(-0.5, 0.5) * profile.firing_unevenness * 0.6) / cylinders)
 	var table := PackedFloat32Array()
 	table.resize(TABLE_SIZE)
-	# Jeder Zylinder ist ein bisschen anders laut (Zündfolge 1-5-3-6-2-4)
-	var cylinder_gain: Array[float] = [1.0, 0.93, 1.07, 0.9, 1.04, 0.95]
-	var slot := TABLE_SIZE / 6.0
 	for i in TABLE_SIZE:
-		var cylinder := int(i / slot)
-		var x := (i - cylinder * slot) / slot
-		var pulse := (1.0 - exp(-x * sharpness)) * exp(-x * decay)
-		# Etwas Nachschwingen im Auspuff
-		pulse += 0.25 * sin(x * TAU * 2.0) * exp(-x * 4.0)
-		table[i] = pulse * cylinder_gain[cylinder]
+		var x := float(i) / TABLE_SIZE
+		var value := 0.0
+		for c in cylinders:
+			# Zeit seit der Zündung dieses Zylinders, in „Zündabständen“
+			var since := fposmod(x - starts[c], 1.0) * cylinders
+			var pulse := (1.0 - exp(-since * sharpness)) * exp(-since * decay)
+			# Etwas Nachschwingen im Auspuff
+			pulse += 0.25 * sin(since * TAU * 2.0) * exp(-since * 4.0)
+			value += pulse * gains[c]
+		# Tiefer Anteil einmal pro Kurbelwellen-Umdrehung (V8-Bass)
+		value += profile.sound_rumble * 2.0 * sin(x * TAU * 2.0)
+		table[i] = value
 	# Gleichanteil entfernen und auf -1..1 bringen
 	var mean := 0.0
 	for v in table:
@@ -100,7 +118,9 @@ func _process(_delta: float) -> void:
 	var frames := _playback.get_frames_available()
 	if frames <= 0:
 		return
-	var redline := _car.redline_rpm
+	var redline := _car.profile.redline_rpm
+	var intake_volume := _car.profile.intake_volume
+	var turbo_volume := _car.profile.turbo_volume
 	var target_rpm := _car.engine_rpm
 	var target_load := _car.throttle_input
 	var target_squeal := 0.0

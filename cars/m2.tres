@@ -1,0 +1,65 @@
+[gd_resource type="Resource" script_class="CarProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/car_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+id = "m2"
+display_name = "BMW M2 Competition"
+subtitle = "F87 · 2018 · Grays Widebody"
+model_folder = "bmw_m2"
+credit = "This work is based on \"BMW M2 Competition [Grays Widebody]\" (https://sketchfab.com/3d-models/bmw-m2-competition-grays-widebody-9c752f161d8c42bf85dd2a1ddbddd543) by blakebella (https://sketchfab.com/blakebella) licensed under CC-BY-NC-ND-4.0 (http://creativecommons.org/licenses/by-nc-nd/4.0/)"
+power_ps = 410
+drive_text = "Heckantrieb"
+gearbox_text = "7-Gang-Doppelkupplung"
+engine_text = "3,0 l Reihensechszylinder, Biturbo (S55)"
+measured_0_100 = 4.18
+wheel_parts = PackedStringArray("wms13p*")
+caliper_parts = PackedStringArray("polySurface*")
+hidden_parts = PackedStringArray("b_Engine_Geo*")
+sticker_parts = PackedStringArray("bmw-m-power-logo", "Bosch-logo_svg", "greddy", "show", "stickers_white*")
+paint_materials = PackedStringArray("coloured", "window_coloured", "painted_carbon")
+glass_materials = PackedStringArray("windscreen")
+tire_materials = PackedStringArray("tire__spec")
+rim_materials = PackedStringArray("Matte__*")
+exhaust_materials = PackedStringArray("coloured_exhaust")
+headlight_materials = PackedStringArray("whitelights")
+taillight_materials = PackedStringArray("redlights")
+shadow_parts = PackedStringArray("coloured", "painted_carbon", "carbon1", "tire__spec")
+low_detail_parts = PackedStringArray("*InteriorA_Material1", "coloured_exhaust", "tire__spec", "Matte__*")
+paint_colors = Array[Color]([Color(0.02, 0.24, 0.66, 1), Color(0.88, 0.89, 0.88, 1), Color(0.015, 0.015, 0.02, 1), Color(0.62, 0.64, 0.65, 1), Color(0.85, 0.3, 0.04, 1), Color(0.48, 0.02, 0.04, 1)])
+mass = 1575.0
+wheelbase = 2.693
+track_front = 1.586
+track_rear = 1.642
+wheel_radius = 0.33
+body_size = Vector3(1.86, 0.69, 4.3)
+body_center = Vector3(0, 0.04, -0.05)
+cabin_size = Vector3(1.37, 0.42, 2.15)
+cabin_center = Vector3(0, 0.6, -0.45)
+max_torque_nm = 550.0
+max_power_kw = 302.0
+torque_plateau_start_rpm = 2350.0
+power_end_rpm = 7000.0
+redline_rpm = 7600.0
+low_end_torque = 0.6
+max_drive_force = 11000.0
+top_speed_kmh = 250.0
+air_drag = 0.4
+downforce = 0.5
+gear_ratios = Array[float]([4.806, 2.593, 1.701, 1.277, 1.0, 0.844, 0.671])
+final_drive = 3.462
+shift_up_rpm = 7200.0
+shift_down_rpm = 3200.0
+shift_time = 0.12
+launch_rpm = 3300.0
+brake_strength = 76.0
+handbrake_strength = 30.0
+power_oversteer = 0.12
+drift_angle_limit = 15.0
+cylinders = 6
+firing_unevenness = 0.1
+sound_sharpness = 18.0
+sound_rumble = 0.0
+turbo_volume = 0.04
+intake_volume = 0.18

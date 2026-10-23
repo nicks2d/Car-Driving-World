@@ -32,9 +32,24 @@ func _ready() -> void:
 			_wheels.append(child)
 			_last_points.append(null)
 	_create_marks()
+	# Rauch an den Hinterrädern (die rutschen beim Driften)
 	for wheel in _wheels:
-		if wheel.use_as_traction:
+		if _is_rear(wheel):
 			_smokes.append(_create_smoke(wheel))
+	_car.profile_changed.connect(_on_profile_changed)
+
+
+func _is_rear(wheel: VehicleWheel3D) -> bool:
+	return String(wheel.name).contains("Rear")
+
+
+## Anderes Auto: Rauch an die neuen Radpositionen, alte Spuren-Punkte vergessen
+func _on_profile_changed(profile: CarProfile) -> void:
+	for i in _last_points.size():
+		_last_points[i] = null
+	# Ecken 2 und 3 sind hinten links und hinten rechts
+	for i in _smokes.size():
+		_smokes[i].position = Car.resting_wheel_center(profile, 2 + i) + Vector3(0.0, -0.2, -0.1)
 
 
 func _physics_process(_delta: float) -> void:
@@ -43,7 +58,7 @@ func _physics_process(_delta: float) -> void:
 		var wheel := _wheels[i]
 		var slip := _car.wheel_slip(wheel)
 		_update_mark(i, wheel, slip)
-		if wheel.use_as_traction:
+		if _is_rear(wheel) and smoke_index < _smokes.size():
 			var smoke := _smokes[smoke_index]
 			smoke_index += 1
 			smoke.emitting = slip > smoke_threshold
