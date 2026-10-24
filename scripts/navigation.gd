@@ -36,6 +36,9 @@ var route_known := PackedByteArray()
 ## Kurze Meldung (z. B. „Ziel erreicht“), die das HUD anzeigt
 var message: String = ""
 var message_timer: float = 0.0
+## Fahrt seit dem Setzen des Ziels (für „Ziel erreicht · 14,4 km in 11:48 min“)
+var _trip_distance: float = 0.0
+var _trip_seconds: float = 0.0
 
 ## Abstand vom Routenanfang bis zu jedem Punkt
 var _route_distance := PackedFloat32Array()
@@ -58,6 +61,8 @@ const GOAL := Vector2i(2147483647, 2147483647)
 func set_target(world_position: Vector3) -> void:
 	target = _snap_target(world_position)
 	has_target = true
+	_trip_distance = 0.0
+	_trip_seconds = 0.0
 	_plan()
 
 
@@ -93,14 +98,36 @@ func next_turn() -> Dictionary:
 	return {}
 
 
+## Was nach der nächsten Abbiegung kommt: {"direction": ..., "distance": Meter ab dieser
+## Abbiegung bis zur übernächsten}. Kommt keine mehr: direction 0, Strecke bis zum Ziel.
+## Leer, wenn es gar keine Abbiegung mehr gibt.
+func turn_after_next() -> Dictionary:
+	var first := -1
+	for turn: Array in _turns:
+		if turn[0] <= _progress:
+			continue
+		if first == -1:
+			first = turn[0]
+			continue
+		return {"direction": turn[1], "distance": _route_distance[turn[0]] - _route_distance[first]}
+	if first == -1:
+		return {}
+	return {"direction": 0, "distance": _route_distance[_route_distance.size() - 1] - _route_distance[first]}
+
+
 func _process(delta: float) -> void:
 	message_timer = maxf(message_timer - delta, 0.0)
 	if not has_target or route_points.is_empty() or car == null:
 		return
 	_update_progress()
+	_trip_seconds += delta
+	_trip_distance += car.linear_velocity.length() * delta
 	if remaining_distance() < arrive_distance:
 		message = "Ziel erreicht"
 		message_timer = 4.0
+		var average := _trip_distance / maxf(_trip_seconds, 1.0) * 3.6
+		Toasts.post(get_tree(), "check", "Ziel erreicht", "%s in %d:%02d min · Ø %d km/h" % [
+			format_distance(_trip_distance), floori(_trip_seconds / 60.0), int(_trip_seconds) % 60, roundi(average)])
 		clear_target()
 		arrived.emit()
 		return
@@ -133,6 +160,15 @@ func _process(delta: float) -> void:
 			_build_route()
 			_progress = 0
 			_update_progress(true)
+
+
+## Strecke wie ein Navi: „80 m“, „350 m“, „1,2 km“
+static func format_distance(meters: float) -> String:
+	if meters < 100.0:
+		return "%d m" % (roundi(meters / 10.0) * 10)
+	if meters < 1000.0:
+		return "%d m" % (roundi(meters / 50.0) * 50)
+	return ("%.1f km" % (meters / 1000.0)).replace(".", ",")
 
 
 ## Fortschritt: welcher Routenpunkt ist dem Auto am nächsten? (nur ein Stück voraus suchen)
@@ -232,6 +268,7 @@ func _plan() -> void:
 	if result.is_empty():
 		message = "Keine Route gefunden"
 		message_timer = 4.0
+		Toasts.post(get_tree(), "warning", "Keine Route gefunden", "Dorthin führt (noch) keine Straße")
 		clear_target()
 		return
 	_steps = result

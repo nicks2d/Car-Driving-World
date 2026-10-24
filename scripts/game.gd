@@ -61,9 +61,7 @@ func _ready() -> void:
 	water.start(world_gen, car, roads)
 	grass.start(world_gen, car, terrain, roads)
 	loading_screen.visible = true
-	# Beim Start die Garage zeigen (außer bei Tests). Die Welt lädt im Hintergrund weiter.
-	if garage and not debug_tools.is_active():
-		garage.open.call_deferred()
+	# Die Garage öffnet sich, sobald die Welt geladen ist (siehe _process)
 
 
 func _process(delta: float) -> void:
@@ -78,10 +76,13 @@ func _process(delta: float) -> void:
 		loading_screen.visible = false
 		car.freeze = false
 		_last_car_position = car.global_position
-		# Test-Werkzeuge nur beim ersten Mal starten (nicht nach jedem Sprung)
+		# Test-Werkzeuge nur beim ersten Mal starten (nicht nach jedem Sprung).
+		# Beim Spielstart (ohne Tests) erst einmal in die Garage.
 		if not _started:
 			_started = true
 			debug_tools.on_world_ready(self)
+			if garage and not debug_tools.is_active():
+				garage.open()
 
 
 ## Ist das Auto gerade weit gesprungen (Reset, Teleport) und fehlt dort noch Gelände?

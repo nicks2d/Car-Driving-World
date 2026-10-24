@@ -21,6 +21,14 @@ var _last_used: Dictionary = {}  # Vector3i -> Bildnummer
 var _running: int = 0
 
 
+## Farben im dunklen Kartenstil (Entwurf „Glas“)
+const GROUND := Color("#111721")
+const FOREST := Color("#122023")
+const MOUNTAIN := Color("#1A2130")
+const SNOW := Color("#2A3242")
+const WATER := Color("#1E3A5C")
+
+
 ## Hintergrund-Auftrag: eine Kachel berechnen
 class TileJob:
 	var world_gen: WorldGen
@@ -52,18 +60,19 @@ class TileJob:
 				var wz := origin.y + (y + 0.5) * step
 				var level := world_gen.water_level_at(wx, wz, lakes)
 				if level > WorldGen.NO_WATER and h < level:
-					image.set_pixel(x, y, Color(0.22, 0.42, 0.66))
+					image.set_pixel(x, y, WATER)
 					continue
-				# Farbe nach Höhe: Tal grün, darüber braun, Fels grau, oben Schnee
-				var color := Color(0.36, 0.5, 0.27).lerp(Color(0.5, 0.47, 0.34), smoothstep(250.0, 700.0, h))
-				color = color.lerp(Color(0.56, 0.54, 0.51), smoothstep(650.0, 1000.0, h))
-				color = color.lerp(Color(0.93, 0.94, 0.96), smoothstep(snow - 50.0, snow + 150.0, h))
-				# Wald etwas dunkler
+				# Dunkler Stil: fast einfarbig, Wald etwas grünlicher, hohe Berge und Schnee heller
+				var color := GROUND.lerp(MOUNTAIN, smoothstep(500.0, 1200.0, h))
+				color = color.lerp(SNOW, smoothstep(snow - 50.0, snow + 150.0, h) * 0.8)
 				var slope := 1.0 - 1.0 / sqrt(1.0 + gx * gx + gz * gz)
-				color = color.lerp(Color(0.2, 0.33, 0.17), world_gen.forest_density(wx, wz, h, slope) * 0.6)
-				# Schattierung: Licht von Nordwesten (links oben auf der Karte)
-				var shade := clampf(1.0 + (gx + gz) * 0.9, 0.55, 1.35)
-				image.set_pixel(x, y, color * shade)
+				color = color.lerp(FOREST, world_gen.forest_density(wx, wz, h, slope) * 0.7)
+				# Schattierung (Licht von Nordwesten) nur ganz leicht
+				color *= clampf(1.0 + (gx + gz) * 0.35, 0.8, 1.2)
+				# Höhenlinien alle 100 m
+				if floori(h / 100.0) != floori((h + maxf(absf(gx), absf(gz)) * step) / 100.0):
+					color = color.lerp(Color(1, 1, 1), 0.05)
+				image.set_pixel(x, y, color)
 
 
 ## Zoomstufe, deren Pixel ungefähr so groß sind wie die gewünschte Kartengröße

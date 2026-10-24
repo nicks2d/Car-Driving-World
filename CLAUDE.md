@@ -199,7 +199,8 @@ assets/
   lenkt dabei (Vorderräder prüfen), `--car=e30` startet mit diesem Auto. `--nowait` macht das
   Foto, ohne auf die Kacheln zu warten, `--jump=X,Z` springt nach dem Laden weit weg.
 - Tasten: WASD fahren, Leertaste Handbremse, R aufrichten, T Zeitraffer, F3 FPS,
-  C Lackfarbe, K Aufkleber, L Licht, G Garage, M große Karte (Linksklick Ziel, Rechtsklick
+  C Lackfarbe, K Aufkleber, L Licht, G Garage (← → Auto, C Lack, Enter losfahren, Esc zurück),
+  M große Karte (Linksklick Ziel, Rechtsklick
   Ziel löschen, Mausrad zoomen, ziehen verschiebt), F5 Wetter (Automatisch → Klar → Bewölkt →
   Regen → Gewitter → Nebel → Schnee), J Jahreszeit.
 - Karte und Navi: `map_tiles.gd` rechnet das Kartenbild (Höhenfarbe, Schattierung, Wald,
@@ -278,6 +279,28 @@ assets/
 - Testen: Tunnel nahe am Start, z. B. `-- --shot=t --pos=-1562,-8360 --heading=-29` (vor dem
   Portal, 500 m lang), innen `--pos=-1798,-8254 --heading=-64`. Leistung im Vollbild: Tunnel-
   strecke 67 FPS, Startstrecke 66,8 (Mac warm). Im Fenster begrenzt macOS auf 60 (V-Sync).
+- HUD und Menüs (Entwurf „Glas“, `screenshots/design_*.png`): gemeinsamer Stil in `ui_style.gd`
+  (Farben, Akzentfarbe, Schrift Inter mit gleich breiten Ziffern über OpenType „tnum“), Symbole
+  werden gezeichnet (`ui_icons.gd`, keine Bilddateien). Grundgröße 1600 × 900, Stretch
+  „canvas_items“ skaliert alles mit dem Fenster (Fenster startet mit 1280 × 720). Teile:
+  `speedometer.gd`, `minimap.gd`, `nav_banner.gd`, `status_chips.gd`, `toasts.gd` (Meldungen
+  von überall: `Toasts.post(get_tree(), Symbol, Titel, Text, Taste, Tastentext)`).
+- Glas (`glass_panel.gd`): Echte Unschärfe (`glass.gdshader`, Bildschirmtextur) kostet auf dem
+  Mac ~1,7 ms pro Bild, egal wie viele Panels: Godot muss dafür das Zeichnen unterbrechen
+  (gemessen abwechselnd, 1280×720-Fenster: ohne HUD 134,7 FPS, mit unscharfem HUD ~110).
+  Deshalb nur, wo das Spiel pausiert (Garage, große Karte, Fotomodus). Das HUD beim Fahren ist
+  nur getönt (`glass_tint.gdshader`, Deckkraft 0,64) und kostet praktisch nichts. Umschalten:
+  `blur` am GlassPanel. Mipmaps der Bildschirmtextur waren noch teurer; BackBufferCopy mit
+  Ausschnitt lieferte in dieser Anordnung nur Schwarz.
+- Garage: pausiert das Spiel und zeigt das echte Auto in der Welt (Kamera kreist, Maus ziehen
+  dreht), öffnet beim Start erst, wenn die Welt geladen ist. Autowechsel sofort am echten Auto
+  (Räder dabei in Ruhelage setzen, sonst stehen sie dort, wo die Physik sie beim Laden
+  hingestellt hat). Welt-Umschalter ändern Uhrzeit (`DayNight.set_time`), Wetter und Jahreszeit
+  sofort. Gespeichert: Auto, Lack, HUD-Farbe (`hud/akzent`), Sportauspuff (`auto/sportauspuff`).
+- Temperatur (`Weather.temperature`): Jahreszeit 12/22/11/−1 °C, ±5 °C über den Tag (am
+  wärmsten 15 Uhr), −0,65 °C pro 100 m über 100 m, Wetter −2 bis −5 °C, beim Schneien ≤ 1 °C.
+- Testen: `--nohud` blendet das HUD aus, `--hide=Minimap,Speedometer` einzelne Teile. Messungen
+  streuen stark mit der Temperatur des Macs: immer abwechselnd mit/ohne messen.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

@@ -4,7 +4,6 @@
 [ext_resource type="Script" path="res://scripts/world_gen.gd" id="2_worldgen"]
 [ext_resource type="PackedScene" path="res://scenes/car.tscn" id="3_car"]
 [ext_resource type="Script" path="res://scripts/follow_camera.gd" id="4_cam"]
-[ext_resource type="Script" path="res://scripts/hud.gd" id="5_hud"]
 [ext_resource type="Script" path="res://scripts/terrain_manager.gd" id="6_terrain"]
 [ext_resource type="Script" path="res://scripts/horizon_ring.gd" id="7_ring"]
 [ext_resource type="Script" path="res://scripts/fps_display.gd" id="8_fps"]
@@ -31,7 +30,10 @@
 [ext_resource type="Shader" path="res://shaders/foliage.gdshader" id="29_foliage"]
 [ext_resource type="Shader" path="res://shaders/grass.gdshader" id="30_grass"]
 [ext_resource type="Script" path="res://scripts/grass_manager.gd" id="31_grass"]
-[ext_resource type="Script" path="res://scripts/tachometer.gd" id="50_tacho"]
+[ext_resource type="Script" path="res://scripts/speedometer.gd" id="50_speedo"]
+[ext_resource type="Script" path="res://scripts/status_chips.gd" id="70_chips"]
+[ext_resource type="Script" path="res://scripts/toasts.gd" id="71_toasts"]
+[ext_resource type="FontFile" path="res://assets/fonts/Inter-SemiBold.ttf" id="72_inter_semibold"]
 [ext_resource type="Script" path="res://scripts/garage.gd" id="51_garage"]
 [ext_resource type="Script" path="res://scripts/car_profile.gd" id="57_profile"]
 [ext_resource type="Resource" path="res://cars/m2.tres" id="52_m2"]
@@ -210,7 +212,7 @@ world_gen = SubResource("WorldGen_main")
 terrain = NodePath("Terrain")
 horizon = NodePath("HorizonRing")
 car = NodePath("Car")
-loading_screen = NodePath("HUD/LoadingScreen")
+loading_screen = NodePath("Loading/LoadingScreen")
 debug_tools = NodePath("DebugTools")
 day_night = NodePath("DayNight")
 garage = NodePath("Garage")
@@ -282,42 +284,21 @@ target = NodePath("../Car")
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
-[node name="SpeedLabel" type="Label" parent="HUD" node_paths=PackedStringArray("car")]
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -340.0
-offset_top = -110.0
-offset_right = -40.0
-offset_bottom = -30.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 10
-theme_override_font_sizes/font_size = 52
-text = "0 km/h"
-horizontal_alignment = 2
-vertical_alignment = 2
-script = ExtResource("5_hud")
-car = NodePath("../../Car")
-
-[node name="Tachometer" type="Control" parent="HUD" node_paths=PackedStringArray("car")]
+[node name="Speedometer" type="Control" parent="HUD" node_paths=PackedStringArray("car")]
 layout_mode = 3
 anchors_preset = 3
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -250.0
-offset_top = -330.0
+offset_left = -340.0
+offset_top = -340.0
 offset_right = -40.0
-offset_bottom = -120.0
+offset_bottom = -40.0
 grow_horizontal = 0
 grow_vertical = 0
 mouse_filter = 2
-script = ExtResource("50_tacho")
+script = ExtResource("50_speedo")
 car = NodePath("../../Car")
 
 [node name="Minimap" type="Control" parent="HUD" node_paths=PackedStringArray("car", "roads", "navigation", "tiles")]
@@ -325,10 +306,10 @@ layout_mode = 3
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 24.0
-offset_top = -254.0
-offset_right = 254.0
-offset_bottom = -24.0
+offset_left = 40.0
+offset_top = -340.0
+offset_right = 352.0
+offset_bottom = -40.0
 grow_vertical = 0
 mouse_filter = 2
 script = ExtResource("62_minimap")
@@ -337,41 +318,83 @@ roads = NodePath("../../Roads")
 navigation = NodePath("../../Navigation")
 tiles = NodePath("../../MapTiles")
 
-[node name="NavBanner" type="Control" parent="HUD" node_paths=PackedStringArray("navigation")]
+[node name="NavBanner" type="Control" parent="HUD" node_paths=PackedStringArray("navigation", "day_night")]
 layout_mode = 3
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -210.0
-offset_top = 16.0
-offset_right = 210.0
-offset_bottom = 100.0
+offset_left = -252.0
+offset_top = 32.0
+offset_right = 252.0
+offset_bottom = 126.0
 grow_horizontal = 2
 mouse_filter = 2
 script = ExtResource("63_banner")
 navigation = NodePath("../../Navigation")
+day_night = NodePath("../../DayNight")
+
+[node name="StatusChips" type="Control" parent="HUD" node_paths=PackedStringArray("day_night", "weather", "car")]
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -660.0
+offset_top = 32.0
+offset_right = -40.0
+offset_bottom = 74.0
+grow_horizontal = 0
+mouse_filter = 2
+script = ExtResource("70_chips")
+day_night = NodePath("../../DayNight")
+weather = NodePath("../../Weather")
+car = NodePath("../../Car")
 
 [node name="FpsLabel" type="Label" parent="HUD" node_paths=PackedStringArray("terrain")]
-offset_left = 16.0
-offset_top = 12.0
-offset_right = 600.0
-offset_bottom = 40.0
-theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 6
-theme_override_font_sizes/font_size = 18
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -300.0
+offset_top = -36.0
+offset_right = 300.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.6)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 15
 text = "FPS"
+horizontal_alignment = 1
 script = ExtResource("8_fps")
 terrain = NodePath("../../Terrain")
 
-[node name="LoadingScreen" type="ColorRect" parent="HUD"]
+[node name="Messages" type="CanvasLayer" parent="."]
+process_mode = 3
+layer = 30
+
+[node name="Toasts" type="Control" parent="Messages"]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 40.0
+offset_top = 32.0
+offset_right = 500.0
+offset_bottom = 300.0
+mouse_filter = 2
+script = ExtResource("71_toasts")
+
+[node name="Loading" type="CanvasLayer" parent="."]
+layer = 40
+
+[node name="LoadingScreen" type="ColorRect" parent="Loading"]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.06, 0.07, 0.09, 1)
+color = Color(0.043, 0.059, 0.086, 1)
 
-[node name="Label" type="Label" parent="HUD/LoadingScreen"]
+[node name="Label" type="Label" parent="Loading/LoadingScreen"]
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
@@ -383,7 +406,9 @@ offset_right = 300.0
 offset_bottom = 30.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_font_sizes/font_size = 32
+theme_override_colors/font_color = Color(1, 1, 1, 0.7)
+theme_override_fonts/font = ExtResource("72_inter_semibold")
+theme_override_font_sizes/font_size = 22
 text = "Welt wird erzeugt …"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -392,9 +417,12 @@ vertical_alignment = 1
 script = ExtResource("9_debug")
 camera = NodePath("../Camera")
 
-[node name="Garage" type="CanvasLayer" parent="." node_paths=PackedStringArray("car")]
+[node name="Garage" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "hud", "day_night", "weather")]
 script = ExtResource("51_garage")
 car = NodePath("../Car")
+hud = NodePath("../HUD")
+day_night = NodePath("../DayNight")
+weather = NodePath("../Weather")
 cars = Array[ExtResource("57_profile")]([ExtResource("52_m2"), ExtResource("53_e30"), ExtResource("54_e92"), ExtResource("55_f90"), ExtResource("56_g90")])
 
 [node name="MapTiles" type="Node" parent="."]
@@ -413,18 +441,18 @@ roads = NodePath("../Roads")
 navigation = NodePath("../Navigation")
 tiles = NodePath("../MapTiles")
 
-[node name="Weather" type="Node" parent="." node_paths=PackedStringArray("day_night", "car", "camera", "world_environment", "garage", "precipitation", "sound", "terrain")]
+[node name="Weather" type="Node" parent="." node_paths=PackedStringArray("day_night", "car", "camera", "world_environment", "precipitation", "sound", "terrain")]
 script = ExtResource("65_weather")
 day_night = NodePath("../DayNight")
 car = NodePath("../Car")
 camera = NodePath("../Camera")
 world_environment = NodePath("../WorldEnvironment")
-garage = NodePath("../Garage")
 precipitation = NodePath("Precipitation")
 sound = NodePath("WeatherSound")
 terrain = NodePath("../Terrain")
 
 [node name="Precipitation" type="Node3D" parent="Weather" node_paths=PackedStringArray("camera")]
+process_mode = 3
 script = ExtResource("66_precip")
 camera = NodePath("../../Camera")
 

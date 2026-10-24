@@ -20,6 +20,8 @@ extends Node
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
 ## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png)
+## --nohud       HUD ausblenden (z. B. um zu messen, was es kostet)
+## --hide=A,B    einzelne HUD-Teile ausblenden (Namen wie in main.tscn, z. B. Minimap)
 ## --nowait      Foto machen, ohne auf die Gelände-Kacheln zu warten (nur --wait Sekunden)
 ## --jump=X,Z    nach dem Laden weit an diese Stelle springen (wie ein Teleport), dann Foto
 ## --weather=ID   Wetter: clear, cloudy, rain, storm, fog, snow (Tests sonst immer klar)
@@ -37,6 +39,8 @@ var volumetric_fog: bool = false
 
 var _shot_name: String = ""
 var _no_wait: bool = false
+var _no_hud: bool = false
+var _hide: PackedStringArray = PackedStringArray()
 var _jump_to: Vector2 = Vector2.ZERO
 var _has_jump: bool = false
 var _wait: float = 3.0
@@ -113,6 +117,10 @@ func _ready() -> void:
 				_bench_shot_time = float(value)
 			"nowait":
 				_no_wait = true
+			"nohud":
+				_no_hud = true
+			"hide":
+				_hide = value.split(",")
 			"jump":
 				var xz := value.split(",")
 				_jump_to = Vector2(float(xz[0]), float(xz[1]))
@@ -138,6 +146,11 @@ func on_world_ready(game: Node3D) -> void:
 		_place_car_view_camera()
 	if _steer != "":
 		Input.action_press("steer_left" if _steer == "left" else "steer_right")
+	if _no_hud and game.has_node("HUD"):
+		game.get_node("HUD").visible = false
+	for part in _hide:
+		if game.has_node("HUD/" + part):
+			game.get_node("HUD/" + part).visible = false
 	if _has_jump:
 		_has_jump = false
 		game.jump_to(_jump_to)
@@ -358,7 +371,7 @@ func _print_bench() -> void:
 	# Rechenzeit pro Bild: unter 16,7 ms reicht es für 60 FPS
 	print("BENCH gpu_ms avg=%.2f p99=%.2f | cpu_ms avg=%.2f p99=%.2f" % [
 		_average(_gpu_times), _percentile(_gpu_times, 0.99), _average(_cpu_times), _percentile(_cpu_times, 0.99)])
-	print("BENCH render_size=%s screen_scale=%.1f" % [get_viewport().get_texture().get_size(), DisplayServer.screen_get_scale()])
+	print("BENCH window=%s screen_scale=%.1f" % [DisplayServer.window_get_size(), DisplayServer.screen_get_scale()])
 	print("BENCH autopilot: %.0f m gefahren (%.0f km/h im Schnitt), max. %.1f m neben der Straßenmitte, min. Aufrecht-Wert %.2f" % [
 		_distance_driven, _distance_driven / maxf(_timer, 0.1) * 3.6, _max_off_road, _lowest_up])
 

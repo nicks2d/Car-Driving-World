@@ -477,6 +477,41 @@ func tunnel_cover(pos: Vector3) -> float:
 	return best
 
 
+## Nächster Tunnel voraus auf der Straße, auf der das Auto gerade fährt:
+## {"distance": Meter bis zum Portal, "length": Meter, "id": Kennung} oder leer
+func tunnel_ahead(pos: Vector3, forward: Vector3, max_distance: float) -> Dictionary:
+	var best := {}
+	var p := Vector2(pos.x, pos.z)
+	for key: Vector3i in _entries:
+		var entry: Entry = _entries[key]
+		if entry.state != State.READY or not entry.kept or entry.segment.tunnel_ranges.is_empty():
+			continue
+		var segment := entry.segment
+		if _distance_to_rect(p, segment.bounds) > 30.0:
+			continue
+		# Fährt das Auto auf diesem Abschnitt? (nächster Punkt höchstens 15 m entfernt)
+		var nearest := -1
+		var nearest_distance := 15.0 * 15.0
+		for i in segment.points.size():
+			var q := segment.points[i]
+			var d := (q.x - pos.x) * (q.x - pos.x) + (q.z - pos.z) * (q.z - pos.z)
+			if d < nearest_distance:
+				nearest_distance = d
+				nearest = i
+		if nearest == -1:
+			continue
+		var forward_on_segment := segment.direction_at(nearest).dot(forward) >= 0.0
+		for r in segment.tunnel_ranges:
+			var steps := (r.x - nearest) if forward_on_segment else (nearest - r.y)
+			if steps <= 0:
+				continue
+			var distance := steps * RoadSegment.POINT_SPACING
+			if distance < max_distance and (best.is_empty() or distance < best["distance"]):
+				best = {"distance": distance, "length": (r.y - r.x) * RoadSegment.POINT_SPACING,
+					"id": "%s/%d" % [key, r.x]}
+	return best
+
+
 ## Lichtpunkte in Tunneln rund um pos (bis radius Meter), die nächsten zuerst
 func tunnel_lights_near(pos: Vector3, radius: float) -> PackedVector3Array:
 	var found: Array = []

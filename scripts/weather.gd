@@ -16,25 +16,36 @@ const KIND_NAMES: Array[String] = ["Klar", "Bewölkt", "Regen", "Gewitter", "Neb
 const KIND_IDS: Array[String] = ["clear", "cloudy", "rain", "storm", "fog", "snow"]
 const SEASON_NAMES: Array[String] = ["Frühling", "Sommer", "Herbst", "Winter"]
 const SEASON_IDS: Array[String] = ["spring", "summer", "autumn", "winter"]
+## Für die Meldungen: Symbol, Titel und Text je Wetterlage und Jahreszeit
+const KIND_ICONS: Array[String] = ["sun", "cloud", "rain", "storm", "fog", "snow"]
+const KIND_TITLES: Array[String] = ["Es klart auf", "Wolken ziehen auf", "Regen setzt ein", "Gewitter",
+	"Nebel zieht auf", "Es schneit"]
+const KIND_TEXTS: Array[String] = ["Trockene Straßen, gute Sicht", "Bedeckt, aber trocken",
+	"Straße wird nass, weniger Grip", "Starkregen, Blitze, wenig Grip", "Sichtweite unter 200 m",
+	"Glatte Straßen, halber Grip"]
+const SEASON_ICONS: Array[String] = ["sprout", "sun", "leaf", "snow"]
+const SEASON_TEXTS: Array[String] = ["Alles wird grün", "Lange, warme Tage", "Mehr Regen und Morgennebel",
+	"Schnee und glatte Straßen"]
 const SETTINGS_PATH := "user://einstellungen.cfg"
 
 ## Werte jeder Wetterlage (Reihenfolge wie Kind):
 ## clouds = Wolkenbedeckung, overcast = wie grau und trüb alles ist, rain/snow = Niederschlag,
 ## fog = Faktor für den Fernnebel, valley_fog = Talnebel den ganzen Tag, morning_fog = wie
-## stark sich morgens Talnebel bilden kann, lightning = Blitze, wind = Wind für Bäume und Gras
+## stark sich morgens Talnebel bilden kann, lightning = Blitze, wind = Wind für Bäume und Gras,
+## temp = Temperatur-Zuschlag in °C
 const STATES: Array[Dictionary] = [
 	{"clouds": 0.3, "overcast": 0.0, "rain": 0.0, "snow": 0.0, "fog": 1.0, "valley_fog": 0.0,
-		"morning_fog": 1.0, "lightning": 0.0, "wind": 1.0},
+		"morning_fog": 1.0, "lightning": 0.0, "wind": 1.0, "temp": 0.0},
 	{"clouds": 0.72, "overcast": 0.45, "rain": 0.0, "snow": 0.0, "fog": 1.8, "valley_fog": 0.0,
-		"morning_fog": 0.7, "lightning": 0.0, "wind": 1.4},
+		"morning_fog": 0.7, "lightning": 0.0, "wind": 1.4, "temp": -2.0},
 	{"clouds": 0.96, "overcast": 0.85, "rain": 0.65, "snow": 0.0, "fog": 9.0, "valley_fog": 0.15,
-		"morning_fog": 0.3, "lightning": 0.0, "wind": 1.8},
+		"morning_fog": 0.3, "lightning": 0.0, "wind": 1.8, "temp": -4.0},
 	{"clouds": 1.0, "overcast": 1.0, "rain": 1.0, "snow": 0.0, "fog": 13.0, "valley_fog": 0.0,
-		"morning_fog": 0.0, "lightning": 1.0, "wind": 3.0},
+		"morning_fog": 0.0, "lightning": 1.0, "wind": 3.0, "temp": -5.0},
 	{"clouds": 0.85, "overcast": 0.7, "rain": 0.0, "snow": 0.0, "fog": 45.0, "valley_fog": 1.0,
-		"morning_fog": 1.0, "lightning": 0.0, "wind": 0.4},
+		"morning_fog": 1.0, "lightning": 0.0, "wind": 0.4, "temp": -3.0},
 	{"clouds": 0.96, "overcast": 0.75, "rain": 0.0, "snow": 1.0, "fog": 16.0, "valley_fog": 0.15,
-		"morning_fog": 0.3, "lightning": 0.0, "wind": 1.3},
+		"morning_fog": 0.3, "lightning": 0.0, "wind": 1.3, "temp": -4.0},
 ]
 ## Wie oft jede Wetterlage pro Jahreszeit kommt (Gewichte, Reihenfolge wie Kind)
 const CHANCES: Array = [
@@ -48,7 +59,6 @@ const CHANCES: Array = [
 @export var car: Car
 @export var camera: Camera3D
 @export var world_environment: WorldEnvironment
-@export var garage: Garage
 @export var precipitation: Precipitation
 @export var sound: WeatherSound
 @export var terrain: TerrainManager
@@ -91,6 +101,12 @@ const CHANCES: Array = [
 ## Griffigkeit der Reifen auf nasser Straße und auf Schnee (1 = trocken)
 @export var wet_grip: float = 0.7
 @export var snow_grip: float = 0.5
+
+@export_group("Temperatur")
+## Mittlere Temperatur je Jahreszeit (Frühling, Sommer, Herbst, Winter) in °C
+@export var season_temperatures: PackedFloat32Array = PackedFloat32Array([12.0, 22.0, 11.0, -1.0])
+## So viel wärmer ist es nachmittags als im Mittel (und nachts kälter)
+@export var daily_temperature_swing: float = 5.0
 
 @export_group("Talnebel")
 ## Dichte des Talnebels am Talboden (pro Meter; 0,012 ≈ 80 m Sicht)
@@ -140,10 +156,6 @@ var _thunder_distance: float = 0.0
 var _fog_floor: float = 0.0
 var _fog_mesh: MeshInstance3D
 var _fog_material: ShaderMaterial
-var _toast: Label
-var _toast_time: float = 0.0
-var _weather_option: OptionButton
-var _season_option: OptionButton
 var _rng := RandomNumberGenerator.new()
 
 
@@ -151,9 +163,7 @@ func _ready() -> void:
 	_rng.randomize()
 	_change_timer = _rng.randf_range(change_min_minutes, change_max_minutes) * 60.0
 	_create_valley_fog()
-	_create_toast()
 	_load_settings()
-	_add_garage_rows.call_deferred()
 
 
 ## Wetter festlegen: -1 = automatisch, sonst eine Wetterlage. instant = sofort fertig
@@ -166,7 +176,6 @@ func set_mode(new_mode: int, instant: bool, save: bool = true) -> void:
 		_set_kind(_pick_kind(), 0.0 if instant else manual_transition_seconds)
 	if instant:
 		_settle()
-	_sync_options()
 	if save:
 		_save_settings()
 
@@ -180,7 +189,6 @@ func set_season(new_season: int, instant: bool, save: bool = true) -> void:
 		for i in _season_weights.size():
 			_season_weights[i] = 1.0 if i == season else 0.0
 		_settle()
-	_sync_options()
 	if save:
 		_save_settings()
 
@@ -240,11 +248,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("cycle_weather"):
 		var next := mode + 1 if mode < Kind.size() - 1 else -1
 		set_mode(next, false)
-		_show_toast("Wetter: " + ("Automatisch (gerade %s)" % KIND_NAMES[kind] if mode < 0 else KIND_NAMES[mode]))
+		if mode < 0:
+			Toasts.post(get_tree(), "cloud", "Wetter: Automatisch", "Wechselt alle paar Minuten, gerade %s" % KIND_NAMES[kind])
+		else:
+			_announce_weather()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("cycle_season"):
 		set_season(season + 1, false)
-		_show_toast("Jahreszeit: " + SEASON_NAMES[season])
+		Toasts.post(get_tree(), SEASON_ICONS[season], SEASON_NAMES[season], SEASON_TEXTS[season])
 		get_viewport().set_input_as_handled()
 
 
@@ -255,6 +266,7 @@ func _process(delta: float) -> void:
 		if _change_timer <= 0.0:
 			_change_timer = _rng.randf_range(change_min_minutes, change_max_minutes) * 60.0
 			_set_kind(_pick_kind(), transition_seconds)
+			_announce_weather()
 	# Übergang zwischen zwei Wetterlagen
 	if _blend < 1.0:
 		_blend = minf(_blend + delta / _blend_time, 1.0)
@@ -269,9 +281,6 @@ func _process(delta: float) -> void:
 	_update_surfaces(delta)
 	_update_lightning(delta)
 	_apply(delta)
-	if _toast_time > 0.0:
-		_toast_time -= delta
-		_toast.modulate.a = clampf(_toast_time / 0.5, 0.0, 1.0)
 
 
 ## Nässe und Schnee steigen bei Niederschlag und gehen danach langsam zurück
@@ -434,51 +443,23 @@ func _create_valley_fog() -> void:
 # Anzeige, Garage, Speichern
 # ---------------------------------------------------------------------------
 
-func _create_toast() -> void:
-	var layer := CanvasLayer.new()
-	layer.layer = 5
-	add_child(layer)
-	_toast = Label.new()
-	_toast.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_toast.position = Vector2(-300, 112)
-	_toast.size = Vector2(600, 40)
-	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_toast.add_theme_font_size_override("font_size", 24)
-	_toast.add_theme_color_override("font_outline_color", Color.BLACK)
-	_toast.add_theme_constant_override("outline_size", 6)
-	_toast.modulate.a = 0.0
-	layer.add_child(_toast)
+## Meldung zur neuen Wetterlage (oben links)
+func _announce_weather() -> void:
+	Toasts.post(get_tree(), KIND_ICONS[kind], KIND_TITLES[kind], KIND_TEXTS[kind])
 
 
-func _show_toast(text: String) -> void:
-	_toast.text = text
-	_toast_time = 2.5
-
-
-func _add_garage_rows() -> void:
-	if garage == null:
-		return
-	_weather_option = OptionButton.new()
-	_weather_option.add_item("Wetter: Automatisch")
-	for kind_name in KIND_NAMES:
-		_weather_option.add_item("Wetter: " + kind_name)
-	_weather_option.item_selected.connect(func(index: int) -> void: set_mode(index - 1, true))
-	_weather_option.focus_mode = Control.FOCUS_NONE
-	garage.add_setting_row(_weather_option)
-	_season_option = OptionButton.new()
-	for season_name in SEASON_NAMES:
-		_season_option.add_item("Jahreszeit: " + season_name)
-	_season_option.item_selected.connect(func(index: int) -> void: set_season(index, true))
-	_season_option.focus_mode = Control.FOCUS_NONE
-	garage.add_setting_row(_season_option)
-	_sync_options()
-
-
-func _sync_options() -> void:
-	if _weather_option:
-		_weather_option.select(mode + 1)
-	if _season_option:
-		_season_option.select(season)
+## Temperatur in °C für die Anzeige: Jahreszeit, Tageszeit (am wärmsten um 15 Uhr),
+## Höhe (−0,65 °C pro 100 m über 100 m) und Wetter
+func temperature(height: float) -> float:
+	var value := 0.0
+	for i in _season_weights.size():
+		value += _season_weights[i] * season_temperatures[i]
+	var hour := day_night.time_of_day if day_night else 15.0
+	value += cos((hour - 15.0) / 24.0 * TAU) * daily_temperature_swing
+	value -= 0.65 * maxf(height - 100.0, 0.0) / 100.0
+	value += _current["temp"]
+	# Beim Schneien höchstens knapp über null
+	return minf(value, lerpf(99.0, 1.0, _current["snow"]))
 
 
 func _load_settings() -> void:

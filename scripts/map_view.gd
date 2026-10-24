@@ -16,11 +16,14 @@ var rotation_angle: float = 0.0
 ## Große Karte: Orte und noch nicht berechnete Verbindungen gestrichelt zeigen
 var show_unknown: bool = false
 
-const ROAD_COLOR := Color(0.93, 0.92, 0.88)
-const ROAD_EDGE := Color(0.15, 0.15, 0.16)
-const ROUTE_COLOR := Color(0.2, 0.6, 1.0)
-const UNKNOWN_COLOR := Color(0.95, 0.95, 0.95, 0.55)
-const TUNNEL_COLOR := Color(0.78, 0.76, 0.72)
+## Dunkler Kartenstil (Entwurf „Glas“). Die Route hat die Akzentfarbe (UiStyle.accent).
+const BACKGROUND := Color("#111721")
+const ROAD_COLOR := Color("#8D97A9")
+const UNKNOWN_COLOR := Color(1.0, 1.0, 1.0, 0.3)
+const TUNNEL_COLOR := Color(0.55, 0.6, 0.68, 0.9)
+## Breite der Straßen und der Route in Bildpunkten
+const ROAD_PIXELS: float = 3.5
+const ROUTE_PIXELS: float = 5.0
 
 ## Ausgedünnte Straßenlinien pro Abschnitt (Welt x/z), aufgeteilt in Stücke:
 ## [[Linie, true = Tunnel], ...]
@@ -54,7 +57,7 @@ func screen_to_world(s: Vector2) -> Vector2:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.16, 0.18, 0.16))
+	draw_rect(Rect2(Vector2.ZERO, size), BACKGROUND)
 	if roads == null or tiles == null:
 		return
 	var view := Transform2D(rotation_angle, size * 0.5) * Transform2D().scaled(Vector2.ONE / meters_per_pixel) \
@@ -94,7 +97,7 @@ func _draw_tiles(view_rect: Rect2) -> void:
 
 
 func _draw_roads(view_rect: Rect2) -> void:
-	var width := maxf(9.0, 2.5 * meters_per_pixel)
+	var width := ROAD_PIXELS * meters_per_pixel
 	var lines: Array[PackedVector2Array] = []
 	var tunnels: Array[PackedVector2Array] = []
 	for pair: Array in roads.loaded_segments(view_rect):
@@ -106,15 +109,11 @@ func _draw_roads(view_rect: Rect2) -> void:
 				tunnels.append(part[0])
 			else:
 				lines.append(part[0])
-	# Erst alle dunklen Ränder, dann alle hellen Fahrbahnen (sonst überdecken sich Kreuzungen)
-	for line in lines:
-		draw_polyline(line, ROAD_EDGE, width * 1.6, true)
 	for line in lines:
 		draw_polyline(line, ROAD_COLOR, width, true)
 	# Tunnel gestrichelt
 	var dash := maxf(25.0, 7.0 * meters_per_pixel)
 	for line in tunnels:
-		_draw_dashed_polyline(line, ROAD_EDGE, width * 1.6, dash)
 		_draw_dashed_polyline(line, TUNNEL_COLOR, width, dash)
 	# Gemerkte Linien von Abschnitten, die es nicht mehr gibt, vergessen
 	if _road_lines.size() > lines.size() + 200:
@@ -173,7 +172,7 @@ func _draw_places(view_rect: Rect2) -> void:
 func _draw_route() -> void:
 	if navigation == null or not navigation.has_target or _route_line.size() < 2:
 		return
-	var width := maxf(6.0, 4.0 * meters_per_pixel)
+	var width := ROUTE_PIXELS * meters_per_pixel
 	var dash := maxf(15.0, 6.0 * meters_per_pixel)
 	# Berechnete Stücke durchgezogen, geschätzte (Luftlinie) gestrichelt
 	var start := 0
@@ -184,9 +183,9 @@ func _draw_route() -> void:
 			continue
 		var part := _route_line.slice(start, i + 1)
 		if known:
-			draw_polyline(part, ROUTE_COLOR, width, true)
+			draw_polyline(part, UiStyle.accent, width, true)
 		else:
-			_draw_dashed_polyline(part, ROUTE_COLOR, width, dash)
+			_draw_dashed_polyline(part, UiStyle.accent, width, dash)
 		start = i
 
 
@@ -209,17 +208,18 @@ func _draw_dashed_polyline(points: PackedVector2Array, color: Color, width: floa
 
 
 func _draw_markers() -> void:
-	# Ziel
+	# Ziel: weißer Ring mit Punkt in Akzentfarbe
 	if navigation and navigation.has_target:
 		var t := world_to_screen(Vector2(navigation.target.x, navigation.target.z))
-		draw_circle(t, 9.0, Color(0.9, 0.15, 0.15))
-		draw_arc(t, 9.0, 0.0, TAU, 24, Color.WHITE, 2.0, true)
-	# Auto als Pfeil in Fahrtrichtung
+		draw_circle(t, 9.0, Color.WHITE)
+		draw_circle(t, 5.0, UiStyle.accent)
+	# Auto: Kreis in Akzentfarbe mit weißem Pfeil in Fahrtrichtung
 	if car:
 		var p := world_to_screen(Vector2(car.global_position.x, car.global_position.z))
 		var forward := Vector2(car.global_basis.z.x, car.global_basis.z.z).normalized().rotated(rotation_angle)
 		var side := Vector2(-forward.y, forward.x)
-		var arrow := PackedVector2Array([p + forward * 11.0, p - forward * 7.0 + side * 7.0,
-			p - forward * 3.0, p - forward * 7.0 - side * 7.0])
-		draw_colored_polygon(arrow, Color(1.0, 0.75, 0.1))
-		draw_polyline(arrow + PackedVector2Array([arrow[0]]), Color(0.1, 0.1, 0.1), 1.5, true)
+		draw_circle(p, 15.0, Color(UiStyle.accent, 0.3))
+		draw_arc(p, 15.0, 0.0, TAU, 32, Color(UiStyle.accent, 0.9), 1.5, true)
+		var arrow := PackedVector2Array([p + forward * 9.0, p - forward * 6.0 + side * 6.5,
+			p - forward * 2.5, p - forward * 6.0 - side * 6.5])
+		draw_colored_polygon(arrow, Color.WHITE)

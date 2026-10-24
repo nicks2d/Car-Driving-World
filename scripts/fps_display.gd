@@ -1,9 +1,14 @@
 extends Label
-## FPS-Anzeige oben links, mit ein paar Infos zum Gelände. F3 schaltet sie an und aus.
+## FPS-Anzeige unten in der Mitte, mit ein paar Infos zum Gelände. Erst mit F3 sichtbar.
 
 @export var terrain: TerrainManager
 
 var _timer: float = 0.0
+
+
+func _ready() -> void:
+	visible = false
+	add_theme_font_override("font", UiStyle.font("semibold"))
 
 
 func _process(delta: float) -> void:

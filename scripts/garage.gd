@@ -1,47 +1,189 @@
 class_name Garage
 extends CanvasLayer
-## Die Garage: Auto auswählen, Lackfarbe, Daten, 3D-Vorschau in einem kleinen Showroom.
-## Öffnet beim Spielstart und mit G. Solange sie offen ist, pausiert das Spiel (die Welt
-## lädt im Hintergrund weiter). Auto und Farbe werden in user:// gespeichert.
+## Die Garage (Entwurf „Glas“): Das Spiel pausiert, eine Kamera kreist langsam um das Auto an
+## seiner Stelle in der Welt, das HUD ist aus. Links ein Glas-Panel mit den Daten (Balken im
+## Vergleich zum stärksten Auto), Lack, HUD-Farbe, Sportauspuff, Welt (Tageszeit, Wetter,
+## Jahreszeit – die Vorschau ändert sich sofort) und „Losfahren“. Unten rechts die Autos als
+## Karten. Auto, Lack und Einstellungen werden in user:// gespeichert.
 ##
-## Bedienung: Maus, oder Pfeil hoch/runter = Auto, links/rechts = Farbe,
-## Enter = Losfahren, Esc = zurück ohne Wechsel.
+## Bedienung: Maus, ← → Auto, C Lack, Enter losfahren, Esc zurück (ohne Autowechsel).
 
 ## Wird gesendet, wenn die Garage geschlossen wurde
 signal closed
 
-## Das Auto in der Welt
 @export var car: Car
-## Alle Autos (Profile), in dieser Reihenfolge in der Liste
+## Alle Autos (Profile), in dieser Reihenfolge als Karten
 @export var cars: Array[CarProfile] = []
-## Umdrehungen pro Minute der Drehscheibe in der Vorschau
-@export var turntable_rpm: float = 2.5
+@export var hud: CanvasLayer
+@export var day_night: DayNight
+@export var weather: Weather
+
+@export_group("Kamera")
+## Abstand der Kamera vom Auto (mal Radstand) und Höhe über dem Auto
+@export var orbit_distance_factor: float = 2.6
+@export var orbit_height: float = 1.6
+## So schnell kreist die Kamera (Bogenmaß pro Sekunde)
+@export var orbit_speed: float = 0.12
+## Bildmitte nach links schieben, damit das Auto rechts neben dem Panel steht
+@export var camera_shift: float = -1.5
+@export var camera_fov: float = 50.0
 
 const SETTINGS_PATH := "user://einstellungen.cfg"
+const TIMES: Array[float] = [7.5, 13.0, 19.5, 23.5]
+const TIME_NAMES: Array[String] = ["Morgen", "Mittag", "Abend", "Nacht"]
+const WEATHER_MODES: Array[int] = [-1, Weather.Kind.CLEAR, Weather.Kind.RAIN, Weather.Kind.FOG, Weather.Kind.SNOW]
+const WEATHER_NAMES: Array[String] = ["Auto", "Klar", "Regen", "Nebel", "Schnee"]
+const PANEL_RECT := Rect2(40.0, 36.0, 500.0, 832.0)
+const DARK_TEXT := Color("#0B1530")
 
 var is_open: bool = false
 ## Wurde schon einmal losgefahren? (Beim Start gibt es kein „Zurück“)
 var _has_driven: bool = false
 var _selected: int = 0
 var _paint: int = 0
-var _list: ItemList
-var _preview_root: Node3D
-var _preview_model: CarModel
-var _turntable: Node3D
+var _open_selected: int = 0
+var _open_paint: int = 0
+var _accent_index: int = 0
+## Sportauspuff an (für Pops und Flammen, siehe Car.sport_exhaust)
+var sport_exhaust: bool = true
+var _camera: Camera3D
+var _orbit_angle: float = 0.6
+var _dragging: bool = false
+var _hud_was_visible: bool = true
+
+# Oberfläche
+var _root: Control
 var _name_label: Label
 var _subtitle_label: Label
-var _loading_label: Label
-var _data_grid: GridContainer
-var _colors: HBoxContainer
-var _credits: PanelContainer
+var _bars: Array = []  # [Name-Label, Wert-Label, Bar]
+var _paint_row: HBoxContainer
+var _accent_row: HBoxContainer
+var _exhaust_toggle: Toggle
+var _time_buttons: Array[Button] = []
+var _weather_buttons: Array[Button] = []
+var _season_buttons: Array[Button] = []
 var _drive_button: Button
-var _extra_row: HBoxContainer
-var _drag_speed: float = 0.0
+var _cards: Array[CarCard] = []
+var _credits: Control
+var _collection: Control
+## Liste in der Sammlung (füllt fill_collection)
+var collection_list: VBoxContainer
 
+
+# ---------------------------------------------------------------------------
+# Kleine Bausteine der Oberfläche
+# ---------------------------------------------------------------------------
+
+## Balken (Anteil 0 bis 1) in Akzentfarbe auf heller Spur
+class Bar extends Control:
+	var ratio: float = 0.0
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(0.0, 4.0)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		UiStyle.draw_box(self, Rect2(Vector2.ZERO, size), Color(1, 1, 1, 0.12), 2)
+		if ratio > 0.0:
+			UiStyle.draw_box(self, Rect2(Vector2.ZERO, Vector2(size.x * clampf(ratio, 0.0, 1.0), size.y)), UiStyle.accent, 2)
+
+
+## Runder Farbknopf, der gewählte mit Ring in Akzentfarbe
+class Swatch extends Control:
+	signal pressed
+	var color: Color = Color.WHITE
+	var selected: bool = false
+	var diameter: float = 40.0
+
+	func _init(swatch_color: Color, size_px: float) -> void:
+		color = swatch_color
+		diameter = size_px
+		custom_minimum_size = Vector2(size_px + 8.0, size_px + 8.0)
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+	func _draw() -> void:
+		var center := size * 0.5
+		if selected:
+			draw_arc(center, diameter * 0.5 + 3.0, 0.0, TAU, 48, UiStyle.accent, 2.5, true)
+		draw_circle(center, diameter * 0.5 - (2.0 if selected else 0.0), color)
+		draw_arc(center, diameter * 0.5 - (2.0 if selected else 0.0), 0.0, TAU, 48, Color(1, 1, 1, 0.25), 1.0, true)
+
+	func _gui_input(event: InputEvent) -> void:
+		var mouse := event as InputEventMouseButton
+		if mouse and mouse.pressed and mouse.button_index == MOUSE_BUTTON_LEFT:
+			pressed.emit()
+
+
+## Schalter (an/aus) wie bei einem Handy
+class Toggle extends Control:
+	signal toggled(on: bool)
+	var on: bool = true
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(46.0, 26.0)
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+	func _draw() -> void:
+		var rect := Rect2(Vector2(0.0, (size.y - 26.0) * 0.5), Vector2(46.0, 26.0))
+		UiStyle.draw_box(self, rect, UiStyle.accent if on else Color(1, 1, 1, 0.16), 13)
+		var knob_x := rect.position.x + (33.0 if on else 13.0)
+		draw_circle(Vector2(knob_x, rect.get_center().y), 10.0, Color.WHITE)
+
+	func _gui_input(event: InputEvent) -> void:
+		var mouse := event as InputEventMouseButton
+		if mouse and mouse.pressed and mouse.button_index == MOUSE_BUTTON_LEFT:
+			on = not on
+			queue_redraw()
+			toggled.emit(on)
+
+
+## Karte eines Autos unten rechts
+class CarCard extends Control:
+	signal pressed
+	var title: String = ""
+	var subtitle: String = ""
+	var selected: bool = false
+	var available: bool = true
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(184.0, 94.0)
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		var glass := GlassPanel.new()
+		glass.radius = 18.0
+		glass.set_anchors_preset(Control.PRESET_FULL_RECT)
+		glass.show_behind_parent = true
+		add_child(glass)
+
+	func _draw() -> void:
+		var alpha := 1.0 if available else 0.4
+		if selected:
+			UiStyle.draw_box(self, Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0), 18, UiStyle.accent, 2)
+		UiStyle.draw_text(self, title, Vector2(18.0, 52.0), 18, "semibold", Color(1, 1, 1, alpha))
+		UiStyle.draw_text(self, subtitle if available else "Modell fehlt", Vector2(18.0, 74.0), 14, "regular",
+			Color(1, 1, 1, 0.62 * alpha))
+
+	func _gui_input(event: InputEvent) -> void:
+		var mouse := event as InputEventMouseButton
+		if mouse and mouse.pressed and mouse.button_index == MOUSE_BUTTON_LEFT:
+			pressed.emit()
+
+
+# ---------------------------------------------------------------------------
+# Öffnen, schließen, Einstellungen
+# ---------------------------------------------------------------------------
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 20
+	_camera = Camera3D.new()
+	_camera.fov = camera_fov
+	_camera.far = 30000.0
+	_camera.near = 0.1
+	_camera.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	add_child(_camera)
+	# Das Automodell muss auch bei angehaltenem Spiel laden können
+	if car and car.has_node("Model"):
+		car.get_node("Model").process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_ui()
 	visible = false
 	_load_settings()
@@ -50,15 +192,19 @@ func _ready() -> void:
 ## Gespeicherte Wahl gleich aufs Auto anwenden (auch wenn die Garage beim Start nicht aufgeht)
 func _load_settings() -> void:
 	var config := ConfigFile.new()
-	if config.load(SETTINGS_PATH) != OK:
-		return
-	var id: String = config.get_value("garage", "car", "")
-	for i in cars.size():
-		if cars[i].id == id and CarModel.is_available(cars[i]):
-			_selected = i
-	_paint = config.get_value("garage", "paint", 0)
-	if car and cars.size() > 0 and car.profile != cars[_selected]:
-		car.apply_profile(cars[_selected])
+	if config.load(SETTINGS_PATH) == OK:
+		var id: String = config.get_value("garage", "car", "")
+		for i in cars.size():
+			if cars[i].id == id and CarModel.is_available(cars[i]):
+				_selected = i
+		_paint = config.get_value("garage", "paint", 0)
+		_accent_index = clampi(config.get_value("hud", "akzent", 0), 0, UiStyle.ACCENTS.size() - 1)
+		sport_exhaust = config.get_value("auto", "sportauspuff", true)
+	UiStyle.accent = UiStyle.ACCENTS[_accent_index]
+	if car:
+		car.sport_exhaust = sport_exhaust
+		if cars.size() > 0 and car.profile != cars[_selected]:
+			car.apply_profile(cars[_selected])
 	_apply_paint_to_car()
 
 
@@ -67,12 +213,9 @@ func _save_settings() -> void:
 	config.load(SETTINGS_PATH)
 	config.set_value("garage", "car", cars[_selected].id)
 	config.set_value("garage", "paint", _paint)
+	config.set_value("hud", "akzent", _accent_index)
+	config.set_value("auto", "sportauspuff", sport_exhaust)
 	config.save(SETTINGS_PATH)
-
-
-## Weitere Einstellungen (z. B. Wetter) können sich hier anhängen
-func add_setting_row(control: Control) -> void:
-	_extra_row.add_child(control)
 
 
 func open() -> void:
@@ -81,41 +224,54 @@ func open() -> void:
 	is_open = true
 	visible = true
 	get_tree().paused = true
-	# Das Auto vorauswählen, das gerade fährt
+	if hud:
+		_hud_was_visible = hud.visible
+		hud.visible = false
+	_camera.current = true
 	for i in cars.size():
 		if car and cars[i] == car.profile:
 			_selected = i
-	_list.select(_selected)
-	_list.ensure_current_is_visible()
-	_list.grab_focus()
-	_show_selected()
+	_open_selected = _selected
+	_open_paint = _paint
+	_rest_wheels()
+	_credits.visible = false
+	_collection.visible = false
+	_refresh_all()
 
 
-## Garage schließen. drive = true: gewähltes Auto übernehmen
+## Garage schließen. drive = true: gewähltes Auto behalten, sonst zurück zum vorherigen
 func close(drive: bool) -> void:
 	if not is_open:
 		return
-	if drive:
-		_take_car()
+	if not drive and (_selected != _open_selected or _paint != _open_paint):
+		_selected = _open_selected
+		_paint = _open_paint
+		car.apply_profile(cars[_selected])
+		_apply_paint_to_car()
 	is_open = false
 	visible = false
 	_has_driven = true
-	# Das Vorschau-Auto freigeben: Nur das gefahrene Auto bleibt geladen
-	_preview_model.clear()
+	_camera.current = false
+	if hud:
+		hud.visible = _hud_was_visible
+	# Neues Auto: aufrecht und etwas angehoben an derselben Stelle absetzen
+	if _selected != _open_selected:
+		var spot := Transform3D(Basis(Vector3.UP, atan2(car.global_basis.z.x, car.global_basis.z.z)),
+			car.global_position + Vector3.UP * 0.6)
+		car.teleport(spot)
+	_save_settings()
 	get_tree().paused = false
 	closed.emit()
 
 
-func _take_car() -> void:
-	var profile := cars[_selected]
-	if car.profile != profile:
-		# Gleiche Stelle, aufrecht und etwas angehoben: dort steht das neue Auto
-		var spot := Transform3D(Basis(Vector3.UP, atan2(car.global_basis.z.x, car.global_basis.z.z)),
-			car.global_position + Vector3.UP * 0.6)
-		car.apply_profile(profile)
-		car.teleport(spot)
-	_apply_paint_to_car()
-	_save_settings()
+## Räder in Ruhelage setzen. Solange das Auto beim Laden eingefroren war, hat die Physik
+## ihre Lage verstellt; im angehaltenen Spiel korrigiert sie das nicht von selbst.
+func _rest_wheels() -> void:
+	if car == null or car.profile == null:
+		return
+	var wheels := car.corner_wheels()
+	for i in wheels.size():
+		wheels[i].transform = Transform3D(Basis(), Car.resting_wheel_center(car.profile, i))
 
 
 func _apply_paint_to_car() -> void:
@@ -140,13 +296,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_accept"):
 		close(true)
 	elif event.is_action_pressed("ui_cancel"):
-		if _credits.visible:
+		if _credits.visible or _collection.visible:
 			_credits.visible = false
+			_collection.visible = false
 		else:
 			close(not _has_driven)
 	elif event.is_action_pressed("ui_left"):
-		_set_paint(_paint - 1)
+		_step_car(-1)
 	elif event.is_action_pressed("ui_right"):
+		_step_car(1)
+	elif event.is_action_pressed("cycle_paint"):
 		_set_paint(_paint + 1)
 	else:
 		return
@@ -154,38 +313,45 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	if not is_open:
+	if not is_open or car == null:
 		return
-	# Drehscheibe: langsam von selbst, mit der Maus schneller (klingt dann aus)
-	_drag_speed = move_toward(_drag_speed, 0.0, delta * 3.0)
-	_turntable.rotate_y((turntable_rpm / 60.0 * TAU + _drag_speed) * delta)
-	_loading_label.visible = _preview_model.is_loading()
+	if not _dragging:
+		_orbit_angle += orbit_speed * delta
+	# Kamera kreist um das Auto, bleibt aber über dem Gelände
+	var target := car.global_position + Vector3.UP * 0.55
+	var distance := car.profile.wheelbase * orbit_distance_factor if car.profile else 7.0
+	var eye := target + Vector3(sin(_orbit_angle), 0.0, cos(_orbit_angle)) * distance + Vector3.UP * orbit_height
+	var space := car.get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(eye + Vector3.UP * 80.0, eye - Vector3.UP * 80.0)
+	query.exclude = [car.get_rid()]
+	var hit := space.intersect_ray(query)
+	if not hit.is_empty() and eye.y < hit["position"].y + 1.0:
+		eye.y = hit["position"].y + 1.0
+	_camera.global_transform = Transform3D(Basis.looking_at(target - eye), eye)
+	_camera.h_offset = camera_shift
 
 
-func _on_item_selected(index: int) -> void:
-	if not CarModel.is_available(cars[index]):
-		_list.select(_selected)
+# ---------------------------------------------------------------------------
+# Auswahl
+# ---------------------------------------------------------------------------
+
+func _step_car(step: int) -> void:
+	for k in range(1, cars.size()):
+		var index := posmod(_selected + step * k, cars.size())
+		if CarModel.is_available(cars[index]):
+			_pick_car(index)
+			return
+
+
+func _pick_car(index: int) -> void:
+	if index == _selected or not CarModel.is_available(cars[index]):
 		return
 	_selected = index
 	_paint = 0
-	_show_selected()
-
-
-func _show_selected() -> void:
-	var profile := cars[_selected]
-	_paint = clampi(_paint, 0, maxi(profile.paint_colors.size() - 1, 0))
-	_preview_model.show_profile(profile)
-	# Die Reifen sollen genau auf dem Boden stehen
-	var rest := Car.resting_wheel_center(profile, 0)
-	_preview_root.position.y = profile.wheel_radius - rest.y
-	_name_label.text = profile.display_name
-	_subtitle_label.text = profile.subtitle
-	_fill_data(profile)
-	_fill_colors(profile)
-
-
-func _on_preview_ready() -> void:
-	_preview_model.set_paint(_paint)
+	car.apply_profile(cars[index])
+	_rest_wheels()
+	_apply_paint_to_car()
+	_refresh_all()
 
 
 func _set_paint(index: int) -> void:
@@ -193,38 +359,110 @@ func _set_paint(index: int) -> void:
 	if count == 0:
 		return
 	_paint = wrapi(index, 0, count)
-	_preview_model.set_paint(_paint)
-	_fill_colors(cars[_selected])
+	_apply_paint_to_car()
+	_fill_paint()
 
 
-# ---------------------------------------------------------------------------
-# Daten und Farben
-# ---------------------------------------------------------------------------
+func _set_accent(index: int) -> void:
+	_accent_index = index
+	UiStyle.accent = UiStyle.ACCENTS[index]
+	_refresh_all()
 
-func _fill_data(p: CarProfile) -> void:
-	for child in _data_grid.get_children():
-		child.queue_free()
+
+func _set_time(index: int) -> void:
+	if day_night:
+		day_night.set_time(TIMES[index])
+	_select_segment(_time_buttons, index)
+
+
+func _set_weather(index: int) -> void:
+	if weather:
+		weather.set_mode(WEATHER_MODES[index], true)
+	if day_night:
+		day_night.refresh()
+	_select_segment(_weather_buttons, index)
+
+
+func _set_season(index: int) -> void:
+	if weather:
+		weather.set_season(index, true)
+	if day_night:
+		day_night.refresh()
+	_select_segment(_season_buttons, index)
+
+
+func _refresh_all() -> void:
+	var p := cars[_selected]
+	_name_label.text = p.display_name
+	_subtitle_label.text = p.subtitle
+	_fill_bars(p)
+	_fill_paint()
+	_fill_accents()
+	_exhaust_toggle.on = sport_exhaust
+	_exhaust_toggle.queue_redraw()
+	# Welt: was gerade eingestellt ist
+	if day_night:
+		var hour := day_night.time_of_day
+		var time_index := 3
+		if hour >= 5.0 and hour < 10.5:
+			time_index = 0
+		elif hour >= 10.5 and hour < 16.5:
+			time_index = 1
+		elif hour >= 16.5 and hour < 21.5:
+			time_index = 2
+		_select_segment(_time_buttons, time_index)
+	if weather:
+		var weather_index := WEATHER_MODES.find(weather.mode)
+		_select_segment(_weather_buttons, weather_index)
+		_select_segment(_season_buttons, weather.season)
+	_drive_button.add_theme_stylebox_override("normal", UiStyle.box(UiStyle.accent, 16))
+	_drive_button.add_theme_stylebox_override("hover", UiStyle.box(UiStyle.accent.lightened(0.12), 16))
+	_drive_button.add_theme_stylebox_override("pressed", UiStyle.box(UiStyle.accent.darkened(0.1), 16))
+	for i in _cards.size():
+		_cards[i].selected = i == _selected
+		_cards[i].queue_redraw()
+	for bar: Array in _bars:
+		(bar[2] as Bar).queue_redraw()
+
+
+## Fünf Balken, jeweils im Vergleich zum stärksten Auto (beim Gewicht zum schwersten,
+## bei 0–100 zum schnellsten)
+func _fill_bars(p: CarProfile) -> void:
+	var max_power := 1.0
+	var max_torque := 1.0
+	var max_mass := 1.0
+	var max_top := 1.0
+	var best_sprint := 99.0
+	for other in cars:
+		max_power = maxf(max_power, other.power_ps)
+		max_torque = maxf(max_torque, other.max_torque_nm)
+		max_mass = maxf(max_mass, other.mass)
+		max_top = maxf(max_top, _top_speed(other))
+		if other.measured_0_100 > 0.0:
+			best_sprint = minf(best_sprint, other.measured_0_100)
+	var sprint := p.measured_0_100
 	var rows := [
-		["Leistung", "%d PS (%d kW)" % [p.power_ps, roundi(p.max_power_kw)]],
-		["Drehmoment", "%d Nm" % roundi(p.max_torque_nm)],
-		["Gewicht", "%s kg" % _thousands(roundi(p.mass))],
-		["Antrieb", p.drive_text],
-		["Motor", p.engine_text],
-		["Getriebe", p.gearbox_text],
-		["0–100 km/h", ("%.1f s" % p.measured_0_100).replace(".", ",") if p.measured_0_100 > 0.0 else "–"],
-		["Spitze", "%d km/h" % roundi(p.measured_top_kmh if p.measured_top_kmh > 0.0 else p.top_speed_kmh)],
-		["Bremsweg 100–0", ("%.0f m" % p.measured_braking_m) if p.measured_braking_m > 0.0 else "–"],
+		["Leistung", "%d PS" % p.power_ps, p.power_ps / max_power],
+		["Drehmoment", "%d Nm" % roundi(p.max_torque_nm), p.max_torque_nm / max_torque],
+		["Gewicht", "%s kg · %s" % [_thousands(roundi(p.mass)), _short_drive(p)], p.mass / max_mass],
+		["0–100 km/h", ("%.1f s" % sprint).replace(".", ",") if sprint > 0.0 else "–",
+			best_sprint / sprint if sprint > 0.0 else 0.0],
+		["Spitze", "%d km/h" % roundi(_top_speed(p)), _top_speed(p) / max_top],
 	]
-	for row: Array in rows:
-		var key := Label.new()
-		key.text = row[0]
-		key.add_theme_color_override("font_color", Color(0.65, 0.68, 0.72))
-		key.add_theme_font_size_override("font_size", 16)
-		_data_grid.add_child(key)
-		var value := Label.new()
-		value.text = row[1]
-		value.add_theme_font_size_override("font_size", 18)
-		_data_grid.add_child(value)
+	for i in rows.size():
+		(_bars[i][0] as Label).text = rows[i][0]
+		(_bars[i][1] as Label).text = rows[i][1]
+		(_bars[i][2] as Bar).ratio = rows[i][2]
+		(_bars[i][2] as Bar).queue_redraw()
+
+
+## „Allrad (M xDrive, heckbetont)“ → „Allrad“
+func _short_drive(p: CarProfile) -> String:
+	return p.drive_text.get_slice(" (", 0)
+
+
+func _top_speed(p: CarProfile) -> float:
+	return p.measured_top_kmh if p.measured_top_kmh > 0.0 else p.top_speed_kmh
 
 
 func _thousands(value: int) -> String:
@@ -232,23 +470,38 @@ func _thousands(value: int) -> String:
 	return text if text.length() <= 3 else text.substr(0, text.length() - 3) + "." + text.substr(text.length() - 3)
 
 
-func _fill_colors(p: CarProfile) -> void:
-	for child in _colors.get_children():
-		if child is Button:
-			child.queue_free()
+func _fill_paint() -> void:
+	for child in _paint_row.get_children():
+		child.queue_free()
+	var p := cars[_selected]
 	for i in p.paint_colors.size():
-		var button := Button.new()
-		button.custom_minimum_size = Vector2(38, 38)
-		button.focus_mode = Control.FOCUS_NONE
-		var style := StyleBoxFlat.new()
-		style.bg_color = p.paint_colors[i]
-		style.set_corner_radius_all(19)
-		style.set_border_width_all(3 if i == _paint else 1)
-		style.border_color = Color.WHITE if i == _paint else Color(1, 1, 1, 0.3)
+		var swatch := Swatch.new(p.paint_colors[i], 40.0)
+		swatch.selected = i == _paint
+		swatch.pressed.connect(_set_paint.bind(i))
+		_paint_row.add_child(swatch)
+
+
+func _fill_accents() -> void:
+	for child in _accent_row.get_children():
+		child.queue_free()
+	for i in UiStyle.ACCENTS.size():
+		var swatch := Swatch.new(UiStyle.ACCENTS[i], 24.0)
+		swatch.selected = i == _accent_index
+		swatch.pressed.connect(_set_accent.bind(i))
+		_accent_row.add_child(swatch)
+
+
+func _select_segment(buttons: Array[Button], index: int) -> void:
+	for i in buttons.size():
+		var chosen := i == index
+		var style := UiStyle.box(Color.WHITE if chosen else Color(0, 0, 0, 0), 11)
 		for state in ["normal", "hover", "pressed", "focus"]:
-			button.add_theme_stylebox_override(state, style)
-		button.pressed.connect(_set_paint.bind(i))
-		_colors.add_child(button)
+			buttons[i].add_theme_stylebox_override(state, style if chosen or state == "normal" or state == "focus"
+				else UiStyle.box(Color(1, 1, 1, 0.08), 11))
+		buttons[i].add_theme_color_override("font_color", DARK_TEXT if chosen else Color(1, 1, 1, 0.8))
+		buttons[i].add_theme_color_override("font_hover_color", DARK_TEXT if chosen else Color.WHITE)
+		buttons[i].add_theme_color_override("font_pressed_color", DARK_TEXT)
+		buttons[i].add_theme_font_override("font", UiStyle.font("semibold" if chosen else "medium"))
 
 
 # ---------------------------------------------------------------------------
@@ -256,217 +509,270 @@ func _fill_colors(p: CarProfile) -> void:
 # ---------------------------------------------------------------------------
 
 func _build_ui() -> void:
-	var background := PanelContainer.new()
-	background.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var bg_style := StyleBoxFlat.new()
-	bg_style.bg_color = Color(0.06, 0.065, 0.075, 0.97)
-	background.add_theme_stylebox_override("panel", bg_style)
-	add_child(background)
-	var margin := MarginContainer.new()
-	for side in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 32)
-	background.add_child(margin)
-	var main := VBoxContainer.new()
-	main.add_theme_constant_override("separation", 16)
-	margin.add_child(main)
-	# Kopfzeile
-	var header := HBoxContainer.new()
-	main.add_child(header)
-	var title := Label.new()
-	title.text = "Garage"
-	title.add_theme_font_size_override("font_size", 36)
-	header.add_child(title)
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(spacer)
-	var credits_button := Button.new()
-	credits_button.text = "Credits"
-	credits_button.focus_mode = Control.FOCUS_NONE
-	credits_button.pressed.connect(func() -> void: _credits.visible = not _credits.visible)
-	header.add_child(credits_button)
-	# Inhalt: links Liste, rechts Vorschau und Daten
-	var content := HBoxContainer.new()
-	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.add_theme_constant_override("separation", 24)
-	main.add_child(content)
-	var left := VBoxContainer.new()
-	left.custom_minimum_size.x = 300
-	content.add_child(left)
-	_list = ItemList.new()
-	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_list.add_theme_font_size_override("font_size", 20)
-	_list.add_theme_constant_override("v_separation", 14)
-	for profile in cars:
-		var available := CarModel.is_available(profile)
-		var index := _list.add_item(profile.display_name if available else "%s (Modell fehlt)" % profile.display_name)
-		_list.set_item_tooltip(index, profile.subtitle)
-		_list.set_item_disabled(index, not available)
-		if not available:
-			_list.set_item_custom_fg_color(index, Color(1, 1, 1, 0.35))
-	_list.item_selected.connect(_on_item_selected)
-	left.add_child(_list)
-	var hint := Label.new()
-	hint.text = "↑ ↓ Auto   ← → Farbe\nEnter losfahren   Esc zurück"
-	hint.add_theme_color_override("font_color", Color(0.6, 0.62, 0.66))
-	left.add_child(hint)
-	var right := VBoxContainer.new()
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.add_theme_constant_override("separation", 12)
-	content.add_child(right)
-	right.add_child(_build_showroom())
-	var name_row := HBoxContainer.new()
-	name_row.add_theme_constant_override("separation", 16)
-	right.add_child(name_row)
-	_name_label = Label.new()
-	_name_label.add_theme_font_size_override("font_size", 30)
-	name_row.add_child(_name_label)
-	_subtitle_label = Label.new()
-	_subtitle_label.add_theme_color_override("font_color", Color(0.65, 0.68, 0.72))
-	_subtitle_label.add_theme_font_size_override("font_size", 18)
-	_subtitle_label.size_flags_vertical = Control.SIZE_SHRINK_END
-	name_row.add_child(_subtitle_label)
-	_data_grid = GridContainer.new()
-	_data_grid.columns = 6
-	_data_grid.add_theme_constant_override("h_separation", 18)
-	_data_grid.add_theme_constant_override("v_separation", 6)
-	right.add_child(_data_grid)
-	var bottom := HBoxContainer.new()
-	bottom.add_theme_constant_override("separation", 10)
-	right.add_child(bottom)
-	_colors = HBoxContainer.new()
-	_colors.add_theme_constant_override("separation", 8)
-	var paint_label := Label.new()
-	paint_label.text = "Lack"
-	_colors.add_child(paint_label)
-	bottom.add_child(_colors)
-	_extra_row = HBoxContainer.new()
-	_extra_row.add_theme_constant_override("separation", 10)
-	_extra_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_extra_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	bottom.add_child(_extra_row)
-	_drive_button = Button.new()
-	_drive_button.text = "  Losfahren  "
-	_drive_button.add_theme_font_size_override("font_size", 24)
-	_drive_button.focus_mode = Control.FOCUS_NONE
-	_drive_button.pressed.connect(close.bind(true))
-	bottom.add_child(_drive_button)
-	_build_credits(background)
-
-
-## Kleiner Showroom: eigene 3D-Welt mit Boden, Licht und Drehscheibe
-func _build_showroom() -> Control:
-	var container := SubViewportContainer.new()
-	container.stretch = true
-	container.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	container.gui_input.connect(_on_showroom_input)
-	var viewport := SubViewport.new()
-	viewport.own_world_3d = true
-	viewport.msaa_3d = Viewport.MSAA_4X
-	viewport.process_mode = Node.PROCESS_MODE_ALWAYS
-	container.add_child(viewport)
-	var environment := Environment.new()
-	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Color(0.035, 0.038, 0.045)
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color(0.55, 0.58, 0.65)
-	environment.ambient_light_energy = 0.7
-	environment.reflected_light_source = Environment.REFLECTION_SOURCE_BG
-	environment.tonemap_mode = Environment.TONE_MAPPER_AGX
-	environment.glow_enabled = true
-	# Spiegelungen auf dem glänzenden Boden (die Welt ist pausiert, das kostet hier nichts)
-	environment.ssr_enabled = true
-	var world_environment := WorldEnvironment.new()
-	world_environment.environment = environment
-	viewport.add_child(world_environment)
-	# Boden: dunkel und glänzend
-	var floor_mesh := CylinderMesh.new()
-	floor_mesh.top_radius = 9.0
-	floor_mesh.bottom_radius = 9.0
-	floor_mesh.height = 0.05
-	floor_mesh.radial_segments = 64
-	var floor_material := StandardMaterial3D.new()
-	floor_material.albedo_color = Color(0.05, 0.05, 0.055)
-	floor_material.roughness = 0.22
-	floor_mesh.material = floor_material
-	var floor_instance := MeshInstance3D.new()
-	floor_instance.mesh = floor_mesh
-	floor_instance.position.y = -0.025
-	viewport.add_child(floor_instance)
-	# Licht: weiches Hauptlicht von oben, zwei Kantenlichter
-	var key := DirectionalLight3D.new()
-	key.rotation_degrees = Vector3(-60, 30, 0)
-	key.light_energy = 1.6
-	key.shadow_enabled = true
-	viewport.add_child(key)
-	# Aufhelllicht von vorne (ohne Schatten), damit auch dunkle Lacke gut zu sehen sind
-	var fill := DirectionalLight3D.new()
-	fill.rotation_degrees = Vector3(-20, 160, 0)
-	fill.light_energy = 0.6
-	fill.light_specular = 0.0
-	viewport.add_child(fill)
-	# Kantenlichter hoch über und hinter dem Auto (nicht im Bild, keine Flecken auf dem Boden)
-	for setup: Array in [[Vector3(-6, 5, -5), Color(0.7, 0.8, 1.0)], [Vector3(6, 4.5, -3), Color(1.0, 0.9, 0.8)]]:
-		var rim := OmniLight3D.new()
-		rim.position = setup[0]
-		rim.light_color = setup[1]
-		rim.light_energy = 4.0
-		rim.omni_range = 16.0
-		# Keine Glanzpunkte: sonst spiegeln sich die Lampen als Flecken im Boden
-		rim.light_specular = 0.0
-		viewport.add_child(rim)
-	var camera := Camera3D.new()
-	camera.fov = 30.0
-	var eye := Vector3(0, 1.9, 10.0)
-	camera.transform = Transform3D(Basis.looking_at(Vector3(0, 0.6, 0) - eye), eye)
-	viewport.add_child(camera)
-	_turntable = Node3D.new()
-	_turntable.rotation.y = deg_to_rad(-35)
-	viewport.add_child(_turntable)
-	_preview_root = Node3D.new()
-	_turntable.add_child(_preview_root)
-	_preview_model = CarModel.new()
-	_preview_model.name = "Model"
-	_preview_root.add_child(_preview_model)
-	_preview_model.model_ready.connect(_on_preview_ready)
-	_loading_label = Label.new()
-	_loading_label.text = "Lädt …"
-	_loading_label.position = Vector2(16, 12)
-	container.add_child(_loading_label)
-	return container
-
-
-func _on_showroom_input(event: InputEvent) -> void:
-	# Mit gedrückter Maustaste ziehen dreht das Auto
-	if event is InputEventMouseMotion and (event as InputEventMouseMotion).button_mask & MOUSE_BUTTON_MASK_LEFT:
-		_turntable.rotate_y((event as InputEventMouseMotion).relative.x * 0.01)
-		_drag_speed = 0.0
-
-
-func _build_credits(parent: Control) -> void:
-	_credits = PanelContainer.new()
-	_credits.set_anchors_preset(Control.PRESET_CENTER)
-	_credits.custom_minimum_size = Vector2(900, 520)
-	_credits.position = -_credits.custom_minimum_size * 0.5
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.1, 0.105, 0.12)
-	style.set_corner_radius_all(10)
-	style.set_content_margin_all(24)
-	_credits.add_theme_stylebox_override("panel", style)
-	var box := VBoxContainer.new()
-	_credits.add_child(box)
+	_root = Control.new()
+	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Ziehen mit der Maus im freien Bereich dreht die Kamera
+	_root.mouse_filter = Control.MOUSE_FILTER_PASS
+	_root.gui_input.connect(_on_background_input)
+	add_child(_root)
+	_build_panel()
+	_build_cards()
+	_credits = _build_overlay("Credits")
 	var text := RichTextLabel.new()
 	text.bbcode_enabled = true
 	text.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var credits := "[font_size=24]Credits[/font_size]\n\nAutomodelle (von Sketchfab, für das Spiel verändert: skaliert, Räder getrennt, Teile ausgeblendet, eigene Materialien):\n\n"
+	text.add_theme_font_override("normal_font", UiStyle.font("regular"))
+	text.add_theme_font_override("bold_font", UiStyle.font("semibold"))
+	text.add_theme_font_size_override("normal_font_size", 15)
+	text.add_theme_font_size_override("bold_font_size", 15)
+	var credits := "Automodelle (von Sketchfab, für das Spiel verändert: skaliert, Räder getrennt, Teile ausgeblendet, eigene Materialien):\n\n"
 	for profile in cars:
 		credits += "[b]%s[/b] (%s)\n%s\n\n" % [profile.display_name, profile.subtitle, profile.credit]
+	credits += "Schrift: Inter von Rasmus Andersson und The Inter Project Authors (SIL Open Font License 1.1).\n"
 	credits += "Texturen: Poly Haven (CC0). Alles andere: im Spiel selbst erzeugt."
 	text.text = credits
-	box.add_child(text)
-	var close_button := Button.new()
-	close_button.text = "Schließen"
-	close_button.size_flags_horizontal = Control.SIZE_SHRINK_END
-	close_button.pressed.connect(func() -> void: _credits.visible = false)
-	box.add_child(close_button)
-	_credits.visible = false
-	parent.add_child(_credits)
+	_credits.get_meta("content").add_child(text)
+	_collection = _build_overlay("Sammlung")
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_collection.get_meta("content").add_child(scroll)
+	collection_list = VBoxContainer.new()
+	collection_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	collection_list.add_theme_constant_override("separation", 12)
+	scroll.add_child(collection_list)
+	collection_list.add_child(UiStyle.label("Noch keine Aussichtspunkte entdeckt. Halte an einem an (Schild „Aussichtspunkt“).",
+		15, "regular", UiStyle.TEXT_DIM))
+
+
+func _build_panel() -> void:
+	var panel := Control.new()
+	panel.position = PANEL_RECT.position
+	panel.size = PANEL_RECT.size
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_root.add_child(panel)
+	var glass := GlassPanel.new()
+	glass.radius = 28.0
+	glass.set_anchors_preset(Control.PRESET_FULL_RECT)
+	panel.add_child(glass)
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	for side: String in ["left", "right"]:
+		margin.add_theme_constant_override("margin_" + side, 33)
+	margin.add_theme_constant_override("margin_top", 34)
+	margin.add_theme_constant_override("margin_bottom", 28)
+	panel.add_child(margin)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 0)
+	margin.add_child(box)
+
+	var heading := UiStyle.label("GARAGE", 13, "semibold", UiStyle.accent, 2)
+	box.add_child(heading)
+	_name_label = UiStyle.label("", 38, "extrabold")
+	box.add_child(_name_label)
+	_subtitle_label = UiStyle.label("", 17, "regular", UiStyle.TEXT_DIM)
+	box.add_child(_subtitle_label)
+	_spacer(box, 14)
+	for i in 5:
+		var row := HBoxContainer.new()
+		var name_label := UiStyle.label("", 16, "regular", Color(1, 1, 1, 0.85))
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name_label)
+		var value_label := UiStyle.label("", 16, "semibold")
+		row.add_child(value_label)
+		box.add_child(row)
+		_spacer(box, 6)
+		var bar := Bar.new()
+		box.add_child(bar)
+		_spacer(box, 12)
+		_bars.append([name_label, value_label, bar])
+	_spacer(box, 4)
+	box.add_child(UiStyle.label("LACK", 13, "semibold", UiStyle.TEXT_DIM, 2))
+	_spacer(box, 6)
+	_paint_row = HBoxContainer.new()
+	_paint_row.add_theme_constant_override("separation", 8)
+	box.add_child(_paint_row)
+	_spacer(box, 12)
+	# HUD-Farbe und Sportauspuff in einer Zeile
+	var extras := HBoxContainer.new()
+	box.add_child(extras)
+	var accent_box := VBoxContainer.new()
+	accent_box.add_theme_constant_override("separation", 4)
+	accent_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	accent_box.add_child(UiStyle.label("HUD-FARBE", 13, "semibold", UiStyle.TEXT_DIM, 2))
+	_accent_row = HBoxContainer.new()
+	_accent_row.add_theme_constant_override("separation", 6)
+	accent_box.add_child(_accent_row)
+	extras.add_child(accent_box)
+	var exhaust_box := VBoxContainer.new()
+	exhaust_box.add_theme_constant_override("separation", 8)
+	exhaust_box.add_child(UiStyle.label("SPORTAUSPUFF", 13, "semibold", UiStyle.TEXT_DIM, 2))
+	_exhaust_toggle = Toggle.new()
+	_exhaust_toggle.toggled.connect(func(on: bool) -> void:
+		sport_exhaust = on
+		if car:
+			car.sport_exhaust = on)
+	var toggle_row := HBoxContainer.new()
+	toggle_row.alignment = BoxContainer.ALIGNMENT_END
+	toggle_row.add_child(_exhaust_toggle)
+	exhaust_box.add_child(toggle_row)
+	extras.add_child(exhaust_box)
+	_spacer(box, 14)
+	box.add_child(UiStyle.label("WELT", 13, "semibold", UiStyle.TEXT_DIM, 2))
+	_spacer(box, 8)
+	_time_buttons = _segmented(box, TIME_NAMES, _set_time)
+	_spacer(box, 8)
+	_weather_buttons = _segmented(box, WEATHER_NAMES, _set_weather)
+	_spacer(box, 8)
+	_season_buttons = _segmented(box, Weather.SEASON_NAMES, _set_season)
+	_spacer(box, 18)
+	_drive_button = Button.new()
+	_drive_button.text = "Losfahren  →"
+	_drive_button.custom_minimum_size = Vector2(0.0, 56.0)
+	_drive_button.focus_mode = Control.FOCUS_NONE
+	_drive_button.add_theme_font_override("font", UiStyle.font("semibold"))
+	_drive_button.add_theme_font_size_override("font_size", 20)
+	for state in ["font_color", "font_hover_color", "font_pressed_color"]:
+		_drive_button.add_theme_color_override(state, DARK_TEXT)
+	_drive_button.pressed.connect(close.bind(true))
+	box.add_child(_drive_button)
+	var filler := Control.new()
+	filler.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(filler)
+	# Unten: Credits, Sammlung, Tastenhinweise
+	var bottom := HBoxContainer.new()
+	bottom.add_theme_constant_override("separation", 8)
+	box.add_child(bottom)
+	bottom.add_child(_outline_button("Credits", func() -> void: _credits.visible = true))
+	bottom.add_child(_outline_button("Sammlung", func() -> void: _collection.visible = true))
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottom.add_child(gap)
+	for hint: Array in [["Enter", "fahren"], ["Esc", "zurück"]]:
+		var key := UiStyle.label(hint[0], 13, "semibold")
+		key.add_theme_stylebox_override("normal", _key_style())
+		key.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		bottom.add_child(key)
+		var word := UiStyle.label(hint[1], 14, "regular", UiStyle.TEXT_DIM)
+		word.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		bottom.add_child(word)
+
+
+func _build_cards() -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	_root.add_child(row)
+	for i in cars.size():
+		var p := cars[i]
+		var card := CarCard.new()
+		card.title = p.display_name.trim_prefix("BMW ")
+		card.subtitle = "%d PS · %s" % [p.power_ps, _short_drive(p)]
+		card.available = CarModel.is_available(p)
+		card.pressed.connect(_pick_car.bind(i))
+		row.add_child(card)
+		_cards.append(card)
+	# Rechts unten ausrichten (40 Punkte Rand)
+	row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 40)
+
+
+## Umschalter mit mehreren Feldern nebeneinander; gibt die Knöpfe zurück
+func _segmented(parent: Control, names: Array, on_pick: Callable) -> Array[Button]:
+	var holder := PanelContainer.new()
+	var style := UiStyle.box(Color(1, 1, 1, 0.06), 13)
+	style.set_content_margin_all(4)
+	holder.add_theme_stylebox_override("panel", style)
+	parent.add_child(holder)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	holder.add_child(row)
+	var buttons: Array[Button] = []
+	for i in names.size():
+		var button := Button.new()
+		button.text = names[i]
+		button.custom_minimum_size = Vector2(0.0, 38.0)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.focus_mode = Control.FOCUS_NONE
+		button.add_theme_font_size_override("font_size", 15)
+		button.pressed.connect(on_pick.bind(i))
+		row.add_child(button)
+		buttons.append(button)
+	_select_segment(buttons, -1)
+	return buttons
+
+
+func _outline_button(text: String, on_press: Callable) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.focus_mode = Control.FOCUS_NONE
+	button.custom_minimum_size = Vector2(0.0, 42.0)
+	button.add_theme_font_override("font", UiStyle.font("medium"))
+	button.add_theme_font_size_override("font_size", 15)
+	var normal := UiStyle.box(Color(0, 0, 0, 0), 12, Color(1, 1, 1, 0.22), 1)
+	normal.set_content_margin_all(14)
+	normal.content_margin_top = 8
+	normal.content_margin_bottom = 8
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(1, 1, 1, 0.08)
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", hover)
+	button.add_theme_color_override("font_color", UiStyle.TEXT)
+	button.pressed.connect(on_press)
+	return button
+
+
+func _key_style() -> StyleBoxFlat:
+	var style := UiStyle.box(Color(1, 1, 1, 0.06), 6, Color(1, 1, 1, 0.3), 1)
+	style.content_margin_left = 7
+	style.content_margin_right = 7
+	style.content_margin_top = 2
+	style.content_margin_bottom = 3
+	return style
+
+
+func _spacer(parent: Control, height: float) -> void:
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0.0, height)
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(spacer)
+
+
+## Glas-Fenster in der Mitte (Credits, Sammlung) mit Titel und „Schließen“.
+## Der Inhalt kommt in die VBox aus get_meta("content").
+func _build_overlay(title: String) -> Control:
+	var overlay := Control.new()
+	overlay.size = Vector2(920.0, 600.0)
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	var glass := GlassPanel.new()
+	glass.radius = 28.0
+	glass.tint = Color(UiStyle.GLASS, 0.82)
+	glass.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(glass)
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	for side: String in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 32)
+	overlay.add_child(margin)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 16)
+	margin.add_child(box)
+	var header := HBoxContainer.new()
+	box.add_child(header)
+	var title_label := UiStyle.label(title, 26, "extrabold")
+	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title_label)
+	header.add_child(_outline_button("Schließen", func() -> void: overlay.visible = false))
+	overlay.set_meta("content", box)
+	overlay.visible = false
+	add_child(overlay)
+	return overlay
+
+
+func _on_background_input(event: InputEvent) -> void:
+	var mouse := event as InputEventMouseButton
+	if mouse and mouse.button_index == MOUSE_BUTTON_LEFT:
+		_dragging = mouse.pressed
+	var motion := event as InputEventMouseMotion
+	if motion and _dragging:
+		_orbit_angle -= motion.relative.x * 0.008

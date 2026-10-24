@@ -36,13 +36,17 @@ func _ready() -> void:
 	if navigation:
 		_map.set_navigation(navigation)
 	catcher.add_child(_map)
-	_info = Label.new()
-	_info.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_info.position = Vector2(24, -60)
-	_info.add_theme_font_size_override("font_size", 17)
-	_info.add_theme_color_override("font_outline_color", Color.BLACK)
-	_info.add_theme_constant_override("outline_size", 6)
-	add_child(_info)
+	# Hinweise unten in einer Glas-Leiste
+	var bar := GlassPanel.new()
+	bar.radius = 20.0
+	bar.size = Vector2(1100.0, 76.0)
+	bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_KEEP_SIZE, 40)
+	add_child(bar)
+	_info = UiStyle.label("", 15, "medium", UiStyle.TEXT)
+	_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_info.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bar.add_child(_info)
 	visible = false
 
 
@@ -76,11 +80,11 @@ func _process(_delta: float) -> void:
 	if not is_open:
 		return
 	_map.queue_redraw()
-	var text := "Linksklick: Ziel setzen   Rechtsklick: Ziel löschen   Mausrad: zoomen   Ziehen: verschieben   M: schließen"
+	var text := "Linksklick Ziel setzen  ·  Rechtsklick Ziel löschen  ·  Mausrad zoomen  ·  Ziehen verschiebt  ·  M schließen"
 	if navigation.has_target and not navigation.route_points.is_empty():
-		text = "Ziel: %s, ca. %d min      " % [("%.1f km" % (navigation.remaining_distance() / 1000.0)).replace(".", ","),
+		text = "Ziel: %s · ca. %d min      " % [Navigation.format_distance(navigation.remaining_distance()),
 			maxi(roundi(navigation.remaining_minutes()), 1)] + text
-	text += "\nGestrichelt: Verbindungen, die noch nicht berechnet sind (werden beim Hinfahren genau)"
+	text += "\nGestrichelt: noch nicht berechnete Verbindungen und Tunnel"
 	_info.text = text
 
 

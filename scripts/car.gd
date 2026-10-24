@@ -56,6 +56,8 @@ var drift_angle: float = 0.0
 var wetness: float = 0.0
 ## Fährt das Auto gerade durch einen Tunnel? (setzt TunnelEffects; schaltet das Licht an)
 var in_tunnel: bool = false
+## Sportauspuff (Garage): an = Pops und Flammen beim Gaswegnehmen
+var sport_exhaust: bool = true
 
 var _steer_input: float = 0.0
 var _shift_timer: float = 0.0

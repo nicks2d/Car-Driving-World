@@ -22,6 +22,9 @@ extends Node
 ## Lichter werden so oft (Sekunden) neu verteilt
 @export var light_update_interval: float = 0.2
 
+## Ab dieser Entfernung (Meter) wird ein Tunnel angekündigt
+@export var announce_distance: float = 1500.0
+
 @export_group("Hall")
 ## Anteil des Halls im Tunnel (0 bis 1)
 @export var reverb_wet: float = 0.45
@@ -35,6 +38,9 @@ const BUS_NAME := "Tunnel"
 
 var _lights: Array[OmniLight3D] = []
 var _light_timer: float = 0.0
+var _ahead_timer: float = 0.0
+## Tunnel, die schon angekündigt wurden
+var _announced: Dictionary = {}
 var _reverb: AudioEffectReverb
 
 
@@ -91,6 +97,15 @@ func _process(delta: float) -> void:
 	if _light_timer <= 0.0:
 		_light_timer = light_update_interval
 		_place_lights()
+	# Einmal pro Sekunde: kommt ein Tunnel? Dann eine Meldung.
+	_ahead_timer -= delta
+	if _ahead_timer <= 0.0:
+		_ahead_timer = 1.0
+		var ahead := roads.tunnel_ahead(car.global_position, car.global_basis.z, announce_distance)
+		if not ahead.is_empty() and not _announced.has(ahead["id"]):
+			_announced[ahead["id"]] = true
+			Toasts.post(get_tree(), "tunnel", "Tunnel in %s" % Navigation.format_distance(ahead["distance"]),
+				"Länge %s · Licht geht automatisch an" % Navigation.format_distance(ahead["length"]))
 
 
 ## Die echten Lichter an die Lampen setzen, die dem Auto am nächsten sind

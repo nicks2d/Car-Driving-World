@@ -107,6 +107,17 @@ func _process(delta: float) -> void:
 	_update_lighting()
 
 
+## Uhrzeit setzen und das Licht sofort anpassen (auch wenn das Spiel pausiert, z. B. Garage)
+func set_time(hours: float) -> void:
+	time_of_day = fposmod(hours, 24.0)
+	_update_lighting()
+
+
+## Licht neu berechnen (z. B. nachdem sich das Wetter in der Garage geändert hat)
+func refresh() -> void:
+	_update_lighting()
+
+
 ## Volumetrischen Nebel an- oder ausschalten (Qualitätsstufe hoch)
 func set_volumetric_fog(enabled: bool) -> void:
 	volumetric_fog = enabled
