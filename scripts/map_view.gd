@@ -21,6 +21,9 @@ const BACKGROUND := Color("#111721")
 const ROAD_COLOR := Color("#8D97A9")
 const UNKNOWN_COLOR := Color(1.0, 1.0, 1.0, 0.3)
 const TUNNEL_COLOR := Color(0.55, 0.6, 0.68, 0.9)
+## Autobahnen: breiter und in eigener Farbe
+const HIGHWAY_COLOR := Color("#D9A44E")
+const HIGHWAY_PIXELS: float = 6.5
 ## Breite der Straßen und der Route in Bildpunkten
 const ROAD_PIXELS: float = 3.5
 const ROUTE_PIXELS: float = 5.0
@@ -98,23 +101,38 @@ func _draw_tiles(view_rect: Rect2) -> void:
 
 func _draw_roads(view_rect: Rect2) -> void:
 	var width := ROAD_PIXELS * meters_per_pixel
+	var highway_width := HIGHWAY_PIXELS * meters_per_pixel
 	var lines: Array[PackedVector2Array] = []
 	var tunnels: Array[PackedVector2Array] = []
+	var highways: Array[PackedVector2Array] = []
+	var highway_tunnels: Array[PackedVector2Array] = []
+	var ramps: Array[PackedVector2Array] = []
 	for pair: Array in roads.loaded_segments(view_rect):
 		var segment: RoadSegment = pair[1]
 		if not _road_lines.has(segment):
 			_road_lines[segment] = _split_line(segment)
 		for part: Array in _road_lines[segment]:
-			if part[1]:
+			if segment.kind == RoadSegment.Kind.HIGHWAY:
+				(highway_tunnels if part[1] else highways).append(part[0])
+			elif segment.kind == RoadSegment.Kind.RAMP:
+				ramps.append(part[0])
+			elif part[1]:
 				tunnels.append(part[0])
 			else:
 				lines.append(part[0])
 	for line in lines:
 		draw_polyline(line, ROAD_COLOR, width, true)
+	for line in ramps:
+		draw_polyline(line, HIGHWAY_COLOR.darkened(0.15), width * 0.7, true)
 	# Tunnel gestrichelt
 	var dash := maxf(25.0, 7.0 * meters_per_pixel)
 	for line in tunnels:
 		_draw_dashed_polyline(line, TUNNEL_COLOR, width, dash)
+	# Autobahnen obendrauf
+	for line in highways:
+		draw_polyline(line, HIGHWAY_COLOR, highway_width, true)
+	for line in highway_tunnels:
+		_draw_dashed_polyline(line, HIGHWAY_COLOR.darkened(0.25), highway_width, dash)
 	# Gemerkte Linien von Abschnitten, die es nicht mehr gibt, vergessen
 	if _road_lines.size() > lines.size() + 200:
 		_road_lines.clear()

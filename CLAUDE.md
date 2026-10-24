@@ -103,6 +103,8 @@ assets/
 - [x] Extra: Minimap mit Navi (Kartenkacheln, Route über Orts-Graphen, Abbiege-Hinweise)
 - [x] Extra: Wetter und Jahreszeiten (6 Wetterlagen, Regen mit SSR, Talnebel, Schnee, 4 Jahreszeiten)
 - [x] Extra: Tunnel (statt verworfener Abschnitte, Röhre mit Lampen, Portale, Hall, Augen-Anpassung)
+- [x] Extra: HUD im Glas-Stil, Garage in der Welt
+- [x] Extra: Autobahn ohne Tempolimit (Anschlussstellen, Schilderbrücken, Leitpfosten, Navi)
 - [ ] Meilenstein 8
 - [ ] Meilenstein 9
 
@@ -301,6 +303,48 @@ assets/
   wärmsten 15 Uhr), −0,65 °C pro 100 m über 100 m, Wetter −2 bis −5 °C, beim Schneien ≤ 1 °C.
 - Testen: `--nohud` blendet das HUD aus, `--hide=Minimap,Speedometer` einzelne Teile. Messungen
   streuen stark mit der Temperatur des Macs: immer abwechselnd mit/ohne messen.
+- Autobahn (`highway_layout.gd`, Art HIGHWAY in `road_segment.gd`): Linien west–ost und
+  nord–süd alle ~6 km (75 % gibt es), Stützpunkte alle 1,6 km. Seitenlage = glattes Rauschen
+  (Stützwerte alle 4 Stützpunkte, ±900 m, im Tal gesucht) plus ±120 m lokale Suche. Mittellinie
+  ohne Wegsuche: gerade Stücke an den Stützpunkten (150 m, an möglichen Anschlussstellen 310 m),
+  dazwischen Hermite-Kurve. Warum: Unabhängige Stützpunkte (±400 m) ergaben S-Kurven mit
+  ~340 m Radius, der Autopilot flog bei 250 km/h in die Brüstung.
+- Autobahn gemessen auf 40 × 40 km: 234 Abschnitte, alle gültig, kleinster Radius 888 m,
+  Steigung ≤ 4 % (Notlösung: liegen Stützpunkte zu weit übereinander, steigt `max_grade` etwas,
+  einmal 4,2 %, statt einer Lücke), Tunnel 34 %, Brücken 14 %, Anschlussstelle etwa alle 5 km.
+  Autobahn 0,23 km/km², Landstraßen 0,97 km/km² → **Anteil Autobahn 19 %**.
+- Querschnitt 25,5 m: je Richtung 2 × 3,75 m plus 2,5 m Standstreifen, Mittelstreifen mit
+  Leitplanke, Leitpfosten alle 48 m mit Rückstrahlern (`reflector.gdshader`, leuchten im
+  Scheinwerferlicht), Querneigung bis 2,5 %. Shader `road.gdshader`: `lane_profile` 0/1/2 =
+  Landstraße/Autobahn/Rampe.
+- Anschlussstellen (Raute) an jedem 2. Stützpunkt, wenn ein Ort 220–900 m daneben liegt und
+  Richtung Autobahn Platz hat (≥ 50° zu seinen Straßen). Der Zubringer verlässt den Ort in
+  einer freien Richtung, schwenkt im Bogen und überquert die Autobahn rechtwinklig (endet 150 m
+  dahinter). Rampen 280 m. Schlüssel: Autobahn (k, Linie, 2 + Achse), Anschlussstelle
+  (k, Linie, 10 + 10·Achse + Teil), Teil 0 = Zubringer, 1–4 = Ausfahrt/Einfahrt links/rechts.
+  Orte entstehen nicht näher als 220 m an einer Autobahn (`HighwayLayout.is_clear`), haben
+  erfundene Namen (`place_name`), Ausfahrt-Nummern zählen pro Linie hoch.
+- Kreuzungen: Nord–Süd wartet auf West–Ost, Landstraßen/Zubringer/Rampen auf alle Autobahnen.
+  Wer später kommt, führt ≥ 7,5 m darüber (immer als Brücke) oder 7 m unter einer hohen Brücke
+  durch; liegt die andere im Tunnel, 9 m Abstand (gilt auch beim Begradigen des Tunnels).
+  Die Überlappungsprüfung übergeht Paare mit ≥ 6 m Höhenunterschied.
+- Gelände: Böschungs-Halbkreise an Stückenden entfallen, wenn in ihrer Reichweite eine Brücke
+  oder ein Tunnel beginnt (sonst Erdbuckel quer über der Fahrbahn am Brückenanfang).
+- Schilder: blaue Schilderbrücken 2000 m und 500 m vor der Ausfahrt (Nummer, Ort, Entfernung),
+  Ausfahrt-Schild am Rampenbeginn. Label3D zeigt Text nach +Z: mit
+  `Basis.looking_at(Fahrtrichtung)` ist er für den Verkehr lesbar.
+- Navi mit Autobahn: Knoten = Orte und Autobahn-Stützpunkte je Fahrtrichtung (Vector4i),
+  Kosten = Fahrzeit (Landstraße 70, Autobahn 130 km/h). Ansagen „Auf die Autobahn“ und
+  „Ausfahrt 5 nehmen“ mit Ortsname. Test 17 km: 8,5 min über die Autobahn statt 26 min,
+  Planen 13 ms. Karte: Autobahn breit und gelb, Rampen schmal.
+- Laden: Abschnitte außer Landstraßen werden erst 4,5 km weiter weg vergessen
+  (`HIGHWAY_FORGET_EXTRA`), sonst Endlosschleife (Abhängigkeit gebaut und sofort vergessen).
+- Testen: `--highway` startet auf der Autobahn (rechte Spur), mit `--bench` fährt der
+  Autopilot dort Vollgas (Kurven mit 9 m/s², 700 m Vorausschau). `--target=X,Z` setzt vor dem
+  Foto ein Navi-Ziel. M3 GTS (`--car=e92`, 70 s): 4,8 km, Spitze 304 km/h, max. 2 m neben der
+  Spur, ~147 FPS, 1%-Low 84, schlechtestes Bild 16–20 ms, kein Nachlade-Ruckler (Fenster
+  1280 × 720; macOS übergeht `--fullscreen` beim Benchmark). Im Fenster zählt `process_ms` die
+  V-Sync-Wartezeit mit (~21 ms), das ist kein echter Wert.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

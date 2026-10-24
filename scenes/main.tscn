@@ -34,6 +34,7 @@
 [ext_resource type="Script" path="res://scripts/status_chips.gd" id="70_chips"]
 [ext_resource type="Script" path="res://scripts/toasts.gd" id="71_toasts"]
 [ext_resource type="FontFile" path="res://assets/fonts/Inter-SemiBold.ttf" id="72_inter_semibold"]
+[ext_resource type="Shader" path="res://shaders/reflector.gdshader" id="73_reflector"]
 [ext_resource type="Script" path="res://scripts/garage.gd" id="51_garage"]
 [ext_resource type="Script" path="res://scripts/car_profile.gd" id="57_profile"]
 [ext_resource type="Resource" path="res://cars/m2.tres" id="52_m2"]
@@ -125,6 +126,32 @@ shader_parameter/asphalt_normal = ExtResource("24_asphalt_n")
 shader_parameter/gravel_albedo = ExtResource("25_gravel_a")
 shader_parameter/gravel_normal = ExtResource("26_gravel_n")
 shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_highway"]
+shader = ExtResource("22_road_shader")
+shader_parameter/asphalt_albedo = ExtResource("23_asphalt_a")
+shader_parameter/asphalt_normal = ExtResource("24_asphalt_n")
+shader_parameter/gravel_albedo = ExtResource("25_gravel_a")
+shader_parameter/gravel_normal = ExtResource("26_gravel_n")
+shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
+shader_parameter/lane_profile = 1
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ramp"]
+shader = ExtResource("22_road_shader")
+shader_parameter/asphalt_albedo = ExtResource("23_asphalt_a")
+shader_parameter/asphalt_normal = ExtResource("24_asphalt_n")
+shader_parameter/gravel_albedo = ExtResource("25_gravel_a")
+shader_parameter/gravel_normal = ExtResource("26_gravel_n")
+shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
+shader_parameter/lane_profile = 2
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_post"]
+vertex_color_use_as_albedo = true
+vertex_color_is_srgb = true
+roughness = 0.6
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_reflector"]
+shader = ExtResource("73_reflector")
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_waves_a"]
 frequency = 0.03
@@ -255,6 +282,10 @@ bridge_material = SubResource("StandardMaterial3D_concrete")
 rail_material = SubResource("StandardMaterial3D_rail")
 tunnel_material = SubResource("StandardMaterial3D_tunnel")
 lamp_material = SubResource("StandardMaterial3D_lamp")
+highway_material = SubResource("ShaderMaterial_highway")
+ramp_material = SubResource("ShaderMaterial_ramp")
+post_material = SubResource("StandardMaterial3D_post")
+reflector_material = SubResource("ShaderMaterial_reflector")
 
 [node name="Water" type="Node3D" parent="."]
 process_mode = 3

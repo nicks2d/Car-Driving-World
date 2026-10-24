@@ -16,10 +16,13 @@ extends Node
 ## --carview=G    Kamera neben dem Auto, Blick aufs Auto (0 = von vorne, 90 = von links,
 ##                180 = von hinten), z. B. um das Automodell anzuschauen
 ## --steer=left   beim Screenshot nach links (oder right) lenken, um die Vorderräder zu prüfen
+## --target=X,Z   vor dem Foto ein Navi-Ziel setzen (Route und Hinweis im HUD prüfen)
 ## --car=ID       mit diesem Auto starten (Profil cars/ID.tres, z. B. e30, e92, f90, g90)
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
 ## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png)
+## --highway     auf der nächsten Autobahn starten (statt auf der nächsten Straße); mit --bench
+##               fährt der Autopilot dort Vollgas (bis 360 km/h)
 ## --nohud       HUD ausblenden (z. B. um zu messen, was es kostet)
 ## --hide=A,B    einzelne HUD-Teile ausblenden (Namen wie in main.tscn, z. B. Minimap)
 ## --nowait      Foto machen, ohne auf die Gelände-Kacheln zu warten (nur --wait Sekunden)
@@ -40,6 +43,8 @@ var volumetric_fog: bool = false
 var _shot_name: String = ""
 var _no_wait: bool = false
 var _no_hud: bool = false
+## Auf der Autobahn starten?
+var on_highway: bool = false
 var _hide: PackedStringArray = PackedStringArray()
 var _jump_to: Vector2 = Vector2.ZERO
 var _has_jump: bool = false
@@ -50,6 +55,8 @@ var _look_at: Vector2 = Vector2.ZERO
 var _has_look_at: bool = false
 var _car_view: float = -1.0
 var _steer: String = ""
+var _target: Vector2 = Vector2.ZERO
+var _has_target: bool = false
 ## Auto aus den Argumenten (leer = nicht angegeben)
 var car_id: String = ""
 ## Wetter und Jahreszeit aus den Argumenten (leer = klar bzw. Sommer)
@@ -69,6 +76,7 @@ var _route: PackedVector3Array = PackedVector3Array()
 var _route_index: int = 0
 var _distance_driven: float = 0.0
 var _max_off_road: float = 0.0
+var _top_speed: float = 0.0
 var _lowest_up: float = 1.0
 var _last_position: Vector3 = Vector3.ZERO
 var _log_timer: float = 0.0
@@ -107,6 +115,10 @@ func _ready() -> void:
 				_car_view = float(value)
 			"steer":
 				_steer = value
+			"target":
+				var target_xz := value.split(",")
+				_target = Vector2(float(target_xz[0]), float(target_xz[1]))
+				_has_target = true
 			"car":
 				car_id = value
 			"bench":
@@ -119,6 +131,8 @@ func _ready() -> void:
 				_no_wait = true
 			"nohud":
 				_no_hud = true
+			"highway":
+				on_highway = true
 			"hide":
 				_hide = value.split(",")
 			"jump":
@@ -151,6 +165,9 @@ func on_world_ready(game: Node3D) -> void:
 	for part in _hide:
 		if game.has_node("HUD/" + part):
 			game.get_node("HUD/" + part).visible = false
+	# Bei Fotos bleibt das Auto stehen (sonst rollt es oder Tastendrücke anderer Fenster landen hier)
+	if _shot_name != "" and _bench_seconds <= 0.0 and _game.car is Car:
+		(_game.car as Car).throttle_enabled = false
 	if _has_jump:
 		_has_jump = false
 		game.jump_to(_jump_to)
@@ -183,6 +200,8 @@ func _process(delta: float) -> void:
 			if _game.terrain.pending_count() == 0:
 				_state = "wait_extra"
 				_timer = _wait
+				if _has_target:
+					(_game.get_node("Navigation") as Navigation).set_target(Vector3(_target.x, 0.0, _target.y))
 		"wait_extra":
 			_timer -= delta
 			if _fly_height > 0.0:
@@ -250,12 +269,13 @@ func _drive_autopilot() -> void:
 	_distance_driven += Vector2(here.x - _last_position.x, here.z - _last_position.z).length()
 	_last_position = here
 	_lowest_up = minf(_lowest_up, car.global_basis.y.y)
+	_top_speed = maxf(_top_speed, car.linear_velocity.length())
 	_log_timer += get_physics_process_delta_time()
 	if _log_timer >= 3.0:
 		_log_timer = 0.0
 		print("Autopilot: %.0f km/h, %.1f m neben der Mitte, Routenpunkt %d/%d, Position %s" % [
 			car.linear_velocity.length() * 3.6, best_distance, _route_index, _route.size(), here.round()])
-	if _route.size() - _route_index < 60:
+	if _route.size() - _route_index < (200 if on_highway else 60):
 		_extend_route()
 		return
 
@@ -286,16 +306,19 @@ func _drive_autopilot() -> void:
 		Input.action_release("steer_left")
 
 	# Tempo: Für jede Kurve der nächsten 120 m ausrechnen, wie schnell man sie fahren kann
-	# (Querbeschleunigung max. 4 m/s²) und rechtzeitig bremsen (max. 4 m/s²)
-	var target_speed := 26.0
-	for i in range(_route_index + 3, mini(_route_index + 30, _route.size() - 3)):
+	# (Querbeschleunigung max. 4 m/s²) und rechtzeitig bremsen (max. 4 m/s²).
+	# Auf der Autobahn: Vollgas, Kurven mit 9 m/s² und 700 m Vorausschau
+	var target_speed := 100.0 if on_highway else 26.0
+	var lateral := 9.0 if on_highway else 4.0
+	var horizon := 175 if on_highway else 30
+	for i in range(_route_index + 3, mini(_route_index + horizon, _route.size() - 3)):
 		var d1 := Vector2(_route[i].x - _route[i - 3].x, _route[i].z - _route[i - 3].z)
 		var d2 := Vector2(_route[i + 3].x - _route[i].x, _route[i + 3].z - _route[i].z)
 		var angle_change := absf(d1.angle_to(d2))
 		if angle_change < 0.01:
 			continue
 		var radius := 3.0 * RoadSegment.POINT_SPACING / angle_change
-		var curve_speed := maxf(sqrt(4.0 * radius), 4.0)
+		var curve_speed := maxf(sqrt(lateral * radius), 4.0)
 		var distance_to_curve := (i - _route_index) * RoadSegment.POINT_SPACING
 		target_speed = minf(target_speed, sqrt(curve_speed * curve_speed + 2.0 * 4.0 * distance_to_curve))
 	if speed < target_speed - 1.0:
@@ -372,8 +395,8 @@ func _print_bench() -> void:
 	print("BENCH gpu_ms avg=%.2f p99=%.2f | cpu_ms avg=%.2f p99=%.2f" % [
 		_average(_gpu_times), _percentile(_gpu_times, 0.99), _average(_cpu_times), _percentile(_cpu_times, 0.99)])
 	print("BENCH window=%s screen_scale=%.1f" % [DisplayServer.window_get_size(), DisplayServer.screen_get_scale()])
-	print("BENCH autopilot: %.0f m gefahren (%.0f km/h im Schnitt), max. %.1f m neben der Straßenmitte, min. Aufrecht-Wert %.2f" % [
-		_distance_driven, _distance_driven / maxf(_timer, 0.1) * 3.6, _max_off_road, _lowest_up])
+	print("BENCH autopilot: %.0f m gefahren (%.0f km/h im Schnitt, max. %.0f km/h), max. %.1f m neben der Straßenmitte, min. Aufrecht-Wert %.2f" % [
+		_distance_driven, _distance_driven / maxf(_timer, 0.1) * 3.6, _top_speed * 3.6, _max_off_road, _lowest_up])
 
 
 func _average(values: PackedFloat32Array) -> float:

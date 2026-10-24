@@ -52,6 +52,11 @@ func _init(segments: Array, pads: PackedVector4Array, area: Rect2) -> void:
 		reach = maxf(reach, core + RoadSegment.MAX_BANK)
 		var portal_distance := _portal_distances(segment)
 		var portals := _portal_planes(segment)
+		# Punkte, an denen die Böschung aufhört (Brücke, Tunnel)
+		var stops := PackedByteArray()
+		stops.resize(segment.points.size())
+		for i in segment.points.size():
+			stops[i] = 1 if segment.tunnel[i] == 1 or segment.bridge[i] == 1 else 0
 		for i in segment.points.size() - 1:
 			var in_tunnel := segment.tunnel[i] == 1 and segment.tunnel[i + 1] == 1
 			if in_tunnel:
@@ -63,12 +68,29 @@ func _init(segments: Array, pads: PackedVector4Array, area: Rect2) -> void:
 			var carves := not (segment.bridge[i] == 1 and segment.bridge[i + 1] == 1)
 			var piece_bank := (segment.bank[i] + segment.bank[i + 1]) * 0.5
 			var plane := _nearest_plane(portals, segment.points[i])
+			# Vor Tunnelportalen und Brücken hört die Böschung auf: kein Halbkreis über das Stückende
+			# hinaus, sonst ragt dort Gelände über die Fahrbahn, wenn sie auf der Brücke abfällt
+			var cap_a := not _stop_within(segment.points, stops, i, -1, core)
+			var cap_b := not _stop_within(segment.points, stops, i + 1, 1, core)
 			_add_piece(segment.points[i], segment.points[i + 1], core, piece_bank, carves, grown,
-				segment.tunnel[i] == 0, segment.tunnel[i + 1] == 0, plane)
+				cap_a, cap_b, plane)
 	for pad in pads:
 		var center := Vector3(pad.x, pad.y, pad.z)
 		reach = maxf(reach, pad.w + RoadSegment.MAX_BANK)
 		_add_piece(center, center, pad.w, 0.0, true, grown, true, true, [])
+
+
+## Liegt ab Punkt i in Richtung step (1 oder -1) innerhalb von distance Metern eine Brücke
+## oder ein Tunnel?
+func _stop_within(points: PackedVector3Array, stops: PackedByteArray, i: int, step: int, distance: float) -> bool:
+	var j := i
+	while j >= 0 and j < points.size():
+		if stops[j] == 1:
+			return true
+		if Vector2(points[j].x - points[i].x, points[j].z - points[i].z).length() > distance:
+			return false
+		j += step
+	return false
 
 
 ## Alle Portale eines Abschnitts: [Punkt (x/z), Richtung aus dem Tunnel hinaus]
@@ -98,9 +120,13 @@ func _nearest_plane(portals: Array, p: Vector3) -> Array:
 func _portal_distances(segment: RoadSegment) -> PackedFloat32Array:
 	var result := PackedFloat32Array()
 	result.resize(segment.points.size())
+	var last := segment.points.size() - 1
 	for r in segment.tunnel_ranges:
 		for k in range(r.x, r.y + 1):
-			result[k] = mini(k - r.x, r.y - k) * RoadSegment.POINT_SPACING
+			# Läuft der Tunnel am Abschnittsende weiter, ist dort kein Portal
+			var from_start := (k - r.x) * RoadSegment.POINT_SPACING if r.x > 0 else 1e6
+			var from_end := (r.y - k) * RoadSegment.POINT_SPACING if r.y < last else 1e6
+			result[k] = minf(from_start, from_end)
 	return result
 
 

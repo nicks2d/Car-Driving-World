@@ -35,6 +35,55 @@ var min_curve_radius: float = 20.0
 ## Querneigung in Kurven (0.05 = 5 %)
 var max_bank: float = 0.05
 
+## Art: Landstraße, Autobahn oder Rampe (Rampen und Zubringer haben einen festen Weg)
+enum Kind { ROAD, HIGHWAY, RAMP }
+var kind: int = Kind.ROAD
+## Gerade Zufahrt an beiden Enden (Meter) und so viele flache Punkte an den Enden.
+## Am Ende können es andere Werte sein (lead_end, flat_end; negativ = wie am Anfang).
+var lead: float = LEAD
+var lead_end: float = -1.0
+var flat_points: int = JUNCTION_FLAT
+var flat_end: int = -1
+## Höchste erlaubte Höhe über dem Gelände (Brücke)
+var max_fill: float = MAX_FILL
+## Das Höhenprofil wird über ±profile_window Punkte geglättet
+var profile_window: int = 8
+## Kleine Zickzacks der Wegsuche bis zu dieser Abweichung (Meter) entfernen
+var simplify_tolerance: float = 4.0
+## Größter Kurvenradius, wie weit ein Bogen höchstens von der Ecke abweicht und wie weit
+## sich der Weg beim Zusammenfassen zweier Knicke verschieben darf (Meter)
+var max_curve_radius: float = 500.0
+var curve_bulge: float = 8.0
+var merge_shift: float = 15.0
+## Wegsuche: Knicke pro Schritt über diesem Winkel (als cos) verboten, ab turn_soft_cos teurer
+var turn_limit_cos: float = 0.7
+var turn_soft_cos: float = 0.866
+## Mehrkosten für Tunnel beim Vergleich der Varianten (pro Meter) und pro Tunnel
+var tunnel_cost: float = TUNNEL_COST
+var portal_cost: float = PORTAL_COST
+## Fester Weg statt Wegsuche (x/z-Punkte), z. B. für Zubringer und Rampen
+var fixed_path: PackedVector2Array
+## false: Höhe gleichmäßig von start.y nach end.y (Rampen), statt dem Gelände zu folgen
+var follow_ground: bool = true
+## Andere fertige Straßen, die dieser Abschnitt kreuzt: Er führt darüber (Brücke) oder,
+## wenn die andere hoch auf einer Brücke liegt, darunter durch. Nie auf gleicher Höhe.
+var crossings: Array = []
+## Feste Mindesthöhen [Punkt x/z, Radius, Höhe], z. B. Zubringer über die Autobahn
+var height_constraints: Array = []
+## Stellen (x, z, Radius), an denen keine Brückenpfeiler stehen dürfen (Straße darunter)
+var no_pillars: PackedVector3Array
+## 1 = dieser Punkt führt über eine andere Straße (wird immer Brücke)
+var _over_crossing := PackedByteArray()
+## Warum das Höhenprofil nicht passt (für Tests), leer = passt
+var fail_reason: String = ""
+## Höhengrenzen durch kreuzende Straßen (leer = keine), für die Tunnel-Begradigung
+var _bound_low := PackedFloat32Array()
+var _bound_high := PackedFloat32Array()
+## Stellen (x, z, Radius) ohne äußere Leitplanke (Anschlussstellen)
+var rail_gaps: PackedVector3Array
+## Leitpfosten (nur Autobahn), in Weltkoordinaten
+var posts: Array[Transform3D] = []
+
 # --- Ergebnisse ---
 ## Mittellinie, alle POINT_SPACING Meter ein Punkt, y = Höhe der Fahrbahn
 var points: PackedVector3Array
@@ -122,9 +171,12 @@ var _grid_nv: int = 0
 
 
 func build() -> void:
+	if not fixed_path.is_empty():
+		_build_fixed()
+		return
 	var straight := Vector2(start.x, start.z).distance_to(Vector2(end.x, end.z))
 	var best := _build_variant(false)
-	# Großer Umweg oder gar kein Weg: auch eine Variante rechnen, die Berge durchbohren darf
+	# Großer Umweg oder gar kein Weg: auch eine Variante rechnen, die Berge durchbohren darf.
 	if best.is_empty() or best["length"] > straight * DETOUR_FOR_TUNNEL:
 		var bored := _build_variant(true)
 		# Die Tunnel-Variante gewinnt nur mit Tunnel (sonst bleibt die Straße wie bisher)
@@ -146,6 +198,27 @@ func build() -> void:
 	valid = true
 
 
+## Fester Weg (Autobahn, Zubringer, Rampen): keine Wegsuche, nur gleichmäßig abtasten und Profil
+func _build_fixed() -> void:
+	var dense_curvature := PackedFloat32Array()
+	dense_curvature.resize(fixed_path.size())
+	for i in range(1, fixed_path.size() - 1):
+		var d_in := fixed_path[i] - fixed_path[i - 1]
+		var d_out := fixed_path[i + 1] - fixed_path[i]
+		var length := (d_in.length() + d_out.length()) * 0.5
+		if length > 0.01:
+			# Wie im übrigen Code: positiv = Linkskurve (bei negativem Winkel)
+			dense_curvature[i] = -d_in.angle_to(d_out) / length
+	_resample(fixed_path, dense_curvature)
+	if points.size() < 4:
+		return
+	_make_bank()
+	if not _make_profile(false):
+		return
+	valid = true
+	fixed_path = PackedVector2Array()
+
+
 ## Eine Variante komplett berechnen (Weg, Kurven, Profil). Leer = kein vernünftiger Weg.
 func _build_variant(allow_tunnels: bool) -> Dictionary:
 	var path := _find_path(allow_tunnels)
@@ -154,7 +227,7 @@ func _build_variant(allow_tunnels: bool) -> Dictionary:
 	# Kleine Zickzacks der Wegsuche entfernen: übrig bleibt ein Polygonzug aus langen Geraden.
 	# Die geraden Kreuzungszufahrten (erster und letzter Abschnitt) bleiben unverändert.
 	var last := path.size() - 1
-	path = PackedVector2Array([path[0]]) + _simplify(path.slice(1, last), 4.0) + PackedVector2Array([path[last]])
+	path = PackedVector2Array([path[0]]) + _simplify(path.slice(1, last), simplify_tolerance) + PackedVector2Array([path[last]])
 	if path.size() < 4:
 		return {}
 	if not _fit_curves(path):
@@ -172,8 +245,8 @@ func _build_variant(allow_tunnels: bool) -> Dictionary:
 
 ## Wie „teuer“ eine Variante ist: Länge, Tunnel zählen mehr
 func _score(variant: Dictionary) -> float:
-	return variant["length"] + variant["tunnel_length"] * TUNNEL_COST \
-		+ (variant["tunnel_ranges"] as Array).size() * PORTAL_COST
+	return variant["length"] + variant["tunnel_length"] * tunnel_cost \
+		+ (variant["tunnel_ranges"] as Array).size() * portal_cost
 
 
 # ---------------------------------------------------------------------------
@@ -246,8 +319,8 @@ func _find_path(allow_tunnels: bool) -> PackedVector2Array:
 				heights[i] = cap
 
 	# Die Wegsuche beginnt und endet am Ende der geraden Kreuzungszufahrten
-	var lead_a := a + leave_a * LEAD
-	var lead_b := b + leave_b * LEAD
+	var lead_a := a + leave_a * lead
+	var lead_b := b + leave_b * (lead_end if lead_end >= 0.0 else lead)
 	var start_index := _grid_index(lead_a, grid_origin, dir_u, dir_v, nu, nv)
 	var goal_index := _grid_index(lead_b, grid_origin, dir_u, dir_v, nu, nv)
 
@@ -314,10 +387,10 @@ func _find_path(allow_tunnels: bool) -> PackedVector2Array:
 			# aus mindestens vier Knicken und wird gut 40 m breit. Nur dann passt später ein
 			# Kreisbogen mit mindestens 20 m Radius hinein (siehe _fit_curves).
 			var turn_cos := incoming.dot(move_dirs[m])
-			if previous != -1 and turn_cos < 0.7:
+			if previous != -1 and turn_cos < turn_limit_cos:
 				continue
-			if turn_cos < 0.866:
-				step_cost += (0.866 - turn_cos) * 250.0
+			if turn_cos < turn_soft_cos:
+				step_cost += (turn_soft_cos - turn_cos) * 250.0 * (4.0 if kind == Kind.HIGHWAY else 1.0)
 			var new_cost := cost[current] + step_cost
 			if new_cost < cost[next]:
 				cost[next] = new_cost
@@ -515,7 +588,7 @@ func _fit_curves(poly: PackedVector2Array) -> bool:
 			if poly.size() < 2:
 				return false
 		elif candidate != -1:
-			var merged := _merge_corner(poly, candidate, 15.0)
+			var merged := _merge_corner(poly, candidate, merge_shift)
 			if merged.size() < 2:
 				keep.append(poly[candidate])
 			else:
@@ -559,7 +632,7 @@ func _tangent_lengths(poly: PackedVector2Array) -> PackedFloat32Array:
 		# Kleine Knicke bekommen größere Radien, solange der Bogen höchstens 8 m von der Ecke
 		# abweicht. So entstehen lange, weite Bögen statt kurzer Knicke.
 		var bulge := 1.0 / cos(angle * 0.5) - 1.0
-		var radius := clampf(8.0 / maxf(bulge, 0.00001), curve_radius, 500.0)
+		var radius := clampf(curve_bulge / maxf(bulge, 0.00001), curve_radius, max_curve_radius)
 		want[c] = radius * tan(angle * 0.5)
 	# Jede Gerade wird im Verhältnis der Wünsche zwischen ihren beiden Bögen aufgeteilt ...
 	var result := PackedFloat32Array()
@@ -718,13 +791,15 @@ func _make_profile(allow_tunnels: bool) -> bool:
 	for i in n:
 		ground[i] = world_gen.terrain_height(points[i].x, points[i].z, lakes)
 		wish[i] = ground[i]
+		if not follow_ground:
+			wish[i] = lerpf(start.y, end.y, float(i) / maxf(n - 1, 1))
 		if allow_tunnels and not _ref_grid.is_empty():
 			var cell := _grid_index(Vector2(points[i].x, points[i].z), _grid_origin, _grid_u, _grid_v, _grid_nu, _grid_nv)
 			wish[i] = minf(ground[i], _ref_grid[cell] + TUNNEL_REF_ALLOW)
 	# Gleitender Mittelwert über ±32 m: kleine Buckel verschwinden
 	var smooth := PackedFloat32Array()
 	smooth.resize(n)
-	var window := 8
+	var window := profile_window
 	for i in n:
 		var total := 0.0
 		var count := 0
@@ -741,42 +816,159 @@ func _make_profile(allow_tunnels: bool) -> bool:
 			smooth[i] = maxf(smooth[i], water + 4.5)
 			over_water[i] = 1
 	# An den Orten liegt die Straße flach auf Ortshöhe (dort ist die Kreuzung)
+	var flat_b := flat_end if flat_end >= 0 else flat_points
 	for i in n:
-		if i < JUNCTION_FLAT:
+		if i < flat_points:
 			smooth[i] = start.y
-		elif i >= n - JUNCTION_FLAT:
+		elif i >= n - flat_b:
 			smooth[i] = end.y
-	# Steigung begrenzen: vorwärts und rückwärts durchgehen
 	var max_step := max_grade * POINT_SPACING
-	for i in range(JUNCTION_FLAT, n - JUNCTION_FLAT):
+	# Kreuzende Straßen: Mindest- bzw. Höchsthöhen, mit Rampen davor und dahinter
+	_apply_crossings(smooth, max_step)
+	# Steigung begrenzen: vorwärts und rückwärts durchgehen
+	for i in range(flat_points, n - flat_b):
 		smooth[i] = clampf(smooth[i], smooth[i - 1] - max_step, smooth[i - 1] + max_step)
-	for i in range(n - JUNCTION_FLAT - 1, JUNCTION_FLAT - 1, -1):
+	for i in range(n - flat_b - 1, flat_points - 1, -1):
 		smooth[i] = clampf(smooth[i], smooth[i + 1] - max_step, smooth[i + 1] + max_step)
 	# Passt es trotzdem nicht (Höhenunterschied zu groß für die Länge), keine Straße
 	for i in range(1, n):
 		if absf(smooth[i] - smooth[i - 1]) > max_step + 0.01:
+			fail_reason = "Steigung bei Punkt %d von %d" % [i, n]
 			return false
-	# Tief unter dem Gelände: Tunnel statt Einschnitt
-	if not _find_tunnels(smooth, over_water):
+	# Tief unter dem Gelände: Tunnel statt Einschnitt (Rampen haben keine Tunnel)
+	if kind == Kind.RAMP:
+		tunnel = PackedByteArray()
+		tunnel.resize(n)
+		tunnel_ranges = []
+	elif not _find_tunnels(smooth, over_water):
+		fail_reason = "Tunnel zu lang"
 		return false
 	# Wenn die Straße tiefe Einschnitte (außerhalb von Tunneln) oder riesige Brücken bräuchte,
 	# lieber keine Straße
 	for i in n:
-		if (tunnel[i] == 0 and ground[i] - smooth[i] > MAX_CUT) or smooth[i] - ground[i] > MAX_FILL:
+		if (tunnel[i] == 0 and ground[i] - smooth[i] > MAX_CUT) or smooth[i] - ground[i] > max_fill:
+			fail_reason = "Einschnitt %.0f m / Damm %.0f m bei Punkt %d von %d" % [ground[i] - smooth[i], smooth[i] - ground[i], i, n]
 			return false
 		points[i].y = smooth[i]
-	# Brücken: über Wasser und wo die Straße hoch über dem Gelände liegt, plus 12 m Zugabe.
-	# Nicht direkt an den Orten (dort sind Kreuzungen) und nicht im Tunnel.
+	# Brücken: über Wasser, über anderen Straßen und wo die Straße hoch über dem Gelände liegt,
+	# plus 12 m Zugabe. Nicht direkt an den Orten (dort sind Kreuzungen) und nicht im Tunnel.
 	bridge = PackedByteArray()
 	bridge.resize(n)
-	var keep_clear := JUNCTION_FLAT + 2
+	var keep_clear := flat_points + 2 if kind != Kind.RAMP else 0
 	for i in n:
-		if over_water[i] == 1 or smooth[i] - ground[i] > BRIDGE_HEIGHT:
+		if over_water[i] == 1 or _over_crossing[i] == 1 or smooth[i] - ground[i] > BRIDGE_HEIGHT:
 			for j in range(maxi(i - 3, keep_clear), mini(i + 4, n - keep_clear)):
 				if tunnel[j] == 0:
 					bridge[j] = 1
 	bounds = _points_rect().grow(road_width * 0.5 + shoulder_width + MAX_BANK)
 	return true
+
+
+## Kreuzende Straßen (crossings): Wo sich die Mittellinien schneiden, muss diese Straße
+## mindestens 7,5 m über der anderen liegen (Brücke darüber) oder, wenn die andere selbst
+## hoch auf einer Brücke liegt, 7 m darunter. Die Grenzen werden nach beiden Seiten mit der
+## erlaubten Steigung ausgedehnt, so entstehen Rampen. Unter der Brücke: keine Pfeiler.
+func _apply_crossings(smooth: PackedFloat32Array, max_step: float) -> void:
+	no_pillars = PackedVector3Array()
+	var n := points.size()
+	_over_crossing = PackedByteArray()
+	_over_crossing.resize(n)
+	_bound_low = PackedFloat32Array()
+	_bound_high = PackedFloat32Array()
+	if crossings.is_empty() and height_constraints.is_empty():
+		return
+	var low := PackedFloat32Array()
+	low.resize(n)
+	low.fill(-INF)
+	var high := PackedFloat32Array()
+	high.resize(n)
+	high.fill(INF)
+	for other: RoadSegment in crossings:
+		var other_half := other.road_width * 0.5 + other.shoulder_width + 3.0
+		for hit: Dictionary in _crossing_points(other):
+			var j: int = hit["other_index"]
+			var h_other: float = hit["height"]
+			var under := other.points[j].y - other.ground[j] > 9.0
+			# Die andere Straße liegt dort im Tunnel: 9 m darüber oder darunter vorbei, je
+			# nachdem, wo diese Straße ohnehin eher liegt (keine Brücke nötig)
+			var in_tunnel := other.tunnel[j] == 1
+			if in_tunnel:
+				under = smooth[hit["index"]] < h_other
+			var where: Vector2 = hit["position"]
+			no_pillars.append(Vector3(where.x, where.y, other_half + 2.0))
+			# Alle Punkte, die über der anderen Straße liegen
+			for k in range(maxi(hit["index"] - 30, 0), mini(hit["index"] + 31, n)):
+				if other.distance_to_centerline(Vector2(points[k].x, points[k].z), j) > other_half:
+					continue
+				if under:
+					high[k] = minf(high[k], h_other - (9.0 if in_tunnel else 7.0))
+				else:
+					low[k] = maxf(low[k], h_other + (9.0 if in_tunnel else 7.5))
+					if not in_tunnel:
+						_over_crossing[k] = 1
+	for constraint: Array in height_constraints:
+		var where: Vector2 = constraint[0]
+		var radius: float = constraint[1]
+		no_pillars.append(Vector3(where.x, where.y, radius + 2.0))
+		for k in n:
+			if Vector2(points[k].x, points[k].z).distance_to(where) < radius:
+				low[k] = maxf(low[k], constraint[2])
+				_over_crossing[k] = 1
+	# Mit der erlaubten Steigung nach beiden Seiten ausdehnen
+	for k in range(1, n):
+		low[k] = maxf(low[k], low[k - 1] - max_step)
+		high[k] = minf(high[k], high[k - 1] + max_step)
+	for k in range(n - 2, -1, -1):
+		low[k] = maxf(low[k], low[k + 1] - max_step)
+		high[k] = minf(high[k], high[k + 1] + max_step)
+	for k in n:
+		smooth[k] = minf(maxf(smooth[k], low[k]), high[k])
+	_bound_low = low
+	_bound_high = high
+
+
+## Wo schneidet diese Mittellinie die einer anderen Straße? Liste aus
+## {"index": Punkt hier, "other_index": Punkt dort, "height": Höhe dort, "position": x/z}
+func _crossing_points(other: RoadSegment) -> Array:
+	var result: Array = []
+	if not _points_rect().grow(20.0).intersects(other._points_rect().grow(20.0)):
+		return result
+	# Die Stücke der anderen Straße in ein Raster einsortieren
+	var cell := 40.0
+	var grid := {}
+	for j in other.points.size() - 1:
+		var c := Vector2i(floori(other.points[j].x / cell), floori(other.points[j].z / cell))
+		if not grid.has(c):
+			grid[c] = []
+		grid[c].append(j)
+	for i in points.size() - 1:
+		var a := Vector2(points[i].x, points[i].z)
+		var b := Vector2(points[i + 1].x, points[i + 1].z)
+		var c := Vector2i(floori(a.x / cell), floori(a.y / cell))
+		for dz in range(-1, 2):
+			for dx in range(-1, 2):
+				for j: int in grid.get(c + Vector2i(dx, dz), []):
+					var p := Vector2(other.points[j].x, other.points[j].z)
+					var q := Vector2(other.points[j + 1].x, other.points[j + 1].z)
+					var hit: Variant = Geometry2D.segment_intersects_segment(a, b, p, q)
+					if hit == null:
+						continue
+					var t := (hit as Vector2).distance_to(p) / maxf(p.distance_to(q), 0.001)
+					result.append({"index": i, "other_index": j,
+						"height": lerpf(other.points[j].y, other.points[j + 1].y, t), "position": hit})
+	return result
+
+
+## Abstand eines Punkts (x/z) zur Mittellinie, gesucht rund um den Punkt near
+func distance_to_centerline(p: Vector2, near: int) -> float:
+	var best := INF
+	for j in range(maxi(near - 12, 0), mini(near + 12, points.size() - 1)):
+		var a := Vector2(points[j].x, points[j].z)
+		var b := Vector2(points[j + 1].x, points[j + 1].z)
+		var ab := b - a
+		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+		best = minf(best, p.distance_to(a + ab * t))
+	return best
 
 
 ## Tunnel suchen: Kern dort, wo die Fahrbahn mehr als TUNNEL_DEPTH unter dem Gelände liegt,
@@ -789,7 +981,8 @@ func _find_tunnels(smooth: PackedFloat32Array, over_water: PackedByteArray) -> b
 	tunnel = PackedByteArray()
 	tunnel.resize(n)
 	tunnel_ranges = []
-	var keep_clear := JUNCTION_FLAT + 2
+	# Autobahn-Tunnel dürfen über das Ende hinaus in den nächsten Abschnitt weiterlaufen
+	var keep_clear := flat_points + 2 if kind != Kind.HIGHWAY else 0
 	var i := 0
 	while i < n:
 		if ground[i] - smooth[i] <= TUNNEL_DEPTH or over_water[i] == 1:
@@ -835,6 +1028,9 @@ func _find_tunnels(smooth: PackedFloat32Array, over_water: PackedByteArray) -> b
 		for k in range(a, b + 1):
 			straight[k - a] = lerpf(smooth[a], smooth[b], float(k - a) / maxf(b - a, 1))
 			if ground[k] - straight[k - a] < PORTAL_DEPTH * 0.6:
+				fits = false
+			# Kreuzende Straße im Berg: Höhengrenzen gelten auch für den begradigten Tunnel
+			if not _bound_low.is_empty() and (straight[k - a] < _bound_low[k] or straight[k - a] > _bound_high[k]):
 				fits = false
 		if fits:
 			for k in range(a, b + 1):
@@ -936,12 +1132,18 @@ func build_mesh(first: int, last: int) -> void:
 	_build_bridges(lefts)
 	bridge_arrays = _take_quads()
 	_build_rails(first, last, lefts)
+	if kind == Kind.HIGHWAY:
+		_build_median_rail(first, last, lefts)
+		_place_posts(first, last, lefts)
 	rail_arrays = _take_quads()
 	tunnel_lights = PackedVector3Array()
 	for r in tunnel_ranges:
 		_build_tube(r, lefts)
-		_build_portal(r.x, -direction_at(r.x), lefts[r.x])
-		_build_portal(r.y, direction_at(r.y), lefts[r.y])
+		# Läuft der Tunnel am Ende des Abschnitts weiter (Autobahn), dort kein Portal
+		if r.x > 0:
+			_build_portal(r.x, -direction_at(r.x), lefts[r.x])
+		if r.y < n - 1:
+			_build_portal(r.y, direction_at(r.y), lefts[r.y])
 	tunnel_arrays = _take_quads()
 	for r in tunnel_ranges:
 		_build_lamps(r, lefts)
@@ -1001,10 +1203,10 @@ func _build_bridges(lefts: PackedVector3Array) -> void:
 			var b0 := side_point(k, lefts[k], -outer, 0.0) - origin + down
 			var b1 := side_point(k + 1, lefts[k + 1], -outer, 0.0) - origin + down
 			_quad(a0, a1, b1, b0, Vector3.DOWN)
-		# Pfeiler bis in den Boden
+		# Pfeiler bis in den Boden (nicht auf einer Straße darunter)
 		for k in range(i + 2, j - 2, PILLAR_EVERY):
 			var bottom := ground[k] - 3.0
-			if points[k].y - DECK_THICKNESS - bottom > 1.5:
+			if points[k].y - DECK_THICKNESS - bottom > 1.5 and not _in_zone(points[k], no_pillars):
 				_pillar(points[k] - origin, bottom - origin.y)
 		i = j
 
@@ -1030,6 +1232,14 @@ func _take_quads() -> Array:
 # 6. Leitplanken: an hohen Dämmen und außen in engen Kurven (Brücken haben Brüstungen)
 # ---------------------------------------------------------------------------
 
+## Liegt der Punkt in einer der Zonen (x, z, Radius)?
+func _in_zone(p: Vector3, zones: PackedVector3Array) -> bool:
+	for zone in zones:
+		if Vector2(p.x - zone.x, p.z - zone.y).length() < zone.z:
+			return true
+	return false
+
+
 ## Leitplanke, wo das Gelände 14 m neben der Straße so viele Meter tiefer liegt ...
 const RAIL_DROP: float = 4.0
 ## ... und außen in Kurven, die enger sind als dieser Radius
@@ -1049,7 +1259,7 @@ func _build_rails(first: int, last: int, lefts: PackedVector3Array) -> void:
 		var need := PackedByteArray()
 		need.resize(n)
 		for i in range(first, last + 1):
-			if bridge[i] == 1 or tunnel[i] == 1:
+			if bridge[i] == 1 or tunnel[i] == 1 or _in_zone(points[i], rail_gaps):
 				continue
 			# Diese Seite ist außen, wenn die Kurve zur anderen Seite geht
 			var outside := curvature[i] * side < -1.0 / RAIL_RADIUS
@@ -1063,13 +1273,13 @@ func _build_rails(first: int, last: int, lefts: PackedVector3Array) -> void:
 		for i in range(first, last + 1):
 			if need[i] == 0:
 				continue
-			var run_end := need[i - 1] == 0 or need[i + 1] == 0
+			var run_end := _flag(need, i - 1) == 0 or _flag(need, i + 1) == 0
 			var post := side_point(i, lefts[i], side * (offset + 0.12), 0.0) - origin
 			_post(post, lefts[i] * side, RAIL_HEIGHT - 0.08)
-			if i == last or need[i + 1] == 0:
+			if i == last or _flag(need, i + 1) == 0:
 				continue
 			var top0 := 0.3 if run_end else RAIL_HEIGHT
-			var top1 := 0.3 if need[i + 2] == 0 else RAIL_HEIGHT
+			var top1 := 0.3 if _flag(need, i + 2) == 0 else RAIL_HEIGHT
 			var a0 := side_point(i, lefts[i], side * offset, maxf(top0 - RAIL_BAND, 0.05))
 			var a1 := side_point(i + 1, lefts[i + 1], side * offset, maxf(top1 - RAIL_BAND, 0.05))
 			var b0 := side_point(i, lefts[i], side * offset, top0)
@@ -1270,6 +1480,43 @@ func _add_quad_indices(a: int, b: int, c: int, d: int, normal: Vector3) -> void:
 		_b_indices.append_array([a, c, b, a, d, c])
 
 
+## Mittelleitplanke der Autobahn: Pfosten in der Mitte, Stahlband auf beiden Seiten
+func _build_median_rail(first: int, last: int, lefts: PackedVector3Array) -> void:
+	for i in range(first, last + 1):
+		var post := side_point(i, lefts[i], 0.0, 0.0) - origin
+		if i % 2 == 0:
+			_post(post, lefts[i], RAIL_HEIGHT - 0.08)
+		if i == last:
+			continue
+		for side: float in [1.0, -1.0]:
+			var a0 := side_point(i, lefts[i], side * 0.14, RAIL_HEIGHT - RAIL_BAND)
+			var a1 := side_point(i + 1, lefts[i + 1], side * 0.14, RAIL_HEIGHT - RAIL_BAND)
+			var b0 := side_point(i, lefts[i], side * 0.14, RAIL_HEIGHT)
+			var b1 := side_point(i + 1, lefts[i + 1], side * 0.14, RAIL_HEIGHT)
+			_quad(a0 - origin, a1 - origin, b1 - origin, b0 - origin, lefts[i] * side)
+			var g0 := side_point(i, lefts[i], side * 0.14, 0.0)
+			var g1 := side_point(i + 1, lefts[i + 1], side * 0.14, 0.0)
+			collision_faces.append_array([g0, g1, b1, g0, b1, b0])
+
+
+## Leitpfosten alle 48 m auf beiden Seiten (nicht auf Brücken und in Tunneln)
+func _place_posts(first: int, last: int, lefts: PackedVector3Array) -> void:
+	posts.clear()
+	var offset := road_width * 0.5 + shoulder_width * 0.6
+	for i in range(first, last + 1, 12):
+		if bridge[i] == 1 or tunnel[i] == 1 or _in_zone(points[i], rail_gaps):
+			continue
+		var forward := direction_at(i)
+		for side: float in [1.0, -1.0]:
+			var base := side_point(i, lefts[i], side * offset, -0.1)
+			posts.append(Transform3D(Basis.looking_at(forward), base))
+
+
+## Wert an Stelle i, außerhalb des Arrays 0
+static func _flag(values: PackedByteArray, i: int) -> int:
+	return values[i] if i >= 0 and i < values.size() else 0
+
+
 ## Lücken bis max_gap Punkte zwischen zwei Leitplanken-Stücken schließen
 func _close_gaps(need: PackedByteArray, max_gap: int) -> void:
 	var last_on := -1
@@ -1338,7 +1585,8 @@ func _pillar(center: Vector3, bottom_y: float) -> void:
 
 ## Kommt diese Straße einer anderen näher als distance (Mittellinien, waagerecht)?
 ## Rund um gemeinsame Orte zählt das nicht, dort ist die Kreuzung (clearance Meter).
-func comes_close(other: RoadSegment, distance: float, clearance: float) -> bool:
+## Liegen die Fahrbahnen mindestens min_vertical Meter übereinander (Brücke), auch nicht.
+func comes_close(other: RoadSegment, distance: float, clearance: float, min_vertical: float = INF) -> bool:
 	if not bounds.intersects(other.bounds):
 		return false
 	var shared: Array[Vector3] = []
@@ -1365,7 +1613,8 @@ func comes_close(other: RoadSegment, distance: float, clearance: float) -> bool:
 			for dx in range(-1, 2):
 				for i: int in grid.get(cell + Vector2i(dx, dz), []):
 					var p := points[i]
-					if (p.x - q.x) * (p.x - q.x) + (p.z - q.z) * (p.z - q.z) < limit:
+					if (p.x - q.x) * (p.x - q.x) + (p.z - q.z) * (p.z - q.z) < limit \
+							and absf(p.y - q.y) < min_vertical:
 						return true
 	return false
 

@@ -120,7 +120,8 @@ func _place_car_on_road(delta: float) -> void:
 	if not roads.is_area_ready(_start_point, 1200.0):
 		return
 	var forward := Vector3(sin(deg_to_rad(_start_heading)), 0.0, cos(deg_to_rad(_start_heading)))
-	var result := roads.nearest_road_transform(Vector3(_start_point.x, 0.0, _start_point.y), forward)
+	var result := roads.nearest_road_transform(Vector3(_start_point.x, 0.0, _start_point.y), forward,
+		debug_tools.on_highway)
 	if result["found"]:
 		car.teleport(result["transform"], true)
 		_car_on_road = true

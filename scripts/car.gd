@@ -58,6 +58,8 @@ var wetness: float = 0.0
 var in_tunnel: bool = false
 ## Sportauspuff (Garage): an = Pops und Flammen beim Gaswegnehmen
 var sport_exhaust: bool = true
+## false = Gas und Bremse werden nicht gelesen, Handbremse an (Test-Fotos: Auto bleibt stehen)
+var throttle_enabled: bool = true
 
 var _steer_input: float = 0.0
 var _shift_timer: float = 0.0
@@ -180,7 +182,7 @@ func _update_steering(delta: float, speed_kmh: float) -> void:
 
 ## Drehzahl aus dem Tempo und Gangwahl wie bei einer Automatik
 func _update_gearbox(delta: float, forward_speed: float) -> void:
-	throttle_input = Input.get_action_strength("accelerate")
+	throttle_input = Input.get_action_strength("accelerate") if throttle_enabled else 0.0
 	_shift_timer = maxf(_shift_timer - delta, 0.0)
 	# Rückwärtsgang: nur aus dem Stand mit S. Gas legt wieder den 1. Gang ein.
 	if gear == -1:
@@ -322,7 +324,7 @@ func _update_engine_and_brakes(forward_speed: float) -> void:
 ## Dazu der Grip-Faktor vom Wetter für alle Räder.
 func _update_rear_grip() -> void:
 	var grip := profile.grip_rear * grip_factor
-	var pulled: bool = Input.is_action_pressed("handbrake")
+	var pulled: bool = Input.is_action_pressed("handbrake") or not throttle_enabled
 	if pulled:
 		# Mit gezogener Handbremse ist quasi die Kupplung getreten
 		for wheel: VehicleWheel3D in [_front_left, _front_right, _rear_left, _rear_right]:

@@ -6,6 +6,8 @@
 // Fahrspuren bilden sich Pfützen, die spiegeln (mit SSR). Schnee bedeckt die Straße
 // außer in den Reifenspuren, im Winter liegt er auch auf dem Bankett.
 // Im Tunnel (UV2.y = überdacht, nur bei normaler Straße) bleibt die Fahrbahn trocken.
+// lane_profile: 0 = Landstraße (Mittellinie gestrichelt), 1 = Autobahn (je Richtung zwei
+// Fahrstreifen, Standstreifen, Mittelstreifen), 2 = Rampe (nur Randlinien).
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
 
@@ -28,6 +30,12 @@ uniform float center_line_width = 0.12;
 uniform float edge_line_width = 0.15;
 // So weit sind die Randlinien vom Fahrbahnrand entfernt
 uniform float edge_line_inset = 0.3;
+uniform int lane_profile = 0;
+// Autobahn (je Seite von außen nach innen): Standstreifen, zwei Fahrstreifen, innerer Rand,
+// dahinter der Mittelstreifen. Die Linien sind 30 cm (außen) bzw. 15 cm breit.
+uniform float hw_shoulder = 2.5;
+uniform float hw_lane = 3.75;
+uniform float hw_inner = 0.75;
 
 // Wie viel der nassen Straße unter Pfützen liegt (0 bis 1)
 uniform float puddle_amount = 0.3;
@@ -61,6 +69,20 @@ void fragment() {
 	// Dunklere Fahrspuren, wo die Reifen rollen
 	float lane = fract(UV.x * 2.0);
 	float wheel_tracks = smoothstep(0.12, 0.0, abs(lane - 0.3)) + smoothstep(0.12, 0.0, abs(lane - 0.72));
+	// Abstand zum näheren Außenrand (Autobahn ist spiegelgleich)
+	float side = min(across, road_width - across);
+	if (lane_profile == 1) {
+		float lane_1 = hw_shoulder + hw_lane * 0.5;
+		float lane_2 = hw_shoulder + hw_lane * 1.5;
+		wheel_tracks = 0.0;
+		for (int k = 0; k < 2; k++) {
+			float c = k == 0 ? lane_1 : lane_2;
+			wheel_tracks += smoothstep(0.5, 0.0, abs(side - c + 0.9)) + smoothstep(0.5, 0.0, abs(side - c - 0.9));
+		}
+	} else if (lane_profile == 2) {
+		wheel_tracks = smoothstep(0.5, 0.0, abs(across - road_width * 0.5 + 0.9))
+			+ smoothstep(0.5, 0.0, abs(across - road_width * 0.5 - 0.9));
+	}
 	float junction = UV2.x;
 	// Kreuzungen haben keine Spuren, sind dafür insgesamt so dunkel wie eine Fahrbahn im Mittel
 	asphalt *= 1.0 - mix(wheel_tracks * 0.12, 0.04, junction);
@@ -72,6 +94,17 @@ void fragment() {
 	float dash = step(fract(along / (dash_length + dash_gap)), dash_length / (dash_length + dash_gap));
 	float edge_distance = min(abs(across - edge_line_inset), abs(across - (road_width - edge_line_inset)));
 	float edge = 1.0 - smoothstep(edge_line_width * 0.5 - aa, edge_line_width * 0.5 + aa, edge_distance);
+	if (lane_profile == 1) {
+		// Autobahn: Randlinie (breit), gestrichelte Linie zwischen den Fahrstreifen, innere Linie
+		float edge_line = 1.0 - smoothstep(0.15 - aa, 0.15 + aa, abs(side - hw_shoulder));
+		float lane_line = 1.0 - smoothstep(0.075 - aa, 0.075 + aa, abs(side - hw_shoulder - hw_lane));
+		float inner_line = 1.0 - smoothstep(0.075 - aa, 0.075 + aa, abs(side - hw_shoulder - hw_lane * 2.0));
+		center = 0.0;
+		edge = max(edge_line, inner_line);
+		center = lane_line;
+	} else if (lane_profile == 2) {
+		center = 0.0;
+	}
 	// Etwas abgefahrene Farbe: nicht überall gleich deckend
 	float paint = max(center * dash, edge) * mix(0.75, 1.0, texture(variation_noise, vec2(across, along) / 4.0).r);
 	paint *= 1.0 - junction;
@@ -81,6 +114,10 @@ void fragment() {
 	gravel = mix(gravel, vec3(luminance(gravel)) * vec3(0.95, 0.93, 0.88) * 1.3, 0.85);
 	float shoulder = 1.0 - smoothstep(-0.05, 0.05, min(UV.x, 1.0 - UV.x) * road_width);
 	shoulder = mix(shoulder, UV2.y, junction);
+	// Mittelstreifen der Autobahn: Schotter wie das Bankett
+	if (lane_profile == 1) {
+		shoulder = max(shoulder, smoothstep(-0.05, 0.05, side - hw_shoulder - hw_lane * 2.0 - hw_inner));
+	}
 
 	vec3 albedo = mix(asphalt, line_color, paint);
 	albedo = mix(albedo, gravel, shoulder);
