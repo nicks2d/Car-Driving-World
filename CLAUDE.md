@@ -105,6 +105,7 @@ assets/
 - [x] Extra: Tunnel (statt verworfener Abschnitte, Röhre mit Lampen, Portale, Hall, Augen-Anpassung)
 - [x] Extra: HUD im Glas-Stil, Garage in der Welt
 - [x] Extra: Autobahn ohne Tempolimit (Anschlussstellen, Schilderbrücken, Leitpfosten, Navi)
+- [x] Extra: Aussichtspunkte (Parkbucht, Schild, Entdecken, Karte, Sammlung) und Fotomodus
 - [ ] Meilenstein 8
 - [ ] Meilenstein 9
 
@@ -204,7 +205,9 @@ assets/
   C Lackfarbe, K Aufkleber, L Licht, G Garage (← → Auto, C Lack, Enter losfahren, Esc zurück),
   M große Karte (Linksklick Ziel, Rechtsklick
   Ziel löschen, Mausrad zoomen, ziehen verschiebt), F5 Wetter (Automatisch → Klar → Bewölkt →
-  Regen → Gewitter → Nebel → Schnee), J Jahreszeit.
+  Regen → Gewitter → Nebel → Schnee), J Jahreszeit, P Fotomodus (Maus ziehen schwenkt,
+  W A S D / Q E bewegen, Mausrad Zoom, 1–4 Filter, ↑ ↓ Belichtung, ← → Tageszeit,
+  F Schärfe aufs Auto, Leertaste Foto, O Foto-Ordner, P/Esc zurück).
 - Karte und Navi: `map_tiles.gd` rechnet das Kartenbild (Höhenfarbe, Schattierung, Wald,
   Wasser) in Kacheln à 128 px im Hintergrund (Stufen 4/16/64 m pro Pixel, max. 400 gemerkt).
   `map_view.gd` zeichnet darüber Straßen, Route, Ziel, Auto in Weltkoordinaten (eine
@@ -345,6 +348,27 @@ assets/
   Spur, ~147 FPS, 1%-Low 84, schlechtestes Bild 16–20 ms, kein Nachlade-Ruckler (Fenster
   1280 × 720; macOS übergeht `--fullscreen` beim Benchmark). Im Fenster zählt `process_ms` die
   V-Sync-Wartezeit mit (~21 ms), das ist kein echter Wert.
+- Aussichtspunkte (`viewpoints.gd`): 22 % der Landstraßen (Seed). Nach dem Berechnen sucht
+  der Abschnitt im Hintergrund die beste Stelle (`Viewpoints.find_spot`): Seeufer (Wasser bis
+  120 m daneben) vor Passhöhe (400 m davor und danach je 30 m tiefer) vor Aussicht (wo das
+  Land im Blickfächer 150–600 m am weitesten abfällt). Nicht auf Brücken, in Tunneln, engen
+  Kurven (< 250 m) oder über 6 % Steigung, mind. 140 m von Kreuzungen. Parkbucht 32 m + 2 × 12 m
+  Auslauf, 7 m breit (`_build_bay`, mit Kollision), Gelände über drei Kreise flach
+  (`bay_pads`, wie Kreuzungen), braunes Schild am Anfang (für den Verkehr auf dieser Seite),
+  Bank mit Blick in die Landschaft.
+- Entdecken: unter 5 km/h und näher als 25 m → Meldung „1 von 12 in dieser Gegend“
+  (Gegend = 6 × 6 Ortszellen), gespeichert in `user://aussichtspunkte.cfg` (Testläufe mit
+  Argumenten speichern nichts). Große Karte: entdeckte mit Kamera, übrige bis 6 km als „?“
+  (noch nicht berechnete Straße: ungefähr in der Mitte zwischen den Orten). Garage →
+  Sammlung: Liste mit Foto (das letzte Foto bis 150 m am Punkt).
+- Fotomodus (`photo_mode.gd`, Taste P): pausiert, HUD aus, eigene Kamera (max. 30 m vom Auto,
+  Strahl Auto→Kamera verhindert Gelände/Wände dazwischen, nicht unter den Boden). Schärfe
+  = DOF der Kamera auf die Entfernung zum Auto, Belichtung = `exposure_multiplier`, Filter =
+  Bildschirm-Shader (`photo_filter.gdshader`). Foto ohne Bedienfeld und Meldungen nach
+  `user://fotos/foto_DATUM_ZEIT.png`; die Tageszeit wird beim Verlassen zurückgestellt.
+- Testen: `--photo --filter=1` macht das Foto im Fotomodus, `--map` mit großer Karte. Beide
+  halten das Spiel an, dann läuft DebugTools mit `PROCESS_MODE_ALWAYS` weiter.
+  Aussichtspunkt am Start: `--pos=433,-861 --heading=57` (Aussicht bei Bergmünster).
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

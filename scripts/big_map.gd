@@ -8,6 +8,7 @@ extends CanvasLayer
 @export var roads: RoadNetwork
 @export var navigation: Navigation
 @export var tiles: MapTiles
+@export var viewpoints: Viewpoints
 ## Start-Maßstab und Grenzen (Meter pro Pixel)
 @export var start_meters_per_pixel: float = 6.0
 @export var min_meters_per_pixel: float = 1.0
@@ -32,6 +33,7 @@ func _ready() -> void:
 	_map.car = car
 	_map.roads = roads
 	_map.tiles = tiles
+	_map.viewpoints = viewpoints
 	_map.show_unknown = true
 	if navigation:
 		_map.set_navigation(navigation)

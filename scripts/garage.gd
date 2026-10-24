@@ -17,6 +17,8 @@ signal closed
 @export var hud: CanvasLayer
 @export var day_night: DayNight
 @export var weather: Weather
+## Für die Sammlung (entdeckte Aussichtspunkte mit Fotos)
+@export var viewpoints: Viewpoints
 
 @export_group("Kamera")
 ## Abstand der Kamera vom Auto (mal Radstand) und Höhe über dem Auto
@@ -644,7 +646,7 @@ func _build_panel() -> void:
 	bottom.add_theme_constant_override("separation", 8)
 	box.add_child(bottom)
 	bottom.add_child(_outline_button("Credits", func() -> void: _credits.visible = true))
-	bottom.add_child(_outline_button("Sammlung", func() -> void: _collection.visible = true))
+	bottom.add_child(_outline_button("Sammlung", _show_collection))
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom.add_child(gap)
@@ -735,6 +737,12 @@ func _spacer(parent: Control, height: float) -> void:
 	spacer.custom_minimum_size = Vector2(0.0, height)
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(spacer)
+
+
+func _show_collection() -> void:
+	if viewpoints:
+		viewpoints.fill_collection(collection_list)
+	_collection.visible = true
 
 
 ## Glas-Fenster in der Mitte (Credits, Sammlung) mit Titel und „Schließen“.

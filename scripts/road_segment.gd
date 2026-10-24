@@ -111,6 +111,9 @@ var tunnel_ranges: Array[Vector2i] = []
 ## Mesh-Daten für Tunnelröhren und Portale (Beton, mit Punktfarben) und für die Deckenlampen
 var tunnel_arrays: Array = []
 var lamp_arrays: Array = []
+## Aussichtspunkt mit Parkbucht (Viewpoints.find_spot), leer = keiner; dazu die Fläche
+var viewpoint: Dictionary = {}
+var bay_arrays: Array = []
 ## Stellen im Tunnel, an denen echte Lichter stehen können (Weltkoordinaten)
 var tunnel_lights: PackedVector3Array
 var collision_faces: PackedVector3Array
@@ -196,6 +199,9 @@ func build() -> void:
 	tunnel_ranges = best["tunnel_ranges"]
 	bounds = best["bounds"]
 	valid = true
+	# Manche Landstraßen bekommen einen Aussichtspunkt: beste Stelle für die Parkbucht suchen
+	if Viewpoints.has_spot(world_gen, key):
+		viewpoint = Viewpoints.find_spot(self)
 
 
 ## Fester Weg (Autobahn, Zubringer, Rampen): keine Wegsuche, nur gleichmäßig abtasten und Profil
@@ -1148,6 +1154,60 @@ func build_mesh(first: int, last: int) -> void:
 	for r in tunnel_ranges:
 		_build_lamps(r, lefts)
 	lamp_arrays = _take_quads()
+	_build_bay()
+
+
+## Parkbucht am Aussichtspunkt: Asphalt neben dem Bankett, an beiden Enden über 12 m schräg
+## auslaufend, mit Höhe und Querneigung der Straße und ohne Markierungen (UV2.x = 1)
+func _build_bay() -> void:
+	bay_arrays = []
+	if viewpoint.is_empty():
+		return
+	var i0: int = viewpoint["index"]
+	var side: float = viewpoint["side"]
+	var inner := road_width * 0.5 + shoulder_width - 0.5
+	var taper := 12.0
+	var steps := ceili((Viewpoints.BAY_HALF_LENGTH + taper) / POINT_SPACING)
+	var verts := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()
+	var indices := PackedInt32Array()
+	for j in range(i0 - steps, i0 + steps + 1):
+		var right := direction_at(j).cross(Vector3.UP).normalized() * side
+		var along := absf(j - i0) * POINT_SPACING
+		var width := Viewpoints.BAY_WIDTH * clampf((Viewpoints.BAY_HALF_LENGTH + taper - along) / taper, 0.0, 1.0)
+		for offset: float in [inner, inner + maxf(width, 0.05)]:
+			var p := points[j] + right * offset
+			p.y = points[j].y + bank[j] * side * offset + 0.04
+			verts.append(p - origin)
+			uvs.append(Vector2(p.x / road_width, -p.z))
+			uv2s.append(Vector2(1.0, 0.0))
+		if j == i0 - steps:
+			continue
+		var b := verts.size() - 4
+		for triangle: Array in [[b, b + 1, b + 2], [b + 1, b + 3, b + 2]]:
+			var t0: int = triangle[0]
+			var t1: int = triangle[1]
+			var t2: int = triangle[2]
+			# Vorderseite nach oben
+			if (verts[t2] - verts[t0]).cross(verts[t1] - verts[t0]).dot(Vector3.UP) < 0.0:
+				var swap := t1
+				t1 = t2
+				t2 = swap
+			indices.append_array([t0, t1, t2])
+			collision_faces.append_array([verts[t0] + origin, verts[t1] + origin, verts[t2] + origin])
+	var normals := PackedVector3Array()
+	var tangents := PackedFloat32Array()
+	for v in verts.size():
+		normals.append(Vector3.UP)
+		tangents.append_array([1.0, 0.0, 0.0, 1.0])
+	bay_arrays.resize(Mesh.ARRAY_MAX)
+	bay_arrays[Mesh.ARRAY_VERTEX] = verts
+	bay_arrays[Mesh.ARRAY_NORMAL] = normals
+	bay_arrays[Mesh.ARRAY_TANGENT] = tangents
+	bay_arrays[Mesh.ARRAY_TEX_UV] = uvs
+	bay_arrays[Mesh.ARRAY_TEX_UV2] = uv2s
+	bay_arrays[Mesh.ARRAY_INDEX] = indices
 
 
 # ---------------------------------------------------------------------------

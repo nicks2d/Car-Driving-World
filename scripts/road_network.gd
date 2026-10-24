@@ -418,6 +418,8 @@ func segments_for_rect(rect: Rect2) -> Dictionary:
 	var segments: Array = []
 	var cells := {}
 	var complete := true
+	# Parkbuchten an Aussichtspunkten: flach wie Kreuzungen
+	var bay_pads := PackedVector4Array()
 	for key in _edges_touching(rect):
 		var entry: Entry = _entries.get(key)
 		_want(key, 2)
@@ -426,6 +428,8 @@ func segments_for_rect(rect: Rect2) -> Dictionary:
 			continue
 		if entry.kept and entry.segment.bounds.intersects(rect):
 			segments.append(entry.segment)
+			if not entry.segment.viewpoint.is_empty():
+				bay_pads.append_array(Viewpoints.bay_pads(entry.segment))
 			if is_road_key(key):
 				cells[Vector2i(key.x, key.y)] = true
 				cells[_end_cell(key)] = true
@@ -443,6 +447,7 @@ func segments_for_rect(rect: Rect2) -> Dictionary:
 		pads.append(Vector4(junction.center.x, junction.center.y, junction.center.z, junction.radius + 4.0))
 	if not complete:
 		return {}
+	pads.append_array(bay_pads)
 	return {"segments": segments, "pads": pads}
 
 
@@ -1242,6 +1247,16 @@ func _update_visuals() -> void:
 					entry.mesh_instance.add_child(_make_posts(segment))
 				if is_highway_key(key):
 					_add_signs(segment, key, entry.mesh_instance)
+				# Parkbucht mit Schild und Bank am Aussichtspunkt
+				if not segment.bay_arrays.is_empty():
+					var bay_mesh := ArrayMesh.new()
+					bay_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, segment.bay_arrays)
+					var bay := MeshInstance3D.new()
+					bay.mesh = bay_mesh
+					bay.material_override = road_material
+					bay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					entry.mesh_instance.add_child(bay)
+					_add_viewpoint_props(segment, entry.mesh_instance)
 				# Deckenlampen leuchten selbst und werfen keinen Schatten
 				if not segment.lamp_arrays.is_empty():
 					var lamp_mesh := ArrayMesh.new()
@@ -1339,6 +1354,36 @@ func _add_signs(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
 					_exit_sign(parent, segment.points[i] - segment.origin, travel, interchange)
 
 
+## Am Aussichtspunkt: braunes Schild am Anfang der Parkbucht (für den Verkehr auf dieser
+## Seite lesbar) und eine Bank mit Blick in die Landschaft
+func _add_viewpoint_props(segment: RoadSegment, parent: Node3D) -> void:
+	var spot := segment.viewpoint
+	var i0: int = spot["index"]
+	var side: float = spot["side"]
+	var outer := segment.road_width * 0.5 + segment.shoulder_width - 0.5 + Viewpoints.BAY_WIDTH
+	# Rechtsverkehr: Neben der Bucht fährt man in Richtung side (rechts der Punktrichtung = vorwärts)
+	var steps := ceili(Viewpoints.BAY_HALF_LENGTH / RoadSegment.POINT_SPACING) + 2
+	var j := i0 - steps * int(side)
+	var travel := segment.direction_at(j) * side
+	var right := travel.cross(Vector3.UP).normalized()
+	var foot := segment.points[j] - segment.origin + right * (outer + 1.0)
+	var facing := Basis.looking_at(travel)
+	_box(parent, foot + Vector3.UP * 1.4, Vector3(0.12, 2.8, 0.12), Basis(), "steel")
+	var panel := foot + Vector3.UP * 2.7
+	_box(parent, panel, Vector3(3.0, 1.3, 0.1), facing, "brown")
+	_sign_text(parent, "Aussichtspunkt", panel - travel * 0.07 + Vector3.UP * 0.2, facing, 44, Color.WHITE)
+	_sign_text(parent, Viewpoints.KIND_NAMES[spot["kind"]], panel - travel * 0.07 + Vector3.DOWN * 0.28, facing, 34,
+		Color(1, 1, 1, 0.85))
+	# Bank am äußeren Rand, Blick weg von der Straße
+	var look: Vector3 = spot["look"]
+	var seat := (spot["center"] as Vector3) - segment.origin + look * (Viewpoints.BAY_WIDTH * 0.5 + 1.4)
+	var bench_basis := Basis.looking_at(look)
+	_box(parent, seat + Vector3.UP * 0.45, Vector3(1.8, 0.08, 0.45), bench_basis, "wood")
+	_box(parent, seat + Vector3.UP * 0.78 + look * -0.22, Vector3(1.8, 0.4, 0.06), bench_basis, "wood")
+	for leg: float in [-0.75, 0.75]:
+		_box(parent, seat + bench_basis.x * leg + Vector3.UP * 0.22, Vector3(0.08, 0.45, 0.4), bench_basis, "steel")
+
+
 ## Länge eines Autobahn-Abschnitts (berechnet oder geschätzt)
 func _section_length(key: Vector3i) -> float:
 	var entry: Entry = _entries.get(key)
@@ -1366,6 +1411,15 @@ func _sign_material(name_key: String) -> StandardMaterial3D:
 				material.emission_enabled = true
 				material.emission = Color(0.9, 0.9, 0.9)
 				material.emission_energy_multiplier = 0.25
+			"brown":
+				# Braun wie touristische Hinweisschilder
+				material.albedo_color = Color("#6E4424")
+				material.emission_enabled = true
+				material.emission = Color("#6E4424")
+				material.emission_energy_multiplier = 0.2
+			"wood":
+				material.albedo_color = Color("#7A5636")
+				material.roughness = 0.85
 			_:
 				material.albedo_color = Color(0.55, 0.57, 0.6)
 				material.metallic = 0.6

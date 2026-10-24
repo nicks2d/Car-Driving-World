@@ -17,6 +17,8 @@ extends Node
 ##                180 = von hinten), z. B. um das Automodell anzuschauen
 ## --steer=left   beim Screenshot nach links (oder right) lenken, um die Vorderräder zu prüfen
 ## --target=X,Z   vor dem Foto ein Navi-Ziel setzen (Route und Hinweis im HUD prüfen)
+## --photo        Foto im Fotomodus machen (mit Bedienfeld), --filter=N wählt den Filter (0–3)
+## --map          Foto mit geöffneter großer Karte
 ## --car=ID       mit diesem Auto starten (Profil cars/ID.tres, z. B. e30, e92, f90, g90)
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
@@ -55,6 +57,9 @@ var _look_at: Vector2 = Vector2.ZERO
 var _has_look_at: bool = false
 var _car_view: float = -1.0
 var _steer: String = ""
+var _photo: bool = false
+var _open_map: bool = false
+var _photo_filter: int = 0
 var _target: Vector2 = Vector2.ZERO
 var _has_target: bool = false
 ## Auto aus den Argumenten (leer = nicht angegeben)
@@ -115,6 +120,12 @@ func _ready() -> void:
 				_car_view = float(value)
 			"steer":
 				_steer = value
+			"photo":
+				_photo = true
+			"map":
+				_open_map = true
+			"filter":
+				_photo_filter = int(value)
 			"target":
 				var target_xz := value.split(",")
 				_target = Vector2(float(target_xz[0]), float(target_xz[1]))
@@ -175,6 +186,8 @@ func on_world_ready(game: Node3D) -> void:
 	elif _shot_name != "":
 		_state = "wait_extra" if _no_wait else "wait_for_terrain"
 		_timer = _wait
+		if _no_wait:
+			_prepare_shot()
 	elif _bench_seconds > 0.0:
 		# Ohne V-Sync, damit man sieht, wie viel Luft nach oben ist
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
@@ -200,8 +213,7 @@ func _process(delta: float) -> void:
 			if _game.terrain.pending_count() == 0:
 				_state = "wait_extra"
 				_timer = _wait
-				if _has_target:
-					(_game.get_node("Navigation") as Navigation).set_target(Vector3(_target.x, 0.0, _target.y))
+				_prepare_shot()
 		"wait_extra":
 			_timer -= delta
 			if _fly_height > 0.0:
@@ -330,6 +342,21 @@ func _drive_autopilot() -> void:
 	else:
 		Input.action_release("accelerate")
 		Input.action_release("brake")
+
+
+## Kurz vor dem Foto: Navi-Ziel setzen, Fotomodus öffnen (wenn gewünscht)
+func _prepare_shot() -> void:
+	if _has_target:
+		(_game.get_node("Navigation") as Navigation).set_target(Vector3(_target.x, 0.0, _target.y))
+	# Fotomodus und große Karte halten das Spiel an, das Foto muss trotzdem ausgelöst werden
+	if _photo or _open_map:
+		process_mode = Node.PROCESS_MODE_ALWAYS
+	if _open_map:
+		(_game.get_node("BigMap") as BigMap).open()
+	if _photo:
+		var photo := _game.get_node("PhotoMode") as PhotoMode
+		photo.open()
+		photo.set_filter(_photo_filter)
 
 
 ## Überblicks-Kamera: hoch über und hinter dem Auto, Blick in Fahrtrichtung

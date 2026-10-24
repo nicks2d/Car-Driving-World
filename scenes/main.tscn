@@ -52,6 +52,8 @@
 [ext_resource type="Script" path="res://scripts/weather_sound.gd" id="67_wsound"]
 [ext_resource type="Shader" path="res://shaders/foliage_bare.gdshader" id="68_bare"]
 [ext_resource type="Script" path="res://scripts/tunnel_effects.gd" id="69_tunnelfx"]
+[ext_resource type="Script" path="res://scripts/viewpoints.gd" id="74_viewpoints"]
+[ext_resource type="Script" path="res://scripts/photo_mode.gd" id="75_photo"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -332,7 +334,7 @@ mouse_filter = 2
 script = ExtResource("50_speedo")
 car = NodePath("../../Car")
 
-[node name="Minimap" type="Control" parent="HUD" node_paths=PackedStringArray("car", "roads", "navigation", "tiles")]
+[node name="Minimap" type="Control" parent="HUD" node_paths=PackedStringArray("car", "roads", "navigation", "tiles", "viewpoints")]
 layout_mode = 3
 anchors_preset = 2
 anchor_top = 1.0
@@ -348,6 +350,7 @@ car = NodePath("../../Car")
 roads = NodePath("../../Roads")
 navigation = NodePath("../../Navigation")
 tiles = NodePath("../../MapTiles")
+viewpoints = NodePath("../../Viewpoints")
 
 [node name="NavBanner" type="Control" parent="HUD" node_paths=PackedStringArray("navigation", "day_night")]
 layout_mode = 3
@@ -448,12 +451,13 @@ vertical_alignment = 1
 script = ExtResource("9_debug")
 camera = NodePath("../Camera")
 
-[node name="Garage" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "hud", "day_night", "weather")]
+[node name="Garage" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "hud", "day_night", "weather", "viewpoints")]
 script = ExtResource("51_garage")
 car = NodePath("../Car")
 hud = NodePath("../HUD")
 day_night = NodePath("../DayNight")
 weather = NodePath("../Weather")
+viewpoints = NodePath("../Viewpoints")
 cars = Array[ExtResource("57_profile")]([ExtResource("52_m2"), ExtResource("53_e30"), ExtResource("54_e92"), ExtResource("55_f90"), ExtResource("56_g90")])
 
 [node name="MapTiles" type="Node" parent="."]
@@ -465,12 +469,26 @@ script = ExtResource("61_nav")
 roads = NodePath("../Roads")
 car = NodePath("../Car")
 
-[node name="BigMap" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "roads", "navigation", "tiles")]
+[node name="BigMap" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "roads", "navigation", "tiles", "viewpoints")]
 script = ExtResource("64_bigmap")
 car = NodePath("../Car")
 roads = NodePath("../Roads")
 navigation = NodePath("../Navigation")
 tiles = NodePath("../MapTiles")
+viewpoints = NodePath("../Viewpoints")
+
+[node name="Viewpoints" type="Node" parent="." node_paths=PackedStringArray("roads", "car")]
+script = ExtResource("74_viewpoints")
+roads = NodePath("../Roads")
+car = NodePath("../Car")
+
+[node name="PhotoMode" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "hud", "messages", "day_night", "viewpoints")]
+script = ExtResource("75_photo")
+car = NodePath("../Car")
+hud = NodePath("../HUD")
+messages = NodePath("../Messages")
+day_night = NodePath("../DayNight")
+viewpoints = NodePath("../Viewpoints")
 
 [node name="Weather" type="Node" parent="." node_paths=PackedStringArray("day_night", "car", "camera", "world_environment", "precipitation", "sound", "terrain")]
 script = ExtResource("65_weather")

@@ -9,6 +9,8 @@ var tiles: MapTiles
 var roads: RoadNetwork
 var navigation: Navigation
 var car: Car
+## Aussichtspunkte (entdeckte mit Kamera, auf der großen Karte auch die übrigen mit „?“)
+var viewpoints: Viewpoints
 ## Mitte der Ansicht (Welt x/z), Meter pro Pixel, Drehung der Karte (Bogenmaß)
 var center: Vector2 = Vector2.ZERO
 var meters_per_pixel: float = 2.0
@@ -226,6 +228,8 @@ func _draw_dashed_polyline(points: PackedVector2Array, color: Color, width: floa
 
 
 func _draw_markers() -> void:
+	if viewpoints:
+		_draw_viewpoints()
 	# Ziel: weißer Ring mit Punkt in Akzentfarbe
 	if navigation and navigation.has_target:
 		var t := world_to_screen(Vector2(navigation.target.x, navigation.target.z))
@@ -241,3 +245,22 @@ func _draw_markers() -> void:
 		var arrow := PackedVector2Array([p + forward * 9.0, p - forward * 6.0 + side * 6.5,
 			p - forward * 2.5, p - forward * 6.0 - side * 6.5])
 		draw_colored_polygon(arrow, Color.WHITE)
+
+
+## Entdeckte Aussichtspunkte: Kamera-Symbol im dunklen Kreis. Unentdeckte (nur große Karte):
+## grauer Kreis mit „?“.
+func _draw_viewpoints() -> void:
+	var visible_rect := Rect2(Vector2.ZERO, size).grow(12.0)
+	for spot: Dictionary in viewpoints.map_spots:
+		if not spot["found"] and not show_unknown:
+			continue
+		var p := world_to_screen(spot["position"])
+		if not visible_rect.has_point(p):
+			continue
+		if spot["found"]:
+			draw_circle(p, 11.0, Color(0.06, 0.08, 0.12, 0.9))
+			draw_arc(p, 11.0, 0.0, TAU, 24, Color(UiStyle.accent, 0.9), 1.5, true)
+			UiIcons.draw(self, "camera", p, 13.0, Color.WHITE, 1.4)
+		else:
+			draw_circle(p, 10.0, Color(0.3, 0.33, 0.38, 0.85))
+			UiStyle.draw_text(self, "?", p + Vector2(0.0, 5.0), 14, "semibold", Color(1, 1, 1, 0.85), 0.5)
