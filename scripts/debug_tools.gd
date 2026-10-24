@@ -19,6 +19,7 @@ extends Node
 ## --target=X,Z   vor dem Foto ein Navi-Ziel setzen (Route und Hinweis im HUD prüfen)
 ## --photo        Foto im Fotomodus machen (mit Bedienfeld), --filter=N wählt den Filter (0–3)
 ## --map          Foto mit geöffneter großer Karte
+## --flames       vor dem Foto knallt es ständig im Auspuff (Flammen an den Endrohren prüfen)
 ## --car=ID       mit diesem Auto starten (Profil cars/ID.tres, z. B. e30, e92, f90, g90)
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
@@ -59,6 +60,7 @@ var _car_view: float = -1.0
 var _steer: String = ""
 var _photo: bool = false
 var _open_map: bool = false
+var _flames: bool = false
 var _photo_filter: int = 0
 var _target: Vector2 = Vector2.ZERO
 var _has_target: bool = false
@@ -124,6 +126,8 @@ func _ready() -> void:
 				_photo = true
 			"map":
 				_open_map = true
+			"flames":
+				_flames = true
 			"filter":
 				_photo_filter = int(value)
 			"target":
@@ -216,6 +220,9 @@ func _process(delta: float) -> void:
 				_prepare_shot()
 		"wait_extra":
 			_timer -= delta
+			# Knalle im Auspuff auslösen (Flammen prüfen), etwa alle 50 ms
+			if _flames and fmod(_timer, 0.05) < delta:
+				_game.car.get_node("EngineSound").popped.emit(1.0)
 			if _fly_height > 0.0:
 				_place_fly_camera()
 			if _car_view >= 0.0:

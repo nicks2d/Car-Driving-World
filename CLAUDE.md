@@ -106,6 +106,7 @@ assets/
 - [x] Extra: HUD im Glas-Stil, Garage in der Welt
 - [x] Extra: Autobahn ohne Tempolimit (Anschlussstellen, Schilderbrücken, Leitpfosten, Navi)
 - [x] Extra: Aussichtspunkte (Parkbucht, Schild, Entdecken, Karte, Sammlung) und Fotomodus
+- [x] Extra: Pops & Bangs mit Flammen, Turbo-Pfeifen mit Ladedruck, Abblasventil
 - [ ] Meilenstein 8
 - [ ] Meilenstein 9
 
@@ -369,6 +370,19 @@ assets/
 - Testen: `--photo --filter=1` macht das Foto im Fotomodus, `--map` mit großer Karte. Beide
   halten das Spiel an, dann läuft DebugTools mit `PROCESS_MODE_ALWAYS` weiter.
   Aussichtspunkt am Start: `--pos=433,-861 --heading=57` (Aussicht bei Bergmünster).
+- Pops & Bangs (`engine_sound.gd`): Gas schnell weg (von > 0,5 auf < 0,15) über 3000/min →
+  1–2 s lang zufällige Knalle (Rauschen + 55-Hz-Schlag, ~35 ms), je höher die Drehzahl, desto
+  öfter. Stärke pro Auto `pops_strength` (M3 GTS 1,0, M2 0,9, M5 F90 0,55, E30 und M5 G90 0,15),
+  ohne Sportauspuff (Garage) nur 12 % und keine Flammen. Signal `popped(Stärke)`.
+- Turbo: Ladedruck baut sich mit Gas und Drehzahl verzögert auf (1,4/s, ab 4,0/s), das Pfeifen
+  steigt mit ihm (1400 → 6600 Hz, Lautstärke ∝ Druck²). Abblasventil (`blow_off_volume`):
+  helles Zischen ~0,4 s, wenn bei Ladedruck das Gas weggeht. Beide M5 laut, M2 leise,
+  E30/M3 GTS gar nicht (Sauger). Geprüft per Aufnahme (AudioEffectRecord, WAV ausgewertet).
+- Flammen (`exhaust_flames.gd`): pro Endrohr 16 additive Partikel (blauer Kern → orange → rot,
+  0,09 s, 5 m/s nach hinten), dazu ein orangefarbenes Licht ohne Schatten für ~60 ms, ab
+  Knallstärke 0,3. Endrohre (`exhaust_tips`) aus den Modellen gemessen (Punktdichte der
+  Auspuff-Materialien ganz hinten unten): M2 zwei mittig, E30 zwei links, M3 GTS vier mittig,
+  beide M5 je zwei pro Seite. Test: `--flames` (knallt vor dem Foto ständig).
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

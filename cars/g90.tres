@@ -69,3 +69,6 @@ sound_sharpness = 11.0
 sound_rumble = 0.12
 turbo_volume = 0.09
 intake_volume = 0.12
+blow_off_volume = 0.45
+pops_strength = 0.15
+exhaust_tips = PackedVector3Array(-0.63, -0.15, -2.59, -0.5, -0.16, -2.6, 0.5, -0.16, -2.6, 0.63, -0.15, -2.59)

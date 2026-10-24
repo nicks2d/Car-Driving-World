@@ -137,5 +137,15 @@ extends Resource
 @export var sound_sharpness: float = 18.0
 ## Tiefe/Bass: Anteil des Grundtons pro Arbeitsspiel (V8 blubbert)
 @export_range(0.0, 1.0) var sound_rumble: float = 0.1
+## Turbo: Pfeifen, das mit dem Ladedruck steigt (0 = Saugmotor), und Zischen des
+## Abblasventils beim Gaswegnehmen
 @export_range(0.0, 1.0) var turbo_volume: float = 0.04
+@export_range(0.0, 1.0) var blow_off_volume: float = 0.0
 @export_range(0.0, 1.0) var intake_volume: float = 0.18
+
+@export_group("Auspuff")
+## Wie kräftig es beim Gaswegnehmen im Auspuff knallt (0 = kaum, 1 = sehr)
+@export_range(0.0, 1.0) var pops_strength: float = 0.5
+## Mitte der Endrohre im Auto (Nase zeigt nach +Z), am Modell gemessen. Dort entstehen die
+## kleinen Flammen.
+@export var exhaust_tips: PackedVector3Array = PackedVector3Array()
