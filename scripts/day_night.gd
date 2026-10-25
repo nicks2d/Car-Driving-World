@@ -191,6 +191,12 @@ func _update_lighting() -> void:
 	_sky_material.set_shader_parameter("cloud_shadow_color", cloud_shadow_colors.sample(t) * (1.0 - overcast * 0.55))
 	_sky_material.set_shader_parameter("cloud_coverage", weather.clouds if weather else cloud_coverage)
 	_sky_material.set_shader_parameter("sky_energy", 1.0 + flash * 2.5)
+	# Regenbogen nur bei tiefer Sonne (sonst liegt er unter dem Horizont) und wenn sie scheint
+	var rainbow := weather.rainbow if weather else 0.0
+	rainbow *= smoothstep(1.0, 6.0, elevation) * (1.0 - smoothstep(32.0, 41.0, elevation)) \
+		* (1.0 - smoothstep(0.35, 0.7, overcast))
+	_sky_material.set_shader_parameter("rainbow", rainbow)
+	_sky_material.set_shader_parameter("aurora", (weather.aurora if weather else 0.0) * night * (1.0 - overcast))
 
 	# --- Umgebung: Nebel, Umgebungslicht, Belichtung ---
 	var env := world_environment.environment

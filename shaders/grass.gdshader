@@ -20,12 +20,17 @@ global uniform float season_autumn;
 global uniform float snow_cover;
 global uniform float wetness;
 global uniform float weather_wind;
+#include "res://shaders/cloud_shadow.gdshaderinc"
+
+// Wolkenschatten am Standort (einmal pro Baum bzw. Grasbüschel)
+varying float cloud;
 
 varying float tip;
 varying vec3 variation;
 
 void vertex() {
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	cloud = cloud_shade(origin.xz);
 	float distance = length(origin - CAMERA_POSITION_WORLD);
 	// Unter Schnee verschwindet das Gras
 	float shrink = (1.0 - smoothstep(fade_start, fade_end, distance)) * (1.0 - smoothstep(0.3, 0.7, snow_cover));
@@ -47,6 +52,7 @@ void fragment() {
 	vec3 top = mix(tip_now, dry_color, smoothstep(0.55, 1.0, variation.g) * 0.6);
 	// Nass: etwas dunkler und glänzender
 	ALBEDO = mix(root_color, top, tip) * mix(0.8, 1.15, variation.r) * (1.0 - wetness * 0.2);
+	ALBEDO *= 1.0 - cloud * 0.5;
 	ROUGHNESS = mix(0.9, 0.55, wetness);
 	SPECULAR = 0.2;
 	BACKLIGHT = vec3(0.2, 0.28, 0.08) * tip;

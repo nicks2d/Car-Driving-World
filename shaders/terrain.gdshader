@@ -53,6 +53,7 @@ global uniform float snow_line;
 global uniform float season_spring;
 global uniform float season_autumn;
 global uniform float season_winter;
+#include "res://shaders/cloud_shadow.gdshaderinc"
 
 varying vec3 world_pos;
 varying vec3 world_normal;
@@ -215,6 +216,8 @@ void fragment() {
 		roughness = mix(roughness, roughness * 0.75, rain_wet);
 	}
 
+	// Wolkenschatten (zieht mit dem Wind)
+	albedo *= 1.0 - cloud_shade(world_pos.xz) * 0.5;
 	ALBEDO = albedo;
 	ROUGHNESS = roughness;
 	SPECULAR = 0.35;

@@ -107,6 +107,7 @@ assets/
 - [x] Extra: Autobahn ohne Tempolimit (Anschlussstellen, Schilderbrücken, Leitpfosten, Navi)
 - [x] Extra: Aussichtspunkte (Parkbucht, Schild, Entdecken, Karte, Sammlung) und Fotomodus
 - [x] Extra: Pops & Bangs mit Flammen, Turbo-Pfeifen mit Ladedruck, Abblasventil
+- [x] Extra: Regenbogen, Wolkenschatten, Polarlicht
 - [ ] Meilenstein 8
 - [ ] Meilenstein 9
 
@@ -383,6 +384,19 @@ assets/
   Knallstärke 0,3. Endrohre (`exhaust_tips`) aus den Modellen gemessen (Punktdichte der
   Auspuff-Materialien ganz hinten unten): M2 zwei mittig, E30 zwei links, M3 GTS vier mittig,
   beide M5 je zwei pro Seite. Test: `--flames` (knallt vor dem Foto ständig).
+- Regenbogen (`sky.gdshader`): Hauptbogen 40–42,8° um den Gegenpunkt der Sonne (rot außen),
+  schwacher Nebenbogen 50–53,5° (umgekehrt). Weather startet ihn, wenn ein Regen aufhört
+  (4 min, die letzten 2,5 min blendet er aus), DayNight zeigt ihn nur bei Sonnenhöhe 1–41° und
+  wenn es aufgeklart ist. Test: `--rainbow --time=18`, Blick nach Osten.
+- Polarlicht (`sky.gdshader`, `aurora_light`): 14 Schichten übereinander, jede ein welliger
+  Streifen am Nordhimmel (−Z), unten grün, oben violett; Strahlen hängen vom Azimut ab (laufen
+  im Zenit zusammen wie echte). In klaren Winternächten, jeden Abend mit Chance 1/3 gewürfelt,
+  blendet über 1,5 min ein. Test: `--aurora --season=winter --time=23`, Blick nach Norden.
+- Wolkenschatten (`cloud_shadow.gdshaderinc`, in Gelände, Straßen, Bäumen und Gras): Rauschmuster
+  (`assets/textures/cloud_shadows.tres`, globaler Shader-Wert) im 1,4-km-Maßstab, zieht mit dem
+  Wind (`cloud_shadow_wind` × Wetter-Wind). Bedeckung aus dem Wetter: klar ~15 %, bewölkt gut die
+  Hälfte im Schatten, darin 50 % dunkler; bei Regen/Nacht aus. Bäume und Gras nehmen den Wert
+  an ihrem Standort (Vertex-Shader).
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

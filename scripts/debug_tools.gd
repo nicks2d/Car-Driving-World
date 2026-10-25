@@ -20,6 +20,8 @@ extends Node
 ## --photo        Foto im Fotomodus machen (mit Bedienfeld), --filter=N wählt den Filter (0–3)
 ## --map          Foto mit geöffneter großer Karte
 ## --flames       vor dem Foto knallt es ständig im Auspuff (Flammen an den Endrohren prüfen)
+## --rainbow      Regenbogen zeigen (tiefe Sonne, z. B. --time=18 --heading=90)
+## --aurora       Polarlicht zeigen (Winternacht, z. B. --season=winter --time=23 --heading=180)
 ## --car=ID       mit diesem Auto starten (Profil cars/ID.tres, z. B. e30, e92, f90, g90)
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
@@ -61,6 +63,8 @@ var _steer: String = ""
 var _photo: bool = false
 var _open_map: bool = false
 var _flames: bool = false
+var _rainbow: bool = false
+var _aurora: bool = false
 var _photo_filter: int = 0
 var _target: Vector2 = Vector2.ZERO
 var _has_target: bool = false
@@ -128,6 +132,10 @@ func _ready() -> void:
 				_open_map = true
 			"flames":
 				_flames = true
+			"rainbow":
+				_rainbow = true
+			"aurora":
+				_aurora = true
 			"filter":
 				_photo_filter = int(value)
 			"target":
@@ -353,6 +361,11 @@ func _drive_autopilot() -> void:
 
 ## Kurz vor dem Foto: Navi-Ziel setzen, Fotomodus öffnen (wenn gewünscht)
 func _prepare_shot() -> void:
+	var weather := _game.get_node("Weather") as Weather
+	if _rainbow:
+		weather.start_rainbow()
+	if _aurora:
+		weather.force_aurora()
 	if _has_target:
 		(_game.get_node("Navigation") as Navigation).set_target(Vector3(_target.x, 0.0, _target.y))
 	# Fotomodus und große Karte halten das Spiel an, das Foto muss trotzdem ausgelöst werden

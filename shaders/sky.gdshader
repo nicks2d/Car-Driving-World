@@ -33,10 +33,44 @@ uniform vec3 cloud_shadow_color : source_color = vec3(0.55, 0.6, 0.7);
 // Gesamthelligkeit des Himmels
 uniform float sky_energy = 1.0;
 
+// Regenbogen (0 = keiner): Kreis mit ~42° um den Punkt gegenüber der Sonne
+uniform float rainbow = 0.0;
+// Polarlicht (0 = keins): grüne Vorhänge mit violetten Spitzen im Norden (-Z)
+uniform float aurora = 0.0;
+
 float hash13(vec3 p) {
 	p = fract(p * 0.1031);
 	p += dot(p, p.zyx + 31.32);
 	return fract((p.x + p.y) * p.z);
+}
+
+// Regenbogenfarbe: x = 0 innen (violett) bis 1 außen (rot)
+vec3 spectrum(float x) {
+	vec3 c = vec3(
+		smoothstep(0.45, 0.85, x) + smoothstep(0.25, 0.0, x) * 0.5,
+		smoothstep(0.15, 0.5, x) * smoothstep(1.0, 0.6, x),
+		smoothstep(0.55, 0.15, x));
+	return c * smoothstep(0.0, 0.12, x) * smoothstep(1.0, 0.85, x);
+}
+
+// Polarlicht: mehrere Schichten übereinander; jede Schicht ist ein welliger Streifen am
+// Nordhimmel, unten grün, oben violett, mit feinen senkrechten Strahlen
+vec3 aurora_light(vec3 dir) {
+	vec3 sum = vec3(0.0);
+	// Strahlen senkrecht: hängen nur von der Himmelsrichtung ab (laufen im Zenit zusammen)
+	float azimuth = atan(dir.x, -dir.z);
+	for (int i = 0; i < 14; i++) {
+		float layer = float(i) / 14.0;
+		vec2 q = dir.xz / max(dir.y, 0.02) * (1.0 + layer * 1.5);
+		float wave = sin(q.x * 0.45 + TIME * 0.05) * 0.9 + sin(q.x * 1.3 - TIME * 0.08) * 0.35;
+		float band = q.y + 3.6 + wave;
+		float curtain = exp(-band * band * 1.6);
+		float rays = texture(cloud_noise, vec2(azimuth * 2.2 + TIME * 0.008, 0.37 + layer * 0.01)).r;
+		curtain *= 0.15 + 2.2 * rays * rays * rays;
+		vec3 c = mix(vec3(0.15, 1.0, 0.45), vec3(0.6, 0.25, 1.0), smoothstep(0.3, 0.95, layer));
+		sum += c * curtain * (1.0 - layer * 0.6);
+	}
+	return sum * 0.1 * smoothstep(0.02, 0.12, dir.y) * smoothstep(0.2, -0.3, dir.z);
 }
 
 void sky() {
@@ -94,6 +128,19 @@ void sky() {
 		vec3 cloud = mix(cloud_light_color, cloud_shadow_color, thickness * 0.8);
 		cloud += sun_glow_color * glow * sun_glow_strength * (1.0 - thickness) * 0.8;
 		col = mix(col, cloud, density * 0.92);
+	}
+
+	// --- Regenbogen: Hauptbogen 40,6–42,3°, schwacher Nebenbogen 50–53° (Farben umgekehrt) ---
+	if (rainbow > 0.001 && dir.y > 0.0) {
+		float angle = degrees(acos(clamp(dot(dir, -sun_direction), -1.0, 1.0)));
+		vec3 bow = spectrum((angle - 40.0) / 2.8) + spectrum((53.5 - angle) / 3.5) * 0.25;
+		// Nicht ganz bis zum Horizont, vor dichten Wolken etwas schwächer
+		col += bow * rainbow * 0.35 * smoothstep(0.0, 0.08, dir.y);
+	}
+
+	// --- Polarlicht ---
+	if (aurora > 0.001 && dir.y > 0.0) {
+		col += aurora_light(dir) * aurora;
 	}
 
 	COLOR = col * sky_energy;

@@ -13,12 +13,17 @@ uniform vec3 bark_color : source_color = vec3(0.24, 0.2, 0.17);
 
 global uniform float snow_cover;
 global uniform float weather_wind;
+#include "res://shaders/cloud_shadow.gdshaderinc"
+
+// Wolkenschatten am Standort (einmal pro Baum bzw. Grasbüschel)
+varying float cloud;
 
 varying vec3 local_pos;
 
 void vertex() {
 	local_pos = VERTEX;
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	cloud = cloud_shade(origin.xz);
 	float phase = TIME * 1.2 + origin.x * 0.05 + origin.z * 0.07 + INSTANCE_CUSTOM.b * 6.28;
 	float height = max(VERTEX.y, 0.0);
 	float wind = wind_strength * weather_wind * 0.6;
@@ -41,6 +46,7 @@ void fragment() {
 	}
 	float snow = snow_cover * smoothstep(0.2, 0.7, world_normal.y);
 	ALBEDO = mix(color, vec3(0.8, 0.82, 0.86), snow);
+	ALBEDO *= 1.0 - cloud * 0.5;
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.2;
 }

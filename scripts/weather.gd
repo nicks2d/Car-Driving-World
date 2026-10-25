@@ -117,6 +117,16 @@ const CHANCES: Array = [
 ## Wie stark sich morgens Talnebel bildet, je Jahreszeit (Herbst am meisten)
 @export var morning_fog_by_season: PackedFloat32Array = PackedFloat32Array([0.7, 0.45, 1.0, 0.7])
 
+@export_group("Himmel")
+## Regenbogen nach einem Regen: so lange sichtbar (Minuten), die letzten fade Minuten blendet er aus
+@export var rainbow_minutes: float = 4.0
+@export var rainbow_fade_minutes: float = 2.5
+## Polarlicht: Chance pro klarer Winternacht und wie schnell es ein- und ausblendet (Minuten)
+@export_range(0.0, 1.0) var aurora_chance: float = 0.33
+@export var aurora_fade_minutes: float = 1.5
+## Wolkenschatten: so schnell ziehen sie bei normalem Wind (m/s, Richtung)
+@export var cloud_shadow_wind: Vector2 = Vector2(9.0, 4.0)
+
 @export_group("Gewitter")
 ## Abstand zwischen zwei Blitzen (Sekunden, zufällig dazwischen)
 @export var lightning_min_seconds: float = 4.0
@@ -132,6 +142,9 @@ var clouds: float = 0.3
 var overcast: float = 0.0
 var fog_factor: float = 1.0
 var lightning_flash: float = 0.0
+## Regenbogen und Polarlicht 0..1 (DayNight gibt sie an den Himmel weiter)
+var rainbow: float = 0.0
+var aurora: float = 0.0
 ## Nässe der Straßen (0 bis 1), Schnee in der Landschaft und auf der Straße
 var wetness: float = 0.0
 var snow_ground: float = 0.0
@@ -157,6 +170,11 @@ var _fog_floor: float = 0.0
 var _fog_mesh: MeshInstance3D
 var _fog_material: ShaderMaterial
 var _rng := RandomNumberGenerator.new()
+var _had_rain: bool = false
+var _rainbow_timer: float = 0.0
+var _was_night: bool = false
+var _aurora_tonight: bool = false
+var _cloud_offset: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
@@ -280,7 +298,42 @@ func _process(delta: float) -> void:
 			delta / season_transition_seconds)
 	_update_surfaces(delta)
 	_update_lightning(delta)
+	_update_sky(delta)
 	_apply(delta)
+
+
+## Regenbogen nach dem Regen starten (auch zum Testen)
+func start_rainbow() -> void:
+	_rainbow_timer = rainbow_minutes * 60.0
+
+
+## Für Tests: heute Nacht Polarlicht, sofort voll sichtbar
+func force_aurora() -> void:
+	_aurora_tonight = true
+	_was_night = true
+	aurora = 1.0
+
+
+## Regenbogen: hört ein Regen auf, steht er ein paar Minuten am Himmel (zu sehen ist er nur
+## bei tiefer Sonne gegenüber der Sonne, das regelt DayNight). Polarlicht: in klaren
+## Winternächten, in etwa jeder dritten Nacht.
+func _update_sky(delta: float) -> void:
+	if _current["rain"] > 0.3:
+		_had_rain = true
+	elif _had_rain and _current["rain"] < 0.05:
+		_had_rain = false
+		start_rainbow()
+	_rainbow_timer = maxf(_rainbow_timer - delta, 0.0)
+	rainbow = clampf(_rainbow_timer / (rainbow_fade_minutes * 60.0), 0.0, 1.0)
+	if day_night == null:
+		return
+	var night := day_night.sun_direction().y < sin(deg_to_rad(-10.0))
+	# Jeden Abend neu würfeln
+	if night and not _was_night:
+		_aurora_tonight = _rng.randf() < aurora_chance
+	_was_night = night
+	var wanted := _aurora_tonight and night and _season_weights[Season.WINTER] > 0.5 and overcast < 0.2
+	aurora = move_toward(aurora, 1.0 if wanted else 0.0, delta / (aurora_fade_minutes * 60.0))
 
 
 ## Nässe und Schnee steigen bei Niederschlag und gehen danach langsam zurück
@@ -356,6 +409,12 @@ func _apply(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("season_winter", w[Season.WINTER])
 	RenderingServer.global_shader_parameter_set("rain_amount", _current["rain"])
 	RenderingServer.global_shader_parameter_set("weather_wind", _current["wind"])
+	# Wolkenschatten: ziehen mit dem Wind übers Land; nur bei Sonne und nicht ganz zugezogen
+	_cloud_offset += cloud_shadow_wind * _current["wind"] * delta
+	RenderingServer.global_shader_parameter_set("cloud_offset", _cloud_offset)
+	RenderingServer.global_shader_parameter_set("cloud_cover", clouds)
+	var sun_up := day_night.daylight if day_night else 1.0
+	RenderingServer.global_shader_parameter_set("cloud_shadow", sun_up * (1.0 - smoothstep(0.5, 0.85, overcast)))
 	if terrain:
 		terrain.set_bare_trees(w[Season.WINTER] > 0.5)
 

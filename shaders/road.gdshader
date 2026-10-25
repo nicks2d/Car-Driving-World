@@ -43,6 +43,7 @@ uniform float puddle_amount = 0.3;
 global uniform float wetness;
 global uniform float road_snow;
 global uniform float snow_cover;
+#include "res://shaders/cloud_shadow.gdshaderinc"
 
 varying vec3 world_pos;
 
@@ -151,6 +152,8 @@ void fragment() {
 	vec4 n_gravel = texture(gravel_normal, vec2(across, along) / gravel_scale);
 	NORMAL_MAP = mix(n_asphalt, n_gravel, shoulder).rgb;
 	NORMAL_MAP_DEPTH = normal_depth * (1.0 - snow * 0.7);
+	// Wolkenschatten wie im Gelände (nicht im Tunnel)
+	albedo *= 1.0 - cloud_shade(world_pos.xz) * 0.5 * open_sky;
 	ALBEDO = albedo;
 	ROUGHNESS = roughness;
 	SPECULAR = mix(0.4, 0.5, wet);

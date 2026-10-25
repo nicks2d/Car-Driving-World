@@ -154,6 +154,22 @@ weather_wind={
 "type": "float",
 "value": 1.0
 }
+cloud_shadow={
+"type": "float",
+"value": 0.0
+}
+cloud_cover={
+"type": "float",
+"value": 0.3
+}
+cloud_offset={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+cloud_shadow_noise={
+"type": "sampler2D",
+"value": "res://assets/textures/cloud_shadows.tres"
+}
 
 [rendering]
 

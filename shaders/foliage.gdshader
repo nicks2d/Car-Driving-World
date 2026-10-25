@@ -23,6 +23,10 @@ global uniform float season_autumn;
 global uniform float snow_cover;
 global uniform float snow_line;
 global uniform float weather_wind;
+#include "res://shaders/cloud_shadow.gdshaderinc"
+
+// Wolkenschatten am Standort (einmal pro Baum bzw. Grasbüschel)
+varying float cloud;
 
 varying vec3 instance_tint;
 varying vec3 local_pos;
@@ -37,6 +41,7 @@ void vertex() {
 	autumn_hue = fract(INSTANCE_CUSTOM.b * 7.31 + INSTANCE_CUSTOM.r * 0.5);
 	// Wind: je höher am Baum, desto stärker (das Modell ist 1 Einheit hoch)
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	cloud = cloud_shade(origin.xz);
 	tree_height = origin.y;
 	float phase = TIME * 1.2 + origin.x * 0.05 + origin.z * 0.07 + INSTANCE_CUSTOM.b * 6.28;
 	float height = max(VERTEX.y, 0.0);
@@ -77,6 +82,7 @@ void fragment() {
 	// Nadelbäume nicht ganz weiß: unten an den Zweigen bleibt es grün
 	float snow = snow_here * smoothstep(0.35, 0.8, world_normal.y + (leaves - 0.3) * 0.9) * 0.9;
 	ALBEDO = mix(color, vec3(0.8, 0.82, 0.86), snow);
+	ALBEDO *= 1.0 - cloud * 0.5;
 	ROUGHNESS = mix(0.85, 0.7, snow);
 	SPECULAR = 0.25;
 	BACKLIGHT = translucency * (1.0 - snow) * mix(vec3(1.0), vec3(1.8, 0.9, 0.3), season_autumn * float(deciduous));
