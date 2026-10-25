@@ -397,6 +397,13 @@ assets/
   Wind (`cloud_shadow_wind` × Wetter-Wind). Bedeckung aus dem Wetter: klar ~15 %, bewölkt gut die
   Hälfte im Schatten, darin 50 % dunkler; bei Regen/Nacht aus. Bäume und Gras nehmen den Wert
   an ihrem Standort (Vertex-Shader).
+- Leistung nach Autobahn, Aussichtspunkten, Pops und Himmel (Autobahn-Benchmark 25 s,
+  1280×720-Fenster, alles nacheinander auf demselben, inzwischen heißen Mac): Stand Teil 3
+  53,7 FPS, vor Teil 6 50,9, mit allem 50,7 (1%-Low ~20). Teil 4–6 kosten also ~5 %; Teil 6
+  (Himmel, Wolkenschatten) nichts Messbares. Derselbe Stand Teil 3 lief mit kühlem Mac mit
+  147 FPS: Nach Stunden Dauertest drosselt das MacBook Air auf etwa ein Drittel. Messungen für
+  „≥ 60 FPS“ nur mit kühlem Mac. Auch die Ladezeit schwankt dann stark (gleicher Code 6,7 s /
+  13 s), und nach Shader-Änderungen dauert der erste Start länger (Shader werden neu übersetzt).
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in
