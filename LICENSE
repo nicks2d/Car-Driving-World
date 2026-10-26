@@ -1,0 +1,25 @@
+Copyright (c) 2026 Nick Aldinger
+All rights reserved.
+
+This repository and its contents (including the source code, shaders, design
+and text) are published for viewing and demonstration purposes only.
+
+No license is granted to copy, modify, merge, publish, distribute,
+sublicense, sell, or otherwise use this code or any part of it, for any
+purpose, without the prior written permission of the copyright holder.
+
+Viewing the source code, and forking this repository on GitHub as permitted
+by the GitHub Terms of Service, does not grant any rights beyond those terms.
+
+Third-party components remain subject to their own licenses:
+- Godot Engine (https://godotengine.org), MIT License
+- Inter font (https://rsms.me/inter/), SIL Open Font License 1.1
+  (see assets/fonts/Inter-LICENSE.txt)
+- Textures from Poly Haven (https://polyhaven.com), CC0
+- The car models are not part of this repository; see assets/models/README.md
+  for their sources and licenses.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR ITS USE.
