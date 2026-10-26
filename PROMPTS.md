@@ -433,3 +433,294 @@ FPS nicht spürbar drücken.
 Am Ende: kurze Zusammenfassung, was sich geändert hat, welche Tasten es
 gibt und was dir optisch noch nicht gefällt.
 ```
+
+## Autoauswahl, Minimap mit Navi, Wetter und Jahreszeiten, Tunnel (nach Meilenstein 7)
+
+Großer Prompt, in einer neuen Sitzung abschicken. Läuft lange.
+
+```
+Lies die CLAUDE.md. Meilensteine 0 bis 7 sind fertig. In dieser Sitzung
+baust du vier neue Sachen, in dieser Reihenfolge: (1) Autoauswahl mit
+mehreren Modellen, (2) Minimap mit Navi, (3) Wetter und Jahreszeiten,
+(4) Tunnel. Mach zuerst einen Plan für alle vier Teile. Nach meinem OK
+arbeitest du alles nacheinander ab, ohne bei jedem Teil auf mich zu warten.
+Nach jedem Teil: testen, Fehler beheben, committen, CLAUDE.md aktualisieren.
+Die FPS dürfen insgesamt nicht unter 60 fallen (MacBook Air ohne Lüfter,
+aktuell ca. 71 FPS).
+
+TEIL 1: AUTOAUSWAHL
+
+In assets/models/ liegen jetzt fünf Autos (glTF: scene.gltf, scene.bin,
+textures/, license.txt). Was ich schon über die Modelle weiß:
+- bmw_m2/: BMW M2 Competition (F87), schon eingebaut, so lassen.
+- free_bmw_m3_e30/: BMW M3 E30, CC BY 4.0 (Martin Trafas). 117.000
+  Dreiecke, Maßstab stimmt (Meter), Fahrtrichtung entlang Z. Die Räder
+  sind pro Ecke eigene Teile (Felge, Reifen, Bremsscheibe, Bremssattel).
+  Texturen teils riesig (bis 18 MB, vermutlich 8K): beim Import auf
+  höchstens 2048 px begrenzen.
+- 2011_bmw_e92_m3_gts/: BMW M3 GTS (E92), CC BY 4.0 (AnswerBlue38). Nur
+  46.000 Dreiecke, aber winziger Maßstab (ca. 1:100). Felgen,
+  Bremsscheiben, Bremssättel und Reifen (vermutlich Material „phong11“)
+  sind jeweils EIN Mesh für alle vier Räder: beim Laden nach Position in
+  vier Räder aufteilen.
+- bmw_m5_f90/: BMW M5 Competition (F90), CC BY 4.0 (RES1N). 260.000
+  Dreiecke, Maßstab Meter, aber Fahrtrichtung entlang X (um 90° drehen).
+  Reifen und Felgen sind auch hier je ein Mesh für alle vier Räder
+  (aufteilen). Das Teil „gauge_emissive“ ragt 8 m hinter das Auto:
+  ausblenden. Motor ausblenden.
+- 2025_bmw_m5_sedan/: BMW M5 (G90, 2025), CC BY-NC-SA 4.0 (Ddiaz Design).
+  389.000 Dreiecke in über 1.200 Einzelteilen, winziger Maßstab (ca. 1:100).
+  Räder sind pro Ecke getrennt, aber in viele kleine Teile zerlegt (nach
+  Position gruppieren). Innenraum (95.000 Dreiecke) und Motor (59.000)
+  ausblenden oder stark vereinfachen, unbewegliche Teile zusammenführen
+  (sonst viel zu viele Draw Calls).
+
+Was ich will:
+- Ein Auswahl-Fenster (Garage), beim Spielstart und jederzeit per Taste G.
+  Links die Liste der Autos, rechts das Auto als 3D-Vorschau, die sich
+  langsam dreht, in schönem Showroom-Licht. Darunter die Daten: Leistung,
+  Drehmoment, Gewicht, Antrieb, 0–100, Spitze. Lackfarbe wählen, Knopf
+  „Losfahren“. Mit Maus und Tastatur bedienbar. Das Spiel pausiert,
+  solange das Fenster offen ist.
+- Beim Wechsel steht das neue Auto an derselben Stelle auf der Straße.
+  Das zuletzt gewählte Auto und die Farbe werden gespeichert (user://).
+- Jedes Auto bekommt ein eigenes Profil (eine Resource pro Auto):
+  Modellordner, Dreh- und Maßstab-Korrektur, Fahrwerte, Antrieb, Getriebe,
+  Motorsound, Lichtpositionen. Das M2 kommt ins selbe System, ohne dass
+  sich sein Fahrgefühl ändert.
+- Fahrwerte ungefähr wie bei den echten Autos:
+  - M3 E30: ca. 200 PS, 240 Nm, 1.200 kg, Heckantrieb, 5 Gänge,
+    0–100 ca. 6,7 s, Spitze ca. 235 km/h. Leicht und verspielt.
+  - M3 GTS E92: V8-Sauger, 450 PS, 440 Nm, 1.530 kg, Heckantrieb,
+    7-Gang-DKG, dreht über 8.000/min, 0–100 ca. 4,4 s, Spitze ca. 305 km/h.
+  - M5 Competition F90: V8-Biturbo, 625 PS, 750 Nm, ca. 1.900 kg, Allrad
+    mit Heckbetonung, 8-Gang-Automatik, 0–100 ca. 3,3 s, Spitze 250 km/h.
+  - M5 G90: V8-Hybrid, 727 PS, 1.000 Nm, ca. 2.450 kg, Allrad,
+    8-Gang-Automatik, 0–100 ca. 3,5 s, Spitze 250 km/h. Schwer, aber brutal.
+  Miss bei jedem Auto 0–100, Spitze und Bremsweg und trag die Werte in
+  die CLAUDE.md ein.
+- Motorsound pro Auto: E30 als Vierzylinder, M2 bleibt Reihensechser,
+  E92 als hochdrehender V8-Sauger, die beiden M5 als tiefer V8-Biturbo.
+- Nur das gewählte Auto wird geladen, das alte wird freigegeben. Fehlt
+  ein Modellordner, steht das Auto ausgegraut in der Liste („Modell fehlt“).
+- Lizenzen: Alle Automodelle bleiben aus dem Git-Repo raus (alles in
+  assets/models/ außer README.md in die .gitignore). In
+  assets/models/README.md für jedes Auto: Sketchfab-Link, Ordnername und
+  Credit-Text aus der license.txt. Credits auch in assets/CREDITS.md und
+  im Spiel (kleiner „Credits“-Knopf in der Garage), weil CC BY das verlangt.
+
+TEIL 2: MINIMAP MIT NAVI
+- Runde Minimap unten links, dreht sich mit dem Auto, zeigt Straßen,
+  Kreuzungen, Wasser und das Auto als Pfeil. Zoom passt sich dem Tempo an.
+- Taste M öffnet eine große Karte (Spiel pausiert): mit der Maus
+  verschieben und zoomen, Linksklick setzt ein Ziel, Rechtsklick löscht es.
+- Route über das Straßennetz zum Ziel, auf Minimap und Karte farbig
+  eingezeichnet, dazu Entfernung und ungefähre Fahrzeit. Abbiege-Hinweise
+  oben in der Mitte („In 300 m rechts“), kurze Meldung bei „Ziel erreicht“.
+- Achtung: Straßen werden nur in der Nähe des Autos berechnet (ca. 2,8 km),
+  das Ziel kann weiter weg liegen. Plane die Route deshalb auf dem groben
+  Orts-Graphen (Orte und Verbindungen sind ohne Wegsuche deterministisch
+  bekannt) und verfeinere sie, sobald die Abschnitte geladen sind. Fällt
+  ein Abschnitt später weg (zu steil, Überlappung) oder fährt man von der
+  Route ab, wird neu berechnet.
+- Die Karte darf nicht ruckeln: Kartenbild im Hintergrund zeichnen und
+  zwischenspeichern.
+
+TEIL 3: WETTER UND JAHRESZEITEN
+Wetter (wechselt alle paar Minuten fließend, man kann es auch festlegen):
+- Klar, bewölkt, Regen, Gewitter (Blitze und Donner), Nebel, Schnee.
+- Regen: Tropfen um die Kamera (Partikel), nasse Straße (dunkler,
+  glänzender, Spiegelungen, Pfützen), weniger Grip (ca. 70 %). Nach dem
+  Regen trocknet die Straße langsam ab. Gischt hinter den Reifen.
+- Nebel in den Tälern: Bodennebel, der sich in tiefen Lagen sammelt (vor
+  allem morgens), oben auf den Bergen klare Sicht.
+- Wolken im Himmel-Shader passend zum Wetter, bei Regen dunkler Himmel und
+  weniger Sonnenlicht.
+- Schnee: Flocken, Schnee auf Gelände und Bäumen (im Shader), auf der
+  Straße weniger Grip (ca. 50 %).
+Jahreszeiten:
+- Frühling: frisches Grün. Sommer: wie jetzt. Herbst: Laubbäume gemischt
+  gelb, orange und rot, Gras bräunlicher. Winter: Laubbäume kahl,
+  verschneite Landschaft.
+- Die Schneegrenze in den Bergen hängt von der Jahreszeit ab (Winter tief,
+  Sommer nur die Gipfel).
+- Die Jahreszeit beeinflusst das Wetter (Herbst mehr Regen und Nebel,
+  Winter Schnee).
+- Tasten: F5 schaltet das Wetter durch, J die Jahreszeit. Beides auch in
+  der Garage einstellbar.
+
+TEIL 4: TUNNEL
+- Bisher wird ein Straßenabschnitt verworfen, wenn er zu tief ins Gelände
+  schneiden müsste (MAX_CUT 35 m), und am Hang entstehen lange Umwege.
+  Stattdessen soll die Straße dort durch einen Tunnel gehen (ab ca. 25 m
+  Überdeckung). Die Wegsuche darf Tunnel bewusst nutzen, wenn ein Berg
+  sonst umfahren werden müsste, aber nicht übertreiben.
+- Tunnelröhre mit Wänden, Decke, Fahrbahn mit Markierung, Lampen an der
+  Decke (Emission plus wenige echte Lichter nur in der Nähe des Autos),
+  Betonportale an beiden Enden, sauber in den Hang eingepasst.
+- Gelände: Im Tunnelbereich nicht abtragen, nur an den Portalen. Achtung:
+  Die Gelände-Kollision (HeightMapShape3D) darf das Auto im Tunnel nicht
+  nach oben durch den Berg drücken. Prüf, ob Löcher in der HeightMapShape
+  gehen, sonst löse es anders. Das Gelände-Mesh braucht an den Portalen
+  eine saubere Öffnung.
+- Im Tunnel: Motorsound mit Hall (Reverb auf eigenem Audio-Bus), kein
+  Sonnenlicht, kein Regen, Augen-Anpassung beim Ein- und Ausfahren.
+- Keine Bäume und Felsen vor den Portalen. Die Minimap zeigt Tunnel
+  gestrichelt, das Navi kann durch Tunnel routen.
+
+PRÜFEN
+Nach jedem Teil mit dem Screenshot-Werkzeug selbst anschauen: jedes Auto in
+der Garage und auf der Straße (Tag und Nacht), Minimap mit Route, Regen
+mit nasser Straße, Talnebel am Morgen, Herbst und Winter, ein Tunnel von
+außen und innen. --bench=60 muss weiter am Stück durchfahren, FPS
+mindestens 60. Neue Tasten in die CLAUDE.md eintragen.
+
+Am Ende: kurze Zusammenfassung, welche Tasten es gibt und was dir optisch
+noch nicht gefällt.
+```
+
+## Felsbogen-Bug, neues HUD und Garage, Autobahn, Aussichtspunkte, Pops und Bangs, Himmel
+
+Großer Prompt, in einer neuen Sitzung abschicken. Läuft lange.
+Die Entwurfsbilder liegen in screenshots/design_*.png.
+
+```
+Lies die CLAUDE.md. Alles bis einschließlich Tunnel ist fertig. In dieser
+Sitzung machst du sechs Teile in dieser Reihenfolge. Mach zuerst einen Plan
+für alle Teile. Nach meinem OK arbeitest du alles nacheinander ab, ohne bei
+jedem Teil auf mich zu warten. Nach jedem Teil: testen, Fehler beheben,
+committen, CLAUDE.md aktualisieren. FPS insgesamt mindestens 60 (MacBook Air
+ohne Lüfter).
+
+TEIL 1: BUG „SCHWEBENDER FELSBOGEN“
+Auf screenshots/nav_drive.png hängt oben links ein riesiger grauer Felsbogen
+in der Luft, darunter sieht man Himmel. Im Bild steht „Kacheln: 237 (195 in
+Arbeit)“, die Kacheln haben also noch geladen. Meine Vermutung (bitte prüfen):
+Das ist der Horizont-Ring. Sein innerer Rand (inner_radius 1.200 m, um die
+Stelle gebaut, an der der Ring zuletzt erzeugt wurde) schneidet mitten durch
+die Berge und hat nach unten keine Fläche. Solange die Kacheln davor fehlen,
+sieht man diesen offenen Rand als schwebenden Bogen.
+- Reproduzier den Fehler (z. B. Screenshot direkt nach dem Start oder nach
+  einem weiten Sprung, --wait=0) und behebe ihn an der Ursache. Ideen: eine
+  Schürze am inneren Ringrand bis unter das tiefste Gelände, den Ring nur
+  dort versenken, wo wirklich schon Kacheln liegen, und beim Start und nach
+  Sprüngen (R, Wasser-Reset, Autowechsel) kurz ausblenden, bis die Kacheln in
+  der Nähe da sind.
+- Das Laden muss auch bei 300 km/h hinterherkommen (Teil 3 bringt Autobahnen):
+  Kacheln in Fahrtrichtung und je nach Tempo bevorzugt laden.
+
+TEIL 2: NEUES HUD (STIL A „GLAS“) UND NEUE GARAGE
+Halte dich so genau wie möglich an die Entwürfe:
+screenshots/design_hud_a.png (HUD), screenshots/design_garage.png (Garage),
+screenshots/design_bausteine.png (Meldungen, Navi-Hinweise, Wetter-Chips).
+Gemeinsamer Stil:
+- Schrift Inter (OFL-Lizenz, nach assets/fonts/ holen, in CREDITS.md).
+- Milchglas-Flächen: dunkel rgba(14,18,26,0.48), Hintergrund dahinter
+  weichgezeichnet (ca. 18 px, Shader mit Bildschirmtextur, günstig halten),
+  1 px Rand weiß 14 %, Ecken 22–28 px. Weißer Text, Zahlen mit gleicher Breite.
+- Akzentfarbe Standard #3D8BFF, in der Garage wählbar (#22C3A6, #FF7A1A, #E5484D).
+- Alles skaliert sauber mit der Fensterhöhe (Entwurf ist 1600 × 900).
+HUD:
+- Unten rechts 300 × 300 Panel: Drehzahl als 270°-Bogen mit Zahlen pro
+  1.000/min und rotem Bereich (je Auto passend zu dessen Begrenzer), in der
+  Mitte das Tempo groß (ca. 88 px, extra fett) mit „km/h“, darunter der Gang
+  in einem abgerundeten Kästchen.
+- Unten links die Minimap im neuen dunklen Stil: Untergrund #111721,
+  Wasser #1E3A5C, Straßen grau #8D97A9, Route in Akzentfarbe, N-Plakette,
+  darunter „14,4 km · 12 min“ und „M Karte“. Die große Karte (M) im selben Stil.
+- Oben mittig die Navi-Karte: Feld mit Abbiege-Pfeil in Akzentfarbe,
+  Entfernung groß, Anweisung, zweite Zeile „Danach …“, rechts ANKUNFT mit
+  Uhrzeit (Spieluhr + Fahrzeit). Ohne Ziel ausgeblendet.
+- Oben rechts drei Chips: Uhrzeit, Wetter mit Symbol und Temperatur, Jahreszeit.
+  Temperatur ausrechnen aus Jahreszeit, Tageszeit, Höhe (−0,65 °C pro 100 m)
+  und Wetter.
+- Meldungen (Toasts) wie im Bausteine-Bild, links oben einblenden, nach ca.
+  4 s ausblenden: Wetterwechsel, Jahreszeit, Tunnel voraus, Ziel erreicht,
+  Aussichtspunkt entdeckt, Foto gespeichert.
+- FPS und Kachel-Zähler nur noch mit F3.
+Garage:
+- Statt schwarzem Showroom: Das Spiel pausiert, die Kamera kreist langsam um
+  das Auto an seiner aktuellen Stelle in der Welt, HUD aus.
+- Links ein Glas-Panel: GARAGE, Name groß, Untertitel, fünf Balken (Leistung,
+  Drehmoment, Gewicht, 0–100, Spitze im Vergleich zum stärksten Auto), Lack,
+  Bereich WELT mit drei Umschaltern (Tageszeit, Wetter, Jahreszeit; ändern die
+  Vorschau sofort), großer Knopf „Losfahren“, Credits, Tastenhinweise.
+- Unten rechts die Autos als Karten nebeneinander, das gewählte mit Rand in
+  Akzentfarbe. Bedienbar mit Maus, Pfeiltasten und Enter.
+- Neu in der Garage: Akzentfarbe des HUD, Schalter „Sportauspuff“ (Teil 5)
+  und ein Knopf „Sammlung“ (Teil 4).
+
+TEIL 3: AUTOBAHN OHNE TEMPOLIMIT
+- Zusätzlich zum Landstraßen-Netz ein Autobahn-Netz: lange, durchgehende
+  Strecken quer durch die Welt, deterministisch aus dem Seed, nahtlos über
+  Kacheln hinweg. Anteil an der gesamten Straßenlänge ca. 20 %, Landstraßen
+  ca. 80 %. Miss den Anteil in einem großen Testgebiet und trag ihn in die
+  CLAUDE.md ein.
+- Je Richtung zwei Fahrstreifen plus Standstreifen, Mittelleitplanke,
+  Leitpfosten mit Reflektoren (leuchten nachts im Scheinwerferlicht),
+  passende Markierungen.
+- Trassierung für hohes Tempo: Kurvenradien ab ca. 900 m, höchstens 4 %
+  Steigung, sanfte Querneigung. Durch Berge lieber Talbrücken und Tunnel als
+  Serpentinen.
+- Anschlussstellen: Wo Autobahn und Landstraße sich nahekommen, Auf- und
+  Abfahrten mit Rampen. Landstraßen kreuzen die Autobahn nie auf gleicher
+  Höhe, sondern immer per Brücke oder Unterführung. Die Überlappungs-Prüfung
+  im Straßennetz muss das kennen.
+- Blaue Schilderbrücken vor den Ausfahrten („Ausfahrt 14 Tannbach 2000 m“)
+  und Ausfahrt-Schilder. Die Orte bekommen dafür erfundene, deutsch
+  klingende Namen (deterministisch aus dem Seed).
+- Minimap und Karte zeigen Autobahnen breiter und in eigener Farbe. Das
+  Navi nimmt bei langen Strecken die Autobahn, wenn sie schneller ist
+  („Ausfahrt 14 nehmen“).
+- Bäume, Gelände-Anpassung, Gras, Brücken und Tunnel funktionieren auch für
+  die breite Autobahn. Mit --bench auf der Autobahn bei Vollgas (M3 GTS,
+  über 300 km/h) prüfen: keine Lücken, kein Nachladen-Ruckeln, FPS ≥ 60.
+
+TEIL 4: AUSSICHTSPUNKTE UND FOTOMODUS
+- Aussichtspunkte: an besonders schönen Stellen nahe einer Straße
+  (hoch mit Fernblick, am Seeufer, auf Passhöhen), deterministisch aus dem
+  Seed, mit kleiner Parkbucht und Schild. Hält man dort an (unter 5 km/h im
+  Umkreis), kommt die Meldung „Aussichtspunkt entdeckt · 3 von 12 in dieser
+  Gegend“ und der Hinweis „P Foto“.
+- Auf der großen Karte: unentdeckte Punkte in der Nähe als graues
+  Fragezeichen, entdeckte als Kamera-Symbol. Fortschritt wird gespeichert
+  (user://). In der Garage unter „Sammlung“ alle gefundenen Punkte mit den
+  dort gemachten Fotos.
+- Fotomodus mit P (überall, nicht nur an Aussichtspunkten): Spiel pausiert,
+  HUD aus, freie Kamera um das Auto (Maus und WASD, max. ca. 30 m, nicht durch
+  das Gelände), Zoom, Tiefenschärfe mit Fokus aufs Auto, Belichtung, Tageszeit
+  verschieben, ein paar Filter (neutral, warm, kühl, schwarz-weiß).
+  Leertaste speichert das Foto als PNG nach user://fotos, Meldung „Foto
+  gespeichert“ mit Möglichkeit, den Ordner im Finder zu öffnen.
+
+TEIL 5: POPS UND BANGS, TURBO
+- Beim Gaswegnehmen aus hoher Drehzahl knallt und blubbert es im Auspuff
+  (unregelmäßig, 1–2 s lang), passend zum prozeduralen Motorsound. Stärke je
+  Auto im Profil: M2 und M3 GTS kräftig, M5 F90 mittel, M5 G90 und E30 wenig.
+- Dazu kleine Flammen an den Endrohren (Partikel plus kurzer Lichtblitz,
+  günstig), nachts gut sichtbar. Die Endrohr-Positionen je Auto aus dem
+  Modell ermitteln und im Profil speichern.
+- Turbo: Bei den beiden M5 deutliches Turbo-Pfeifen, das mit dem Ladedruck
+  steigt, und ein Abblasen („Pschh“) beim Gaswegnehmen. Beim M2 nur leise.
+  E30 und M3 GTS sind Sauger, also kein Turbo-Geräusch.
+- Schalter „Sportauspuff“ in der Garage: aus = kaum Pops, keine Flammen.
+
+TEIL 6: HIMMEL
+- Regenbogen: wenn der Regen aufhört und die Sonne tief hinter der Kamera
+  steht, ein Regenbogen gegenüber der Sonne (im Himmel-Shader), blendet
+  über ein paar Minuten ein und aus.
+- Wolkenschatten: Schatten der Wolken ziehen mit dem Wind über Gelände und
+  Berge (im Terrain-Shader, passend zur Wolkenmenge des Wetters).
+- Polarlicht: in klaren Winternächten (nicht jede Nacht, etwa jede dritte),
+  langsam wabernde grüne Vorhänge mit violetten Spitzen am Nordhimmel.
+
+PRÜFEN
+Nach jedem Teil mit dem Screenshot-Werkzeug selbst anschauen und mit den
+Entwurfsbildern vergleichen: HUD bei Tag, Nacht und Regen, Garage,
+Navi-Hinweis, Meldungen, Autobahn mit Schilderbrücke und Anschlussstelle
+(auch von oben), Aussichtspunkt, Fotomodus, Flammen nachts, Regenbogen,
+Polarlicht. Neue Tasten in die CLAUDE.md.
+
+Am Ende: kurze Zusammenfassung, neue Tasten und was dir optisch noch nicht
+gefällt.
+```
