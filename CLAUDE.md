@@ -108,8 +108,10 @@ assets/
 - [x] Extra: Aussichtspunkte (Parkbucht, Schild, Entdecken, Karte, Sammlung) und Fotomodus
 - [x] Extra: Pops & Bangs mit Flammen, Turbo-Pfeifen mit Ladedruck, Abblasventil
 - [x] Extra: Regenbogen, Wolkenschatten, Polarlicht
+- [x] Extra: Tunnel-Bug behoben, mehr Grip (Grip-Stufen), Blinker/Warnblinker/Hupe
+- [x] Extra: Anschlussstellen an jedem Stützpunkt, Raststätten mit Tankstelle und Rasthof
 - [ ] Meilenstein 8
-- [ ] Meilenstein 9
+- [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
 ## Notizen / Entscheidungen
 
