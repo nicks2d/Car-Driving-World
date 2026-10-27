@@ -498,6 +498,37 @@ assets/
 - Testen Dörfer: Buchhof `--pos=-546,441 --heading=-77` (Ortsschild), `--pos=-660,459
   --heading=103` (im Ort), Mühlingen von oben `--pos=933,560 --fly=90 --pitch=-50
   --lookat=933,608`, nachts `--pos=933,470 --heading=0 --time=22`.
+- Verkehr (Teil 5, `traffic.gd`, Knoten „Traffic“): KI-Autos fahren kinematisch (keine
+  Fahrphysik, sonst zu teuer und unberechenbar) auf Stücken (`Leg`: Abschnitt, Richtung, von/bis
+  in Metern, Spur rechts der Mittellinie). Spuren: Landstraße 2,25 m, Autobahn rechts 8,375 /
+  links 4,625 m (wie im Shader), Rampenanfang 15,55 m, Fahrgasse Raststätte −18,5 m. Am Ende
+  eines Stücks: nächstes wählen (an Kreuzungen zufällig, Sackgasse = wenden) und eine kurze
+  Hermite-Kurve dorthin fahren. Tempo: IDM (Abstand 4 m + 1,4 s, angenehm 3 m/s² bremsen,
+  höchstens 9), Wunschtempo Landstraße 65–100 (Lkw 62–80), Orte 50 (170 m um die Ortsmitte),
+  Autobahn Lkw 82–89 rechts, Pkw 110–175, 12 % „Schnelle“ 185–230 bleiben gern links;
+  Kurven √(2,6 m/s² · R); Nässe/Schnee bis 30 % langsamer (`Car.grip_factor`).
+- Autobahn: rechts fahren, bei langsamerem Vordermann links überholen (Spur frei? schnellere
+  Autos von hinten zählen weiter), zurück nach rechts, wenn dort 2 s frei ist (Schnelle 6 s).
+  Blinker bei jedem Spurwechsel. Abfahren wird beim Einfahren in einen Autobahn-Abschnitt
+  gewürfelt: Raststätte 15 % (Ausfahrt → Parkplatz → Einfahrt → weiter), Anschlussstelle 15 %
+  (Rampe → Zubringer → Ort); an Orten mit Zubringer 30 % auf die Autobahn. Vor der Ausfahrt
+  260 m lang rüber auf die Rampe, 900 m vorher nicht mehr überholen.
+- Dichte: Landstraße 1 Auto pro 2,5 km je Richtung, Autobahn 1 pro 450 m je Richtung (im
+  Umkreis von 1 km gezählt), höchstens 25, mal `density` (0/0,5/1). Entstehen 280–1050 m weg,
+  unter 650 m nur hinter der Kamera; verschwinden über 1300 m, über 650 m hinter der Kamera
+  oder wenn ihre Straße nicht mehr geladen ist. Nach dem Ladebildschirm 1,5 s „Füllen“: dann
+  auch 60–400 m vom Spieler (die Welt ist sofort belebt).
+- Fahrzeuge (`_vehicle_mesh`, Kästchen + achteckige Räder, je Typ ein Mesh mit 8 Flächen):
+  Limousine, Kombi, SUV, Transporter (60 % weiß), Lkw (Fahrerhaus + Koffer). Lack = eigenes
+  Material pro Farbe (10 Farben), Bremslicht und Blinker per Material-Tausch nur bei Änderung.
+  Nachts Licht-Materialien heller und echte SpotLights (ohne Schatten) an den nächsten 3 Autos.
+  Schatten bis 120 m, Kollision (AnimatableBody3D) bis 160 m. Stoß mit dem Spieler: 6 s stehen
+  mit Warnblinker, dann weiter. Benchmark (`--bench`): ohne Kollision (Autopilot weicht nicht
+  aus). Test: `--traffic=0|0.5|1`, das Foto nennt die Zahl der Autos.
+- Gemessen (Prüfskripte, 90 s): an der Raststätte Falkenweiler 7 von 19 Autobahn-Autos über
+  den Parkplatz, an der Anschlussstelle bei (3200, −4060) Ab- und Auffahrten (Rampe 4,
+  Zubringer 5), 13–32 Spurwechsel, kein Auto festgefahren, kleinster Abstand in einer Spur 4 m.
+  Autopilot 60 s mit Verkehr (Fenster): Landstraße 139 FPS, Autobahn 121 FPS, keine Fehler.
 - Testen: Raststätte Falkenweiler `--pos=9560,-3988 --heading=90` (auf dem Parkplatz),
   von oben `--pos=9450,-3988 --highway --heading=90 --fly=110 --pitch=-55 --lookat=9604,-3988`,
   Schild 500 m `--pos=8790,-4056 --highway --heading=90`, Navi `--target=9604,-3982`,

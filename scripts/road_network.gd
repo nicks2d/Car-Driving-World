@@ -828,6 +828,11 @@ func _junction(cell: Vector2i) -> RoadJunction:
 	return junction
 
 
+## Kreuzung an einem Ort (für den Verkehr). null = noch nicht alle Straßen dort geprüft.
+func junction_at(cell: Vector2i) -> RoadJunction:
+	return _junction(cell)
+
+
 ## Dorf an einem Ort. null = noch nicht fertig (dann wird es geplant, sobald die Kreuzung und
 ## alle Straßen in der Nähe geprüft sind).
 func _village(cell: Vector2i) -> Village:

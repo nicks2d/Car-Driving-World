@@ -35,6 +35,7 @@ extends Node
 ## --jump=X,Z    nach dem Laden weit an diese Stelle springen (wie ein Teleport), dann Foto
 ## --weather=ID   Wetter: clear, cloudy, rain, storm, fog, snow (Tests sonst immer klar)
 ## --season=ID    Jahreszeit: spring, summer, autumn, winter (Tests sonst immer Sommer)
+## --traffic=D    Verkehrsdichte 0 (aus), 0.5 (wenig) oder 1 (normal, Standard)
 
 @export var camera: Camera3D
 
@@ -75,6 +76,8 @@ var car_id: String = ""
 ## Wetter und Jahreszeit aus den Argumenten (leer = klar bzw. Sommer)
 var weather_id: String = ""
 var season_id: String = ""
+## Verkehrsdichte aus den Argumenten (negativ = nicht angegeben)
+var traffic_density: float = -1.0
 var _bench_seconds: float = 0.0
 var _game: Node3D
 var _state: String = "idle"
@@ -167,6 +170,8 @@ func _ready() -> void:
 				var xz := value.split(",")
 				_jump_to = Vector2(float(xz[0]), float(xz[1]))
 				_has_jump = true
+			"traffic":
+				traffic_density = float(value)
 			"weather":
 				weather_id = value
 			"season":
@@ -174,6 +179,11 @@ func _ready() -> void:
 
 
 ## Läuft ein Test (Screenshot, Benchmark, festes Auto)? Dann keine Garage beim Start.
+## Läuft ein Benchmark (Autopilot)?
+func is_benchmark() -> bool:
+	return _bench_seconds > 0.0
+
+
 func is_active() -> bool:
 	return _shot_name != "" or _bench_seconds > 0.0 or car_id != "" or weather_id != "" or season_id != ""
 
@@ -436,6 +446,9 @@ func _save_image(file_name: String) -> void:
 	var image := get_viewport().get_texture().get_image()
 	image.save_png(path)
 	print("Screenshot gespeichert: ", path)
+	var traffic := get_node_or_null("../Traffic") as Traffic
+	if traffic:
+		print("Verkehr: %d Autos unterwegs" % traffic.car_count())
 
 
 func _print_bench() -> void:

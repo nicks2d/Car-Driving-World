@@ -54,6 +54,7 @@
 [ext_resource type="Script" path="res://scripts/tunnel_effects.gd" id="69_tunnelfx"]
 [ext_resource type="Script" path="res://scripts/viewpoints.gd" id="74_viewpoints"]
 [ext_resource type="Script" path="res://scripts/photo_mode.gd" id="75_photo"]
+[ext_resource type="Script" path="res://scripts/traffic.gd" id="76_traffic"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -525,3 +526,11 @@ car = NodePath("../Car")
 camera = NodePath("../Camera")
 day_night = NodePath("../DayNight")
 weather = NodePath("../Weather")
+
+[node name="Traffic" type="Node3D" parent="." node_paths=PackedStringArray("roads", "car", "camera", "day_night", "debug_tools")]
+script = ExtResource("76_traffic")
+roads = NodePath("../Roads")
+car = NodePath("../Car")
+camera = NodePath("../Camera")
+day_night = NodePath("../DayNight")
+debug_tools = NodePath("../DebugTools")
