@@ -32,8 +32,20 @@ signal profile_changed(new_profile: CarProfile)
 @export_group("Lenkung")
 ## Ab diesem Tempo (km/h) gilt nur noch der kleine Lenkwinkel (Winkel stehen im Profil)
 @export var steer_reduction_speed_kmh: float = 150.0
-## Wie schnell das Lenkrad einschlägt (4 = in einer Viertelsekunde voll eingeschlagen)
+## Wie schnell das Lenkrad einschlägt (4 = in einer Viertelsekunde voll eingeschlagen).
+## Bei Tempo langsamer (Wert der Grip-Stufe), zurück zur Mitte schneller (Faktor).
 @export var steer_speed: float = 4.0
+@export var steer_return_factor: float = 1.6
+## Lenkempfindlichkeit (Einstellungen): 1 = normal, kleiner = ruhiger
+@export_range(0.5, 1.5) var steer_sensitivity: float = 1.0
+
+@export_group("Grip und Fahrhilfen")
+## Grip-Stufe (Einstellungen > Steuerung): komfort, sport (Standard) oder drift
+@export_enum("komfort", "sport", "drift") var grip_level: String = "sport"
+## Driften bleibt möglich: so lange nach der Handbremse hält sich die Stabilitätshilfe raus,
+## und bei Heckantrieb ab so viel Gas im 1. oder 2. Gang ebenfalls
+@export var handbrake_drift_seconds: float = 1.5
+@export_range(0.0, 1.0) var drift_throttle: float = 0.8
 
 @export_group("Reset")
 ## Um so viele Meter wird das Auto beim Aufrichten (Taste R) angehoben
@@ -61,7 +73,17 @@ var sport_exhaust: bool = true
 ## false = Gas und Bremse werden nicht gelesen, Handbremse an (Test-Fotos: Auto bleibt stehen)
 var throttle_enabled: bool = true
 
+## Werte der Grip-Stufen. grip: Faktor auf den Reifen-Grip, oversteer: Faktor auf
+## power_oversteer, stability: Stabilitätshilfe (0 = aus), steer_fast: Lenkgeschwindigkeit
+## bei steer_reduction_speed_kmh (dazwischen weich)
+const GRIP_LEVELS := {
+	"komfort": {"grip": 1.3, "oversteer": 0.3, "stability": 1.0, "steer_fast": 1.5},
+	"sport": {"grip": 1.18, "oversteer": 0.6, "stability": 0.6, "steer_fast": 1.9},
+	"drift": {"grip": 1.0, "oversteer": 1.2, "stability": 0.0, "steer_fast": 2.8},
+}
+
 var _steer_input: float = 0.0
+var _handbrake_timer: float = 0.0
 var _shift_timer: float = 0.0
 ## Antriebskraft dieses Physik-Schritts (alle Räder zusammen, Newton)
 var _drive_force_now: float = 0.0
@@ -122,7 +144,7 @@ func apply_profile(new_profile: CarProfile) -> void:
 		wheel.damping_compression = profile.damping_compression
 		wheel.damping_relaxation = profile.damping_relaxation
 		wheel.wheel_roll_influence = profile.roll_influence
-		wheel.wheel_friction_slip = (profile.grip_front if is_front else profile.grip_rear) * grip_factor
+		wheel.wheel_friction_slip = (profile.grip_front if is_front else profile.grip_rear) * _grip_scale()
 		wheel.use_as_steering = is_front
 		wheel.use_as_traction = not is_front or profile.front_drive_share > 0.0
 		add_child(wheel)
@@ -160,6 +182,7 @@ func _physics_process(delta: float) -> void:
 	_update_gearbox(delta, forward_speed)
 	_update_engine_and_brakes(forward_speed)
 	_update_rear_grip()
+	_apply_stability(delta)
 	_apply_aerodynamics(forward_speed)
 
 	if Input.is_action_just_pressed("reset_car"):
@@ -170,9 +193,14 @@ func _physics_process(delta: float) -> void:
 
 func _update_steering(delta: float, speed_kmh: float) -> void:
 	# Ziel zwischen -1 (ganz rechts) und +1 (ganz links). Bei Godot lenkt "positiv" nach links.
-	var target: float = Input.get_axis("steer_right", "steer_left")
-	# Das Lenkrad springt nicht sofort, sondern dreht zügig zum Ziel
-	_steer_input = move_toward(_steer_input, target, steer_speed * delta)
+	var target: float = Input.get_axis("steer_right", "steer_left") * steer_sensitivity
+	# Das Lenkrad springt nicht sofort, sondern dreht zum Ziel: bei Tempo langsamer (mit der
+	# Tastatur sonst viel zu hektisch), zurück zur Mitte und beim Gegenlenken schneller
+	var fast: float = GRIP_LEVELS[grip_level]["steer_fast"]
+	var rate := lerpf(steer_speed, fast, clampf(speed_kmh / steer_reduction_speed_kmh, 0.0, 1.0))
+	if absf(target) < absf(_steer_input) or signf(target) != signf(_steer_input):
+		rate *= steer_return_factor
+	_steer_input = move_toward(_steer_input, clampf(target, -1.0, 1.0), rate * delta)
 	# Je schneller, desto kleiner der maximale Lenkwinkel. Die Wurzel sorgt dafür,
 	# dass der Winkel schon bei mittlerem Tempo deutlich kleiner wird.
 	var t: float = clampf(speed_kmh / steer_reduction_speed_kmh, 0.0, 1.0)
@@ -323,8 +351,10 @@ func _update_engine_and_brakes(forward_speed: float) -> void:
 ## Grip der Hinterräder: Handbremse und Vollgas in schnellen Kurven lassen das Heck rutschen
 ## Dazu der Grip-Faktor vom Wetter für alle Räder.
 func _update_rear_grip() -> void:
-	var grip := profile.grip_rear * grip_factor
+	var grip := profile.grip_rear * _grip_scale()
 	var pulled: bool = Input.is_action_pressed("handbrake") or not throttle_enabled
+	if pulled:
+		_handbrake_timer = handbrake_drift_seconds
 	if pulled:
 		# Mit gezogener Handbremse ist quasi die Kupplung getreten
 		for wheel: VehicleWheel3D in [_front_left, _front_right, _rear_left, _rear_right]:
@@ -333,16 +363,60 @@ func _update_rear_grip() -> void:
 		grip *= handbrake_grip
 	# Godots Reifenmodell zählt die Antriebskraft kaum gegen den Seitenhalt. Echte Hinterreifen
 	# mit viel Drehmoment verlieren in der Kurve Seitenhalt, wenn man Gas gibt: das wird hier
-	# nachgebildet. Quadratisch: Mit wenig Gas bleibt das Heck ruhig.
+	# nachgebildet. Kubisch und erst ab 3 m/s² Querbeschleunigung: Mit normalem Gas bleibt
+	# das Heck ruhig. Provoziert man es (viel Gas im kleinen Gang), kommt es kräftiger.
 	var lateral := absf(angular_velocity.y) * linear_velocity.length()
 	var power := clampf(absf(_drive_force_now) / profile.max_drive_force, 0.0, 1.0)
-	grip *= 1.0 - profile.power_oversteer * power * power * clampf(lateral / power_oversteer_lateral, 0.0, 1.0)
+	var oversteer: float = profile.power_oversteer * GRIP_LEVELS[grip_level]["oversteer"]
+	if _drift_intent():
+		oversteer = maxf(oversteer, profile.power_oversteer * 1.8)
+	grip *= 1.0 - oversteer * power * power * power * clampf((lateral - 3.0) / power_oversteer_lateral, 0.0, 1.0)
 	for wheel: VehicleWheel3D in [_rear_left, _rear_right]:
 		if pulled:
 			wheel.brake = profile.handbrake_strength
 		wheel.wheel_friction_slip = grip
 	for wheel: VehicleWheel3D in [_front_left, _front_right]:
-		wheel.wheel_friction_slip = profile.grip_front * grip_factor
+		wheel.wheel_friction_slip = profile.grip_front * _grip_scale()
+
+
+## Grip-Faktor aus Grip-Stufe und Wetter (nass und Schnee bleiben im Verhältnis rutschiger)
+func _grip_scale() -> float:
+	return GRIP_LEVELS[grip_level]["grip"] * grip_factor
+
+
+## Will der Fahrer driften? Heckantrieb, 1. oder 2. Gang, viel Gas
+func _drift_intent() -> bool:
+	return profile.front_drive_share < 0.5 and gear >= 1 and gear <= 2 and throttle_input >= drift_throttle
+
+
+## Grip-Stufe wechseln (Einstellungen)
+func set_grip_level(level: String) -> void:
+	if GRIP_LEVELS.has(level):
+		grip_level = level
+
+
+## Stabilitätshilfe: Dreht sich das Auto schneller um die Hochachse, als Lenkung und Tempo
+## erwarten lassen (Heck bricht aus), bremst sie dieses Zuviel ab, wie ein echtes ESP mit
+## gezieltem Bremsen einzelner Räder. Untersteuern lässt sie in Ruhe. Mit der Handbremse und
+## beim provozierten Drift hält sie sich raus.
+func _apply_stability(delta: float) -> void:
+	_handbrake_timer = maxf(_handbrake_timer - delta, 0.0)
+	var strength: float = GRIP_LEVELS[grip_level]["stability"]
+	var speed := linear_velocity.length()
+	if strength <= 0.0 or _handbrake_timer > 0.0 or _drift_intent() or speed < 4.0:
+		return
+	# Erwartete Drehrate wie beim Fahrrad-Modell, begrenzt durch den Grip
+	var expected := speed * tan(steering) / profile.wheelbase
+	var limit := 9.81 * 1.3 / speed
+	expected = clampf(expected, -limit, limit)
+	var yaw := angular_velocity.y
+	var excess := yaw - expected
+	# Nur zu viel Drehung in Kurvenrichtung (Übersteuern), erst ab etwas Schwimmwinkel
+	if signf(excess) != signf(yaw) or drift_angle < 2.5:
+		return
+	var yaw_inertia := mass * (profile.body_size.z * profile.body_size.z + profile.body_size.x * profile.body_size.x) / 12.0
+	var amount := clampf((drift_angle - 2.5) / 8.0, 0.0, 1.0)
+	apply_torque(Vector3(0.0, -excess * yaw_inertia * 6.0 * strength * amount, 0.0))
 
 
 func _apply_aerodynamics(forward_speed: float) -> void:

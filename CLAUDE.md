@@ -422,6 +422,22 @@ assets/
   --heading=-80`, Autobahn `--pos=-5056,-63 --heading=85 --highway` (272 m).
 - Achtung bei eigenen Prüfskripten (`-s`): Ohne Testargument öffnet nach dem Laden die
   Garage und pausiert das Spiel, dann kommt z. B. ein `jump_to` nie an. Garage schließen.
+- Grip (Teil 2, `car.gd`): Grip-Stufen `GRIP_LEVELS` komfort / sport (Standard) / drift =
+  Faktor auf den Reifen-Grip (1,3 / 1,18 / 1,0), Anteil Power-Oversteer (0,3 / 0,6 / 1,2),
+  Stabilitätshilfe (1 / 0,6 / 0) und Lenkgeschwindigkeit bei 150 km/h (1,5 / 1,9 / 2,8 statt 4
+  im Stand; zurück zur Mitte 1,6-mal schneller). Power-Oversteer jetzt kubisch und erst ab
+  3 m/s² quer. Stabilitätshilfe: bremst nur eine Drehrate, die über der aus Lenkwinkel und
+  Tempo erwarteten liegt (Übersteuern), ab 2,5° Schwimmwinkel. Sie schweigt 1,5 s nach der
+  Handbremse und beim provozierten Drift (Heckantrieb, 1./2. Gang, Gas ≥ 0,8; dann
+  Power-Oversteer × 1,8). Wetter-Grip wirkt weiter als Faktor (nass 0,7, Schnee 0,5).
+- Messwerkzeug `tools/grip_test.gd` (flache Ebene, `--cars=`, `--grip=`, `--wet`, `--snow`).
+  Vorher → nachher (Sport): Kurve 80 km/h 1,44–1,47 g → 1,65–1,69 g; Kurve 130 km/h 1,54–1,62 g →
+  1,84–1,92 g; Ausweichen 120 km/h (Tastatur voll links/rechts) 9–12° → 5–6° Schwimmwinkel;
+  Vollgas in der Kurve bei 100 km/h: E30 34° → 5°, sonst 3–5°; provozierter Power-Drift
+  (2. Gang, 40 km/h): M2 8° → 20°, E92 12° → 26°, E30 13° → 32°, beide M5 3–4° (Allrad);
+  Handbremse 70 km/h: Hecktriebler drehten sich (76–89°), jetzt 44–60° und fangen sich.
+  Komfort: 1,73–1,78 g, Drift kaum. Drift-Stufe = altes Verhalten. Nass (Sport) 1,20 g,
+  Power-Drift Heckantrieb 28–41°; Schnee 0,84–0,93 g.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in
