@@ -478,6 +478,26 @@ assets/
   unter 5 km/h bis 110 m an der Mitte), auf der Karte als Abzeichen neben der Zapfsäule.
 - Autobahnkreuz: nicht gebaut. Kreuzungen zweier Autobahnen bleiben Überführungen (die
   Schleifenrampen bräuchten eigene Trassierung zwischen Tunneln und Brücken).
+- Dörfer (Teil 5, `village.gd`, `Village`): an jedem Ort 3–8 Häuser (10 % der Orte 10–12), auf
+  Bauplätzen 30–150 m entlang der abgehenden Straßen, beidseitig, nah an der Mitte zuerst.
+  Abstand: Bankett + Böschungskante + Vorgarten 4–8 m. Nicht auf Straßen (auch Autobahn,
+  Rampen), Kreuzungen, Parkbuchten, Wasser, anderen Häusern oder zu steil (Ecken > 3 m
+  Unterschied). Haus 8–12 × 7–10 m, ein oder zwei Geschosse, Satteldach 35–45° (First meist
+  längs), Fenster mit Rahmen (35 % nachts erleuchtet, `house_window_lit`), 40 % mit
+  Fensterläden, Tür; 14 % Scheunen ab 70 m. 70 % mit Gartenzaun (Tor vorne).
+  Laternen rechts der Straße alle 32 m bis zum letzten Haus, gelbe Ortsschilder am Eingang
+  (hinten mit rotem Strich = Ortsende). Gemessen am Start: 10 Dörfer, 64 Häuser.
+- Dorf-Ablauf: `RoadNetwork._village(cell)` plant im WorkerThreadPool, sobald die Kreuzung und
+  alle Straßen ±230 m geprüft sind. Ergebnis hängt nur von Ort und Straßen ab. Unter jedem Haus
+  ein Pad (wie Kreuzungen): Gelände flach, keine Bäume/Gras. `segments_for_rect` nimmt die Pads
+  aller Orte bis 270 m um den Bereich mit (Gelände wartet aufs Dorf). Mesh: eine Fläche pro
+  Material für das ganze Dorf (Wände/Zäune/Laternenmasten mit Punktfarben, Dächer, Fenster,
+  erleuchtete Fenster, Lampen) = 5 Draw Calls statt MultiMesh pro Teil. Schatten bis 700 m,
+  Kollision (eine Box pro Haus) bis 600 m. Nachts 6 echte Lichter (Pool) an den nächsten
+  Laternen bis 160 m (`village_light_count`, `village_light_distance`).
+- Testen Dörfer: Buchhof `--pos=-546,441 --heading=-77` (Ortsschild), `--pos=-660,459
+  --heading=103` (im Ort), Mühlingen von oben `--pos=933,560 --fly=90 --pitch=-50
+  --lookat=933,608`, nachts `--pos=933,470 --heading=0 --time=22`.
 - Testen: Raststätte Falkenweiler `--pos=9560,-3988 --heading=90` (auf dem Parkplatz),
   von oben `--pos=9450,-3988 --highway --heading=90 --fly=110 --pitch=-55 --lookat=9604,-3988`,
   Schild 500 m `--pos=8790,-4056 --highway --heading=90`, Navi `--target=9604,-3982`,

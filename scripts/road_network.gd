@@ -27,6 +27,13 @@ extends Node3D
 @export var bridge_material: Material
 ## Material für Leitplanken (Metall)
 @export var rail_material: Material
+@export_group("Dörfer")
+## Dörfer: so viele echte Lichter an den nächsten Straßenlaternen (nachts), bis zu dieser
+## Entfernung; Häuser werfen bis village_shadow_distance Schatten
+@export var village_light_count: int = 6
+@export var village_light_distance: float = 160.0
+@export var village_shadow_distance: float = 700.0
+
 @export_group("Autobahn")
 ## Material der Autobahn und der Rampen (road.gdshader mit lane_profile 1 bzw. 2)
 @export var highway_material: Material
@@ -113,6 +120,8 @@ var _entries: Dictionary = {}  # Vector3i (Zelle x, Zelle z, Richtung) -> Entry
 var _wanted: Dictionary = {}  # Vector3i -> int
 var _edge_cache: Dictionary = {}  # Vector3i -> bool (gibt es diese Verbindung?)
 var _junctions: Dictionary = {}  # Vector2i -> RoadJunction
+var _villages: Dictionary = {}  # Vector2i -> Village
+var _lantern_lights: Array[OmniLight3D] = []
 var _departures: Dictionary = {}  # Vector2i -> Dictionary (Nachbarzelle -> Richtung)
 ## Abschnitte, die es sicher nicht gibt (zu steil, überlappt): bleibt gemerkt, auch wenn
 ## der Abschnitt selbst vergessen wird (für das Navi)
@@ -483,6 +492,13 @@ func segments_for_rect(rect: Rect2) -> Dictionary:
 				cells[highways.interchange_at(highway_axis(key), key.y, key.x)["cell"]] = true
 	if not complete:
 		return {}
+	# Orte, deren Dorf bis hierher reichen kann (Häuser ebnen das Gelände ein)
+	var near := rect.grow(Village.REACH + 100.0)
+	for cz in range(floori(near.position.y / cell_size), floori(near.end.y / cell_size) + 1):
+		for cx in range(floori(near.position.x / cell_size), floori(near.end.x / cell_size) + 1):
+			var node: Variant = node_at(Vector2i(cx, cz))
+			if node != null and near.has_point(Vector2((node as Vector3).x, (node as Vector3).z)):
+				cells[Vector2i(cx, cz)] = true
 	var pads := PackedVector4Array()
 	for cell: Vector2i in cells:
 		var junction := _junction(cell)
@@ -491,6 +507,11 @@ func segments_for_rect(rect: Rect2) -> Dictionary:
 			continue
 		# Etwas größer als die Kreuzungsfläche, damit das Gelände rundherum flach bleibt
 		pads.append(Vector4(junction.center.x, junction.center.y, junction.center.z, junction.radius + 4.0))
+		var village := _village(cell)
+		if village == null:
+			complete = false
+			continue
+		pads.append_array(village.pads)
 	if not complete:
 		return {}
 	pads.append_array(bay_pads)
@@ -805,6 +826,58 @@ func _junction(cell: Vector2i) -> RoadJunction:
 	junction.radius = _junction_size(arms)
 	_junctions[cell] = junction
 	return junction
+
+
+## Dorf an einem Ort. null = noch nicht fertig (dann wird es geplant, sobald die Kreuzung und
+## alle Straßen in der Nähe geprüft sind).
+func _village(cell: Vector2i) -> Village:
+	var village: Village = _villages.get(cell)
+	if village != null:
+		if village.task_id == -1:
+			return village
+		if not WorkerThreadPool.is_task_completed(village.task_id):
+			return null
+		WorkerThreadPool.wait_for_task_completion(village.task_id)
+		village.task_id = -1
+		return village
+	var junction := _junction(cell)
+	if junction == null:
+		return null
+	var reach := Village.REACH + 60.0
+	var rect := Rect2(junction.center.x - reach, junction.center.z - reach, reach * 2.0, reach * 2.0)
+	var nearby: Array = []
+	var blocked := PackedVector4Array()
+	blocked.append(Vector4(junction.center.x, junction.center.y, junction.center.z, junction.radius + 4.0))
+	var complete := true
+	for key in _edges_touching(rect):
+		var entry: Entry = _entries.get(key)
+		_want(key, 2)
+		if entry == null or entry.state < State.CHECKED:
+			complete = false
+			continue
+		if entry.kept and entry.segment.bounds.intersects(rect):
+			nearby.append(entry.segment)
+			if not entry.segment.viewpoint.is_empty():
+				blocked.append_array(Viewpoints.bay_pads(entry.segment))
+	if not complete:
+		return null
+	# Andere Orte ganz in der Nähe: deren Kreuzung freihalten
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var other: Variant = node_at(cell + Vector2i(dx, dz))
+			if (dx != 0 or dz != 0) and other != null and rect.has_point(Vector2((other as Vector3).x, (other as Vector3).z)):
+				var o := other as Vector3
+				blocked.append(Vector4(o.x, o.y, o.z, 30.0))
+	village = Village.new()
+	village.cell = cell
+	village.center = junction.center
+	village.world_gen = world_gen
+	village.arms = junction.arms
+	village.segments = nearby
+	village.obstacles = blocked
+	village.task_id = WorkerThreadPool.add_task(village.plan, false, "Dorf")
+	_villages[cell] = village
+	return null
 
 
 ## Zubringer, der an diesem Ort beginnt (oder (-1, -1, -1), wenn keiner)
@@ -1385,6 +1458,7 @@ func _update_visuals() -> void:
 		elif distance > collision_distance + 100.0 and entry.body:
 			entry.body.queue_free()
 			entry.body = null
+	_update_villages(p)
 	for cell: Vector2i in _junctions.keys():
 		var junction: RoadJunction = _junctions[cell]
 		var distance := Vector2(junction.center.x - p.x, junction.center.z - p.y).length()
@@ -1616,7 +1690,10 @@ func _update_night_glow(delta: float) -> void:
 	var night := 1.0 - (_day_night.daylight if _day_night else 1.0)
 	for pair: Array in [["lamp_glow", 7.0], ["canopy_glow", 5.0], ["window_glow", 3.0], ["screen_glow", 2.5]]:
 		_sign_material(pair[0]).emission_energy_multiplier = lerpf(0.15, pair[1], night)
+	# Erleuchtete Fenster in den Dörfern: tagsüber gar nicht
+	_sign_material("house_window_lit").emission_energy_multiplier = lerpf(0.0, 2.6, night)
 	var p := target.global_position if target else Vector3.ZERO
+	_update_lantern_lights(night, p)
 	var kept: Array[OmniLight3D] = []
 	for light in _rest_lights:
 		if not is_instance_valid(light):
@@ -1716,6 +1793,27 @@ func _sign_material(name_key: String) -> StandardMaterial3D:
 			"dark":
 				material.albedo_color = Color(0.12, 0.13, 0.15)
 				material.roughness = 0.6
+			"yellow":
+				# Ortsschild
+				material.albedo_color = Color("#F2C200")
+				material.emission_enabled = true
+				material.emission = Color("#F2C200")
+				material.emission_energy_multiplier = 0.15
+			"house_wall", "house_roof":
+				# Häuser: Farbe kommt aus den Punktfarben
+				material.vertex_color_use_as_albedo = true
+				material.vertex_color_is_srgb = true
+				material.roughness = 0.9 if name_key == "house_wall" else 0.75
+				if name_key == "house_roof":
+					material.cull_mode = BaseMaterial3D.CULL_DISABLED
+			"house_window", "house_window_lit":
+				material.albedo_color = Color(0.09, 0.11, 0.14)
+				material.roughness = 0.12
+				material.metallic = 0.3
+				if name_key == "house_window_lit":
+					material.emission_enabled = true
+					material.emission = Color(1.0, 0.78, 0.45)
+					material.emission_energy_multiplier = 0.0
 			_:
 				material.albedo_color = Color(0.55, 0.57, 0.6)
 				material.metallic = 0.6
@@ -1858,6 +1956,121 @@ func _free_visuals(entry: Entry) -> void:
 	if entry.body:
 		entry.body.queue_free()
 		entry.body = null
+
+
+## Dörfer: Mesh, Schilder und Kollision je nach Entfernung, ganz weit weg vergessen
+func _update_villages(p: Vector2) -> void:
+	for cell: Vector2i in _villages.keys():
+		var village: Village = _villages[cell]
+		if village.task_id != -1:
+			if not WorkerThreadPool.is_task_completed(village.task_id):
+				continue
+			WorkerThreadPool.wait_for_task_completion(village.task_id)
+			village.task_id = -1
+		var distance := Vector2(village.center.x - p.x, village.center.z - p.y).length()
+		if distance > FORGET_DISTANCE:
+			_free_village(village)
+			_villages.erase(cell)
+			continue
+		if village.houses.is_empty():
+			continue
+		if distance < mesh_distance:
+			if village.mesh_instance == null:
+				_build_village(village)
+			var shadows := distance < village_shadow_distance
+			village.mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows \
+				else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		elif village.mesh_instance:
+			village.mesh_instance.queue_free()
+			village.mesh_instance = null
+		if distance < collision_distance and village.body == null:
+			village.body = StaticBody3D.new()
+			for box: Array in village.boxes:
+				var shape := BoxShape3D.new()
+				shape.size = box[1]
+				var collision := CollisionShape3D.new()
+				collision.shape = shape
+				collision.transform = box[0]
+				village.body.add_child(collision)
+			add_child(village.body)
+		elif distance > collision_distance + 100.0 and village.body:
+			village.body.queue_free()
+			village.body = null
+
+
+## Mesh eines Dorfs (eine Fläche pro Material) und die Ortsschilder
+func _build_village(village: Village) -> void:
+	var mesh := ArrayMesh.new()
+	var materials := {"wall": "house_wall", "roof": "house_roof", "window": "house_window",
+		"window_lit": "house_window_lit", "lamp": "lamp_glow"}
+	for key: String in village.surfaces:
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, village.surfaces[key])
+		mesh.surface_set_material(mesh.get_surface_count() - 1, _sign_material(materials[key]))
+	village.mesh_instance = MeshInstance3D.new()
+	village.mesh_instance.mesh = mesh
+	village.mesh_instance.position = village.center
+	add_child(village.mesh_instance)
+	var place := highways.place_name(village.cell)
+	for place_sign: Array in village.signs:
+		_village_sign(village.mesh_instance, (place_sign[0] as Vector3) - village.center, place_sign[1], place)
+
+
+## Gelbes Ortsschild: vorne der Name (für den Verkehr in den Ort hinein), hinten der Name mit
+## rotem Schrägstrich (Ortsende)
+func _village_sign(parent: Node3D, foot: Vector3, inward: Vector3, place: String) -> void:
+	var facing := Basis.looking_at(inward)
+	_box(parent, foot + Vector3.UP * 1.25 + inward * 0.06, Vector3(0.09, 2.5, 0.09), Basis(), "steel")
+	var panel := foot + Vector3.UP * 2.4
+	_box(parent, panel, Vector3(2.5, 1.3, 0.05), facing, "dark")
+	_box(parent, panel, Vector3(2.4, 1.2, 0.07), facing, "yellow")
+	var size := clampi(roundi(2.2 / (0.0058 * place.length())), 20, 52)
+	_sign_text(parent, place, panel - inward * 0.045, facing, size, Color(0.05, 0.05, 0.05))
+	var back := Basis.looking_at(-inward)
+	_sign_text(parent, place, panel + inward * 0.045, back, size, Color(0.05, 0.05, 0.05))
+	_box(parent, panel + inward * 0.05, Vector3(2.6, 0.13, 0.01), back * Basis(Vector3.BACK, 0.42), "red")
+
+
+## Nachts: echte Lichter an den nächsten Straßenlaternen der Dörfer (wenige, ohne Schatten)
+func _update_lantern_lights(night: float, p: Vector3) -> void:
+	if _lantern_lights.is_empty():
+		for k in village_light_count:
+			var light := OmniLight3D.new()
+			light.light_color = Color(1.0, 0.85, 0.62)
+			light.omni_range = 16.0
+			light.light_energy = 1.8
+			light.shadow_enabled = false
+			light.visible = false
+			add_child(light)
+			_lantern_lights.append(light)
+	var near: Array = []  # [Abstand², Lage]
+	if night > 0.5:
+		var limit := village_light_distance * village_light_distance
+		for village: Village in _villages.values():
+			if village.task_id != -1 or village.mesh_instance == null \
+					or village.center.distance_to(p) > Village.REACH + village_light_distance + 40.0:
+				continue
+			for head in village.lanterns:
+				var d := head.distance_squared_to(p)
+				if d < limit:
+					near.append([d, head])
+		near.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	for k in _lantern_lights.size():
+		var light := _lantern_lights[k]
+		light.visible = k < near.size()
+		if light.visible:
+			light.global_position = near[k][1]
+
+
+func _free_village(village: Village) -> void:
+	if village.task_id != -1:
+		WorkerThreadPool.wait_for_task_completion(village.task_id)
+		village.task_id = -1
+	if village.mesh_instance:
+		village.mesh_instance.queue_free()
+		village.mesh_instance = null
+	if village.body:
+		village.body.queue_free()
+		village.body = null
 
 
 func _free_junction(junction: RoadJunction) -> void:
