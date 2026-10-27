@@ -33,6 +33,8 @@ signal arrived
 @export var unknown_length_factor: float = 1.35
 ## Klickt man so nah an eine fertige Straße, liegt das Ziel genau dort (sonst am nächsten Ort)
 @export var snap_to_road_distance: float = 80.0
+## Klickt man so nah an eine Raststätte (Parkplatz-Mitte), ist sie das Ziel
+@export var rest_snap_distance: float = 150.0
 
 var has_target: bool = false
 var target: Vector3 = Vector3.ZERO
@@ -58,17 +60,24 @@ var _turns: Array = []
 var _steps: Array = []
 ## Orte mit Anschlussstelle: Vector2i -> Array von Vector3i (Achse, Linie, k)
 var _interchange_cache: Dictionary = {}
+## Ziel ist eine Raststätte: Vector4i(Achse, Linie, k, Richtung), sonst x = -2147483648
+var _target_rest := NO_REST
 var _progress: int = 0
 var _off_route_timer: float = 0.0
 var _refresh_timer: float = 0.0
 var _known_steps: int = 0
 
 const GOAL := Vector2i(2147483647, 2147483647)
+const NO_REST := Vector4i(-2147483648, 0, 0, 0)
 
 
 ## Ziel setzen (Weltposition, z. B. Klick auf der Karte) und Route planen
 func set_target(world_position: Vector3) -> void:
-	target = _snap_target(world_position)
+	_target_rest = _rest_near(world_position)
+	if _target_rest != NO_REST:
+		target = roads.highways.rest_area_at(_target_rest.x, _target_rest.y, _target_rest.z, _target_rest.w)["center"]
+	else:
+		target = _snap_target(world_position)
 	has_target = true
 	_trip_distance = 0.0
 	_trip_seconds = 0.0
@@ -225,6 +234,16 @@ func _snap_target(p: Vector3) -> Vector3:
 	return best
 
 
+## Raststätte, deren Parkplatz-Mitte höchstens rest_snap_distance entfernt ist (sonst NO_REST)
+func _rest_near(p: Vector3) -> Vector4i:
+	var reach := rest_snap_distance
+	for rest: Dictionary in roads.highways.rest_areas_in(Rect2(p.x - reach, p.z - reach, reach * 2.0, reach * 2.0)):
+		var c: Vector3 = rest["center"]
+		if Vector2(c.x - p.x, c.z - p.z).length() < reach:
+			return rest["id"]
+	return NO_REST
+
+
 func _cell_of(p: Vector3) -> Vector2i:
 	return Vector2i(floori(p.x / roads.cell_size), floori(p.z / roads.cell_size))
 
@@ -265,8 +284,18 @@ func _plan() -> void:
 		starts.append([cell, here.distance_to(node) / slow, [[null, here, node]]])
 	# Zielmöglichkeiten: [Ort, Sekunden von dort, letzte Schritte]
 	var goals: Array = []
-	var at_goal := _nearest_road_point(target, 5.0, true)
-	if not at_goal.is_empty():
+	var at_goal := _nearest_road_point(target, 5.0, true) if _target_rest == NO_REST else {}
+	if _target_rest != NO_REST:
+		# Schon auf dem Weg in die Raststätte (Autobahn davor, Ausfahrt, Parkplatz)?
+		if not on_road.is_empty() and _rest_direct(on_road["key"], on_road["index"]):
+			_build_route()
+			return
+		var rest := _target_rest
+		var pair := _highway_step_key(rest.x, rest.y, rest.z - rest.w, rest.w)
+		var seconds := maxf(_length(pair[0]) - RoadNetwork.RAMP_LENGTH, 0.0) / (highway_speed_kmh / 3.6) \
+			+ (_length(RoadNetwork.rest_key(rest.x, rest.y, rest.z, rest.w, 1)) + HighwayLayout.REST_HALF_LENGTH) / slow
+		goals.append([Vector4i(rest.x, rest.y, rest.z - rest.w, rest.w), seconds, _rest_arrival(rest, -1)])
+	elif not at_goal.is_empty():
 		var key: Vector3i = at_goal["key"]
 		var n := roads.edge_segment(key).points.size()
 		var i: int = at_goal["index"]
@@ -300,6 +329,40 @@ func _plan() -> void:
 	_build_route()
 
 
+## Letzte Schritte in die Ziel-Raststätte: Autobahn bis zur Ausfahrt (ab from, -1 = ab dem
+## Stützpunkt davor), Ausfahrt, Parkplatz bis zur Mitte
+func _rest_arrival(rest: Vector4i, from: int) -> Array:
+	var pair := _highway_step_key(rest.x, rest.y, rest.z - rest.w, rest.w)
+	var exit_start := roads.rest_ends(rest.x, rest.y, rest.z, rest.w, 1)[0]
+	var center: Vector3 = roads.highways.rest_area_at(rest.x, rest.y, rest.z, rest.w)["center"]
+	return [[pair[0], pair[1], from, exit_start], [RoadNetwork.rest_key(rest.x, rest.y, rest.z, rest.w, 1), true, -1, -1],
+		[RoadNetwork.rest_key(rest.x, rest.y, rest.z, rest.w, 0), true, 0, Vector2(center.x, center.z)]]
+
+
+## Steht das Auto schon auf dem Weg in die Ziel-Raststätte? Dann direkt hin (setzt _steps).
+func _rest_direct(key: Vector3i, i: int) -> bool:
+	var rest := _target_rest
+	var arrival := _rest_arrival(rest, i)
+	var segment := roads.edge_segment(key)
+	if key == arrival[0][0]:
+		# Autobahn-Abschnitt davor: nur in Fahrtrichtung und vor dem Beginn der Ausfahrt
+		var forward: bool = arrival[0][1]
+		var exit_index := _resolve(segment.points, arrival[0][3], 0)
+		var ahead := i < exit_index if forward else i > exit_index
+		var travel := segment.direction_at(i) * (1.0 if forward else -1.0)
+		if not ahead or travel.dot(_car_forward()) < 0.0:
+			return false
+		_steps = arrival
+		return true
+	if key == arrival[1][0]:
+		_steps = [[key, true, i, -1], arrival[2]]
+		return true
+	if key == arrival[2][0] and i <= _resolve(segment.points, arrival[2][3], 0):
+		_steps = [[key, true, i, arrival[2][3]]]
+		return true
+	return false
+
+
 ## Wie es von einer Stelle auf einem Abschnitt weitergeht: [[Knoten, Sekunden, Schritte], ...].
 ## Auf Landstraßen in beide Richtungen (wenden geht), auf Autobahn und Rampen nur vorwärts.
 func _starts_on(key: Vector3i, i: int) -> Array:
@@ -311,6 +374,8 @@ func _starts_on(key: Vector3i, i: int) -> Array:
 		return [[roads.edge_end_cell(key), (n - 1 - i) * spacing / slow, [[key, true, i, n - 1]]],
 			[Vector2i(key.x, key.y), i * spacing / slow, [[key, false, i, 0]]]]
 	var axis := RoadNetwork.highway_axis(key)
+	if RoadNetwork.is_rest_key(key):
+		return [_leave_rest(key, i)]
 	if RoadNetwork.is_highway_key(key):
 		if roads.edge_segment(key).direction_at(i).dot(_car_forward()) >= 0.0:
 			return [[Vector4i(axis, key.y, key.x + 1, 1), (n - 1 - i) * spacing / fast, [[key, true, i, n - 1]]]]
@@ -336,6 +401,27 @@ func _starts_on(key: Vector3i, i: int) -> Array:
 			[[key, true, i, n - 1], [pair[0], pair[1], ends[1], -1]]]]
 	# Ausfahrt: über den Zubringer zum Ort
 	return [[interchange["cell"], rest, [[key, true, i, n - 1], [connector, false, ends[1], 0]]]]
+
+
+## Aus der Raststätte zurück auf die Autobahn (Ausfahrt → Parkplatz → Einfahrt) bis zum
+## nächsten Stützpunkt: [Knoten, Sekunden, Schritte]
+func _leave_rest(key: Vector3i, i: int) -> Array:
+	var slow := average_speed_kmh / 3.6
+	var axis := RoadNetwork.highway_axis(key)
+	var dir := RoadNetwork.rest_dir(key)
+	var n := roads.edge_segment(key).points.size()
+	var seconds := (n - 1 - i) * RoadSegment.POINT_SPACING / slow
+	var steps: Array = [[key, true, i, n - 1]]
+	var order: Array[int] = [1, 0, 2]
+	for k in range(order.find(RoadNetwork.rest_part(key)) + 1, 3):
+		var later := RoadNetwork.rest_key(axis, key.y, key.x, dir, order[k])
+		seconds += _length(later) / slow
+		steps.append([later, true, -1, -1])
+	var pair := _highway_step_key(axis, key.y, key.x, dir)
+	var entry_end := roads.rest_ends(axis, key.y, key.x, dir, 2)[1]
+	seconds += maxf(_length(pair[0]) - RoadNetwork.RAMP_LENGTH, 0.0) / (highway_speed_kmh / 3.6)
+	steps.append([pair[0], pair[1], entry_end, -1])
+	return [Vector4i(axis, key.y, key.x + dir, dir), seconds, steps]
 
 
 ## Fahrtrichtung des Autos (flach)
@@ -382,6 +468,11 @@ func _fallback_ends(key: Vector3i) -> Array:
 	var axis := RoadNetwork.highway_axis(key)
 	if RoadNetwork.is_highway_key(key):
 		return [roads.highways.control_point(axis, key.y, key.x), roads.highways.control_point(axis, key.y, key.x + 1)]
+	if RoadNetwork.is_rest_key(key):
+		var dir := RoadNetwork.rest_dir(key)
+		var y: float = roads.highways.control_point(axis, key.y, key.x).y
+		var rest_ends := roads.rest_ends(axis, key.y, key.x, dir, RoadNetwork.rest_part(key))
+		return [Vector3(rest_ends[0].x, y, rest_ends[0].y), Vector3(rest_ends[1].x, y, rest_ends[1].y)]
 	var interchange := roads.highways.interchange_at(axis, key.y, key.x)
 	var point: Vector3 = interchange["point"]
 	var part := RoadNetwork.interchange_part(key)
@@ -623,6 +714,15 @@ static func _resolve(points: PackedVector3Array, anchor: Variant, fallback: int)
 func _joint_turn(index: int, after: Array) -> Array:
 	if after[0] != null:
 		var key: Vector3i = after[0]
+		if RoadNetwork.is_rest_key(key):
+			match RoadNetwork.rest_part(key):
+				1:
+					var rest := roads.highways.rest_area_at(RoadNetwork.highway_axis(key), key.y, key.x, RoadNetwork.rest_dir(key))
+					return [index, -1, "Zur Rastanlage", (rest["name"] as String).trim_prefix("Rastanlage ")]
+				2:
+					var onto := _turn_at(index)
+					return [index, onto if onto != 0 else -1, "Auf die Autobahn", ""]
+			return []
 		if RoadNetwork.is_interchange_key(key) and RoadNetwork.interchange_part(key) != 0:
 			if _is_exit(key):
 				var interchange := roads.highways.interchange_at(RoadNetwork.highway_axis(key), key.y, key.x)

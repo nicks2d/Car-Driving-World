@@ -22,7 +22,7 @@ const CONTROL_WANDER: float = 900.0
 const WANDER_KNOT: int = 4
 ## Am Stützpunkt wird bis zu so weit daneben die günstigste Stelle gesucht (Meter, quer).
 ## Mehr macht engere Kurven (S-Kurve zwischen zwei Stützpunkten).
-const LOCAL_SEARCH: float = 120.0
+const LOCAL_SEARCH: float = 60.0
 ## Gerades Stück an jedem Stützpunkt, an möglichen Anschlussstellen länger (Rampen)
 const LEAD: float = 150.0
 ## Höhe der Fahrbahn an den Stützpunkten: höchstens so viel über dem Talboden (darüber Tunnel)
@@ -30,14 +30,27 @@ const MAX_ABOVE_FLOOR: float = 50.0
 ## Ein Stützpunkt liegt höchstens so viel über oder unter der Mitte seiner Nachbarn (sonst
 ## wird es zwischen zwei Stützpunkten zu steil)
 const HEIGHT_SMOOTHING: float = 15.0
-## Nur an jedem zweiten Stützpunkt eine Anschlussstelle (also höchstens alle 3,2 km)
-const INTERCHANGE_EVERY: int = 2
+## An jedem Stützpunkt kann eine Anschlussstelle liegen (also höchstens alle 1,6 km)
+const INTERCHANGE_EVERY: int = 1
 ## Abstand Ort–Autobahn an einer Anschlussstelle (Länge des Zubringers bis zur Autobahn)
 const INTERCHANGE_MIN: float = 220.0
-const INTERCHANGE_REACH: float = 900.0
-## An einer Anschlussstelle liegt das Gelände höchstens so viel über oder unter der Autobahn
-## (sonst Tunnel oder Brücke, an die keine Rampe anschließen kann)
-const INTERCHANGE_MAX_CUT: float = 12.0
+const INTERCHANGE_REACH: float = 1100.0
+## An einer Anschlussstelle darf die Autobahn nicht im Tunnel liegen: Gelände am Stützpunkt
+## höchstens so viel darüber (Portaltiefe 12 m), im Bereich der Rampen höchstens so viel
+## (Tunnel ab 25 m). Darunter (Damm, Brücke) bis INTERCHANGE_MAX_FILL.
+const INTERCHANGE_MAX_CUT: float = 10.0
+const INTERCHANGE_RAMP_CUT: float = 22.0
+const INTERCHANGE_MAX_FILL: float = 30.0
+## Raststätten: je Fahrtrichtung in einem Fenster von REST_WINDOW Stützpunkten alle
+## REST_EVERY Stützpunkte (17,6 km), am ersten Stützpunkt im Fenster, an dem das Gelände passt
+const REST_EVERY: int = 11
+const REST_WINDOW: int = 5
+## Abstand der Parkplatz-Mitte von der Autobahn-Mitte, halbe Länge und Breite des Parkplatzes
+const REST_OFFSET: float = 78.0
+const REST_HALF_LENGTH: float = 110.0
+const REST_WIDTH: float = 46.0
+## So weit vom Parkplatz aus wird nach Seeblick bzw. Bergblick gesucht
+const REST_VIEW_DISTANCE: float = 3000.0
 ## So weit bleiben Orte von der Mittellinie weg
 const PLACE_CLEARANCE: float = 220.0
 
@@ -56,6 +69,8 @@ var _interchanges: Dictionary = {}  # Vector3i(Achse, Linie, k) -> Dictionary (l
 var _centerlines: Dictionary = {}  # Vector3i(Achse, Linie, k) -> PackedVector2Array
 var _boxes: Dictionary = {}  # Vector3i(Achse, Linie, k) -> Rect2 um die Mittellinie
 var _knots: Dictionary = {}  # Vector3i(Achse, Linie, j) -> float
+var _rests: Dictionary = {}  # Vector4i(Achse, Linie, k, Richtung) -> Dictionary (leer = keine)
+var _rest_choices: Dictionary = {}  # Vector4i(Achse, Linie, erster k, Richtung) -> k
 
 
 func _init(gen: WorldGen, network: RoadNetwork) -> void:
@@ -267,9 +282,124 @@ func interchange_at(axis: int, line: int, k: int) -> Dictionary:
 	if _interchanges.has(id):
 		return _interchanges[id]
 	var result := {}
-	if posmod(k, INTERCHANGE_EVERY) == 0 and line_exists(axis, line):
+	# Wo eine Raststätte liegt, ist kein Platz für eine Anschlussstelle
+	if posmod(k, INTERCHANGE_EVERY) == 0 and line_exists(axis, line) \
+			and rest_area_at(axis, line, k, 1).is_empty() and rest_area_at(axis, line, k, -1).is_empty():
 		result = _find_interchange(axis, line, k)
 	_interchanges[id] = result
+	return result
+
+
+## Raststätte am Stützpunkt k für die Fahrtrichtung dir (+1 = wachsende Stützpunkte, -1 =
+## umgekehrt), auf der Seite dieser Fahrbahn: {"id": Vector4i(Achse, Linie, k, Richtung),
+## "point": Stützpunkt, "travel": Fahrtrichtung
+## (x/z), "side": Richtung von der Autobahn weg (x/z), "center": Parkplatz-Mitte (Vector3),
+## "name": „Rastanlage …“, "view": "lake" (Seeblick), "mountain" (Bergblick) oder ""}.
+## Leer, wenn keine.
+func rest_area_at(axis: int, line: int, k: int, dir: int) -> Dictionary:
+	var id := Vector4i(axis, line, k, dir)
+	if _rests.has(id):
+		return _rests[id]
+	var result := {}
+	if line_exists(axis, line):
+		# Fenster je Richtung versetzt, damit sich die Raststätten der beiden Seiten abwechseln
+		var rng := RandomNumberGenerator.new()
+		rng.seed = world_gen.hash_cell(line, axis * 2 + (1 if dir > 0 else 0), 811)
+		var offset := rng.randi_range(0, REST_EVERY - 1) + (0 if dir > 0 else floori(REST_EVERY / 2.0))
+		var slot := posmod(k - offset, REST_EVERY)
+		if slot < REST_WINDOW and _rest_choice(axis, line, k - slot, dir) == k:
+			result = _make_rest(axis, line, k, dir)
+	_rests[id] = result
+	return result
+
+
+## Welcher Stützpunkt im Fenster ab first bekommt die Raststätte? Zuerst einer, an dem
+## ohnehin keine Anschlussstelle möglich wäre (Raststätten liegen zwischen den Orten), sonst
+## der erste, an dem sie überhaupt passt. Kein passender: -2147483648.
+func _rest_choice(axis: int, line: int, first: int, dir: int) -> int:
+	var id := Vector4i(axis, line, first, dir)
+	if not _rest_choices.has(id):
+		_rest_choices[id] = _find_rest_choice(axis, line, first, dir)
+	return _rest_choices[id]
+
+
+func _find_rest_choice(axis: int, line: int, first: int, dir: int) -> int:
+	var fallback := -2147483648
+	for k in range(first, first + REST_WINDOW):
+		if not _rest_fits(axis, line, k, dir):
+			continue
+		if _find_interchange(axis, line, k).is_empty():
+			return k
+		if fallback == -2147483648:
+			fallback = k
+	return fallback
+
+
+## Passt eine Raststätte hierher? Autobahn an der Oberfläche (wie bei Anschlussstellen) und
+## neben der Fahrbahn ein Stück Land ohne Wasser, nicht viel höher oder tiefer
+func _rest_fits(axis: int, line: int, k: int, dir: int) -> bool:
+	var point := control_point(axis, line, k)
+	var q := Vector2(point.x, point.z)
+	var travel := direction_at(axis, line, k) * float(dir)
+	var side := Vector2(-travel.y, travel.x)
+	var along_offset := -(RoadNetwork.RAMP_LENGTH + 60.0)
+	while along_offset <= RoadNetwork.RAMP_LENGTH + 60.0:
+		var p := q + travel * along_offset
+		var lakes: Array = world_gen.lakes_near(Rect2(p - Vector2(120, 120), Vector2(240, 240)))
+		var above := world_gen.terrain_height(p.x, p.y, lakes) - point.y
+		var max_cut := INTERCHANGE_MAX_CUT if absf(along_offset) < 1.0 else INTERCHANGE_RAMP_CUT
+		if above > max_cut or above < -INTERCHANGE_MAX_FILL:
+			return false
+		# Parkplatz daneben: trocken und höchstens 12 m über oder unter der Fahrbahn
+		if absf(along_offset) <= REST_HALF_LENGTH + 30.0:
+			for lateral: float in [REST_OFFSET - REST_WIDTH * 0.5, REST_OFFSET, REST_OFFSET + REST_WIDTH * 0.5]:
+				var r := p + side * lateral
+				if world_gen.water_level_at(r.x, r.y, lakes) > WorldGen.NO_WATER:
+					return false
+				if absf(world_gen.terrain_height(r.x, r.y, lakes) - point.y) > 12.0:
+					return false
+		along_offset += 60.0
+	return true
+
+
+func _make_rest(axis: int, line: int, k: int, dir: int) -> Dictionary:
+	var point := control_point(axis, line, k)
+	var q := Vector2(point.x, point.z)
+	var travel := direction_at(axis, line, k) * float(dir)
+	var side := Vector2(-travel.y, travel.x)
+	var center := q + side * REST_OFFSET
+	var cell := Vector2i(floori(center.x / roads.cell_size), floori(center.y / roads.cell_size))
+	# Aussicht: See in Blickrichtung (bis 700 m) oder hohe Berge (bis 3 km)
+	var view := ""
+	var highest := -INF
+	for angle: float in [-0.6, 0.0, 0.6]:
+		var look := side.rotated(angle)
+		for d: float in [200.0, 400.0, 700.0]:
+			var p := center + look * d
+			var lakes: Array = world_gen.lakes_near(Rect2(p - Vector2.ONE, Vector2(2, 2)))
+			if world_gen.water_level_at(p.x, p.y, lakes) > WorldGen.NO_WATER:
+				view = "lake"
+		for d: float in [1000.0, 2000.0, REST_VIEW_DISTANCE]:
+			var p := center + look * d
+			highest = maxf(highest, world_gen.terrain_height(p.x, p.y, []))
+	if view == "" and highest > point.y + 450.0:
+		view = "mountain"
+	return {"id": Vector4i(axis, line, k, dir), "point": point, "travel": travel, "side": side,
+		"center": Vector3(center.x, point.y, center.y), "name": "Rastanlage " + place_name(cell), "view": view}
+
+
+## Alle Raststätten, deren Parkplatz-Mitte in diesem Bereich liegt (für Karte, Navi und
+## Aussichtspunkte). Für große Bereiche teuer, beim ersten Mal (danach gemerkt).
+func rest_areas_in(rect: Rect2) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for section: Array in sections_touching(rect):
+		for dir: int in [1, -1]:
+			var rest := rest_area_at(section[0], section[1], section[2], dir)
+			if rest.is_empty():
+				continue
+			var center: Vector3 = rest["center"]
+			if rect.has_point(Vector2(center.x, center.z)):
+				result.append(rest)
 	return result
 
 
@@ -281,15 +411,15 @@ func _find_interchange(axis: int, line: int, k: int) -> Dictionary:
 	var dir := direction_at(axis, line, k)
 	# Die Rampen brauchen die Autobahn an der Oberfläche: kein Tunnel, kein tiefer Einschnitt,
 	# keine hohe Brücke im Bereich der Rampen
-	var normal_dir := Vector2(dir.y, -dir.x)
 	var reach := RoadNetwork.RAMP_LENGTH + 60.0
 	var along_offset := -reach
 	while along_offset <= reach:
-		for side_offset: float in [-30.0, 0.0, 30.0]:
-			var p := q + dir * along_offset + normal_dir * side_offset
-			var lakes: Array = world_gen.lakes_near(Rect2(p - Vector2.ONE, Vector2(2.0, 2.0)))
-			if absf(world_gen.terrain_height(p.x, p.y, lakes) - point.y) > INTERCHANGE_MAX_CUT:
-				return {}
+		var p := q + dir * along_offset
+		var lakes: Array = world_gen.lakes_near(Rect2(p - Vector2.ONE, Vector2(2.0, 2.0)))
+		var above := world_gen.terrain_height(p.x, p.y, lakes) - point.y
+		var max_cut := INTERCHANGE_MAX_CUT if absf(along_offset) < 1.0 else INTERCHANGE_RAMP_CUT
+		if above > max_cut or above < -INTERCHANGE_MAX_FILL:
+			return {}
 		along_offset += 60.0
 	var normal := Vector2(dir.y, -dir.x)
 	var best: Dictionary = {}
@@ -304,7 +434,7 @@ func _find_interchange(axis: int, line: int, k: int) -> Dictionary:
 			var place := node as Vector3
 			var offset := Vector2(place.x, place.z) - q
 			var distance := absf(offset.dot(normal))
-			if distance < INTERCHANGE_MIN or distance > INTERCHANGE_REACH or absf(offset.dot(dir)) > distance * 1.2 \
+			if distance < INTERCHANGE_MIN or distance > INTERCHANGE_REACH or absf(offset.dot(dir)) > distance * 1.5 \
 					or offset.length() >= best_distance:
 				continue
 			var leave := _free_leave(place_cell, -offset.normalized())
@@ -318,9 +448,9 @@ func _find_interchange(axis: int, line: int, k: int) -> Dictionary:
 	return best
 
 
-## Freie Richtung am Ort, möglichst nah an toward (höchstens 60° daneben), sonst Vector2.ZERO
+## Freie Richtung am Ort, möglichst nah an toward (höchstens 70° daneben), sonst Vector2.ZERO
 func _free_leave(cell: Vector2i, toward: Vector2) -> Vector2:
-	for step in 13:
+	for step in 15:
 		var angle := deg_to_rad(ceili(step / 2.0) * 10.0 * (1.0 if step % 2 == 1 else -1.0))
 		var direction := toward.rotated(angle)
 		if _free_direction(cell, direction):

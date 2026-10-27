@@ -315,16 +315,19 @@ assets/
   ohne Wegsuche: gerade Stücke an den Stützpunkten (150 m, an möglichen Anschlussstellen 310 m),
   dazwischen Hermite-Kurve. Warum: Unabhängige Stützpunkte (±400 m) ergaben S-Kurven mit
   ~340 m Radius, der Autopilot flog bei 250 km/h in die Brüstung.
-- Autobahn gemessen auf 40 × 40 km: 234 Abschnitte, alle gültig, kleinster Radius 888 m,
-  Steigung ≤ 4 % (Notlösung: liegen Stützpunkte zu weit übereinander, steigt `max_grade` etwas,
-  einmal 4,2 %, statt einer Lücke), Tunnel 34 %, Brücken 14 %, Anschlussstelle etwa alle 5 km.
+- Autobahn gemessen auf 40 × 40 km: 234 Abschnitte, alle gültig, kleinster Radius 888 m
+  (seit Teil 4 des Umbaus: 1109 m), Steigung ≤ 4 % (Notlösung: liegen Stützpunkte zu weit
+  übereinander, steigt `max_grade` etwas, einmal 4,2 %, statt einer Lücke), Tunnel 34 %,
+  Brücken 14 %. Anschlussstellen: 73 Stück, auf offener Strecke etwa alle 3,2 km (über alles
+  ~5 km, weil an Tunneln und hohen Brücken keine gehen).
   Autobahn 0,23 km/km², Landstraßen 0,97 km/km² → **Anteil Autobahn 19 %**.
 - Querschnitt 25,5 m: je Richtung 2 × 3,75 m plus 2,5 m Standstreifen, Mittelstreifen mit
   Leitplanke, Leitpfosten alle 48 m mit Rückstrahlern (`reflector.gdshader`, leuchten im
-  Scheinwerferlicht), Querneigung bis 2,5 %. Shader `road.gdshader`: `lane_profile` 0/1/2 =
-  Landstraße/Autobahn/Rampe.
-- Anschlussstellen (Raute) an jedem 2. Stützpunkt, wenn ein Ort 220–900 m daneben liegt und
-  Richtung Autobahn Platz hat (≥ 50° zu seinen Straßen). Der Zubringer verlässt den Ort in
+  Scheinwerferlicht), Querneigung bis 2,5 %. Shader `road.gdshader`: `lane_profile` 0/1/2/3 =
+  Landstraße/Autobahn/Rampe/Parkplatz.
+- Anschlussstellen (Raute) an jedem Stützpunkt (`INTERCHANGE_EVERY` 1, vorher jeder 2.), wenn
+  ein Ort 220–1100 m daneben liegt und Richtung Autobahn Platz hat (≥ 50° zu seinen Straßen,
+  gesucht in 15 Richtungen ±70°). Der Zubringer verlässt den Ort in
   einer freien Richtung, schwenkt im Bogen und überquert die Autobahn rechtwinklig (endet 150 m
   dahinter). Rampen 280 m. Schlüssel: Autobahn (k, Linie, 2 + Achse), Anschlussstelle
   (k, Linie, 10 + 10·Achse + Teil), Teil 0 = Zubringer, 1–4 = Ausfahrt/Einfahrt links/rechts.
@@ -449,6 +452,36 @@ assets/
   AudioStreamGenerator mit zwei Tönen je Auto (`horn_tones`, z. B. M2 410/505 Hz) plus
   Obertönen. HUD: grüne Pfeile oben im Tacho-Panel, rotes Warndreieck. Test: `--signal=left`.
   Fotomodus: rauf/runter jetzt R/F, Schärfe G (Q/E sind die Blinker).
+- Raststätten (Teil 4, `HighwayLayout.rest_area_at`): je Fahrtrichtung in einem Fenster von
+  5 Stützpunkten alle 11 (17,6 km), am ersten Stützpunkt, an dem Autobahn und Parkplatz an der
+  Oberfläche liegen (Gelände ±12 m, trocken), bevorzugt dort, wo keine Anschlussstelle geht
+  (beide schließen sich aus). Gemessen auf 40 × 40 km: 26 Raststätten, auf offener Strecke
+  etwa alle 17–20 km je Richtung, 11 mit Bergblick. Name „Rastanlage“ + Ortsname der Zelle.
+  Schlüssel (k, Linie, 40 + 10·Achse + 0/5 je Richtung + Teil), Teil 0 = Parkplatz, 1 =
+  Ausfahrt, 2 = Einfahrt (Art RAMP, Bezier, flach auf Stützpunkt-Höhe).
+- Parkplatz (`_make_rest_segment`, Shader-Profil 3): 220 × 46 m, 78 m neben der Autobahn-Mitte.
+  Quer vom autobahnseitigen Rand: Fahrgasse 0–9 m, drei Reihen Stellplätze (along 12–145),
+  dahinter die Tankstelle ohne Markierung, ab 34 m heller gepflasterter Vorplatz. Gerade
+  Enden (`RoadSegment.square_ends`, Kappe 2 in `road_query.gd`): sonst ebnen die Halbkreise der
+  Stücke einen 25-m-Erdfleck hinter das Parkplatzende.
+- Ausstattung (`RoadNetwork._add_rest_props`, Kästchen wie die Schilder): Tankstellendach
+  20 × 34 m mit leuchtender Unterseite, 3 Zapfsäulen-Inseln, Kasse, Mast „Tankstelle“, Rasthof
+  (10 × 34 m, Fensterfront), Laternen alle 40 m, Bänke, Bäume, bei Aussicht braunes Schild
+  „Seeblick“/„Bergblick“. Nachts: Leucht-Materialien heller (`_update_night_glow`, alle 0,25 s)
+  und 3 OmniLights ohne Schatten pro Raststätte, nur bis `rest_light_distance` (260 m) am Auto.
+  Schilder: blau 2000 m und 500 m vorher (Ort, „Rastanlage“, Zapfsäule und Tasse, Entfernung),
+  „Rastanlage“ am Beginn der Ausfahrt.
+- Karte: Zapfsäule im Kreis an jeder Raststätte (bis 24 m/px, gesucht pro 4-km-Feld, höchstens
+  zwei neue Felder pro Bild). Navi: Klick bis 150 m an eine Raststätte = Ziel; Route über den
+  Stützpunkt davor, Ausfahrt, Parkplatz (Ansage „Zur Rastanlage“). Steht man schon davor oder
+  darin, direkt. Raststätten mit Aussicht zählen als Aussichtspunkt („R…“-Kennung, entdeckt
+  unter 5 km/h bis 110 m an der Mitte), auf der Karte als Abzeichen neben der Zapfsäule.
+- Autobahnkreuz: nicht gebaut. Kreuzungen zweier Autobahnen bleiben Überführungen (die
+  Schleifenrampen bräuchten eigene Trassierung zwischen Tunneln und Brücken).
+- Testen: Raststätte Falkenweiler `--pos=9560,-3988 --heading=90` (auf dem Parkplatz),
+  von oben `--pos=9450,-3988 --highway --heading=90 --fly=110 --pitch=-55 --lookat=9604,-3988`,
+  Schild 500 m `--pos=8790,-4056 --highway --heading=90`, Navi `--target=9604,-3982`,
+  Bergblick Fichtenstein `--pos=-6420,-10337 --heading=90`.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

@@ -85,6 +85,14 @@ static func draw(canvas: CanvasItem, icon: String, center: Vector2, size: float,
 		"pin":
 			canvas.draw_arc(at.call(0.0, -3.0), 6.0 * s, 0.0, TAU, 20, color, w, true)
 			canvas.draw_polyline(PackedVector2Array([at.call(-5.0, 0.5), at.call(0.0, 10.0), at.call(5.0, 0.5)]), color, w, true)
+		"fuel":
+			# Zapfsäule mit Anzeige und Schlauch
+			canvas.draw_rect(Rect2(at.call(-8.0, -9.0), Vector2(10.0, 18.0) * s), color, false, w)
+			canvas.draw_rect(Rect2(at.call(-5.5, -6.5), Vector2(5.0, 4.0) * s), color, true)
+			canvas.draw_line(at.call(-10.0, 9.0), at.call(4.0, 9.0), color, w, true)
+			canvas.draw_polyline(PackedVector2Array([at.call(2.0, -4.0), at.call(6.0, -4.0), at.call(7.5, -2.0),
+				at.call(7.5, 4.0), at.call(9.0, 5.5)]), color, w, true)
+			canvas.draw_line(at.call(6.0, -9.0), at.call(8.5, -6.0), color, w, true)
 		"warning":
 			canvas.draw_polyline(PackedVector2Array([at.call(0.0, -9.0), at.call(10.0, 8.0), at.call(-10.0, 8.0),
 				at.call(0.0, -9.0)]), color, w, true)

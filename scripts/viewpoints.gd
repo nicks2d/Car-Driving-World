@@ -6,6 +6,7 @@ extends Node
 ## Straßenabschnitt nach seiner Berechnung im Hintergrund aus (find_spot), Parkbucht und
 ## Gelände baut RoadNetwork. Hält man dort an, ist der Punkt entdeckt (gespeichert in
 ## user://), die Karte zeigt entdeckte mit Kamera, die übrigen in der Nähe mit „?“.
+## Raststätten mit Seeblick oder Bergblick zählen auch als Aussichtspunkt (Kennung „R…“).
 
 @export var roads: RoadNetwork
 @export var car: Car
@@ -21,6 +22,9 @@ const CHANCE: float = 0.22
 const REGION_CELLS: int = 6
 const SAVE_PATH := "user://aussichtspunkte.cfg"
 const KIND_NAMES := {"view": "Aussicht", "lake": "Seeufer", "pass": "Passhöhe"}
+const REST_VIEW_NAMES := {"lake": "Seeblick", "mountain": "Bergblick"}
+## Auf dem Parkplatz einer Raststätte mit Aussicht: so nah an der Mitte (Meter)
+const REST_DISCOVER_RADIUS: float = 110.0
 ## Parkbucht: halbe Länge der vollen Breite (danach läuft sie über 12 m schräg aus) und Breite
 const BAY_HALF_LENGTH: float = 16.0
 const BAY_WIDTH: float = 7.0
@@ -46,6 +50,24 @@ static func has_spot(world_gen: WorldGen, key: Vector3i) -> bool:
 
 static func spot_id(key: Vector3i) -> String:
 	return "%d,%d,%d" % [key.x, key.y, key.z]
+
+
+static func rest_spot_id(id: Vector4i) -> String:
+	return "R%d,%d,%d,%d" % [id.x, id.y, id.z, id.w]
+
+
+## Raststätten mit Aussicht in einem Bereich
+func _scenic_rests(rect: Rect2) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for rest: Dictionary in roads.highways.rest_areas_in(rect):
+		if rest["view"] != "":
+			result.append(rest)
+	return result
+
+
+## Name einer Raststätte mit Aussicht, z. B. „Bergblick an der Rastanlage Tannbach“
+static func rest_spot_name(rest: Dictionary) -> String:
+	return "%s an der %s" % [REST_VIEW_NAMES[rest["view"]], rest["name"]]
 
 
 ## Abstand der Buchtmitte zur Straßenmitte
@@ -178,6 +200,11 @@ func region_counts(cell: Vector2i) -> Array:
 				total += 1
 				if _found.has(spot_id(key)):
 					found += 1
+	var region_size := REGION_CELLS * roads.cell_size
+	for rest in _scenic_rests(Rect2(Vector2(region) * region_size, Vector2(region_size, region_size))):
+		total += 1
+		if _found.has(rest_spot_id(rest["id"])):
+			found += 1
 	return [found, total]
 
 
@@ -202,14 +229,27 @@ func _check_discovery() -> void:
 		var center: Vector3 = segment.viewpoint["center"]
 		if Vector2(center.x - p.x, center.z - p.z).length() < discover_radius:
 			_discover(key, segment)
+	var reach := REST_DISCOVER_RADIUS
+	for rest in _scenic_rests(Rect2(p.x - reach, p.z - reach, reach * 2.0, reach * 2.0)):
+		var center: Vector3 = rest["center"]
+		var id := rest_spot_id(rest["id"])
+		if not _found.has(id) and Vector2(center.x - p.x, center.z - p.z).length() < reach:
+			_found[id] = {"name": rest_spot_name(rest), "kind": "rest", "x": center.x, "z": center.z,
+				"time": Time.get_unix_time_from_system(), "photo": ""}
+			_announce(Vector2i(floori(center.x / roads.cell_size), floori(center.z / roads.cell_size)))
 
 
 func _discover(key: Vector3i, segment: RoadSegment) -> void:
 	var center: Vector3 = segment.viewpoint["center"]
 	_found[spot_id(key)] = {"name": spot_name(key, segment.viewpoint), "kind": segment.viewpoint["kind"],
 		"x": center.x, "z": center.z, "time": Time.get_unix_time_from_system(), "photo": ""}
+	_announce(Vector2i(key.x, key.y))
+
+
+## Speichern und melden: „Aussichtspunkt entdeckt, 3 von 12 in dieser Gegend“
+func _announce(cell: Vector2i) -> void:
 	_save()
-	var counts := region_counts(Vector2i(key.x, key.y))
+	var counts := region_counts(cell)
 	Toasts.post(get_tree(), "view", "Aussichtspunkt entdeckt", "%d von %d in dieser Gegend" % [counts[0], counts[1]],
 		"P", "Foto")
 	_update_map_spots()
@@ -240,6 +280,10 @@ func _update_map_spots() -> void:
 					position = Vector2(a.x + b.x, a.z + b.z) * 0.5
 				if position.distance_to(Vector2(p.x, p.z)) < map_radius:
 					map_spots.append({"id": spot_id(key), "position": position, "found": _found.has(spot_id(key))})
+	for rest in _scenic_rests(Rect2(p.x - map_radius, p.z - map_radius, map_radius * 2.0, map_radius * 2.0)):
+		var center: Vector3 = rest["center"]
+		var id := rest_spot_id(rest["id"])
+		map_spots.append({"id": id, "position": Vector2(center.x, center.z), "found": _found.has(id), "rest": true})
 
 
 ## Ein Foto wurde gespeichert: dem nächsten entdeckten Aussichtspunkt (bis 150 m) zuordnen

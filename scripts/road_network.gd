@@ -31,6 +31,10 @@ extends Node3D
 ## Material der Autobahn und der Rampen (road.gdshader mit lane_profile 1 bzw. 2)
 @export var highway_material: Material
 @export var ramp_material: Material
+## Parkplatz der Raststätten (road.gdshader mit lane_profile 3)
+@export var parking_material: Material
+## Echte Lichter an Raststätten nur nachts und bis zu dieser Entfernung vom Auto
+@export var rest_light_distance: float = 260.0
 ## Leitpfosten: Pfosten (Punktfarben) und Rückstrahler (leuchten im Scheinwerferlicht)
 @export var post_material: Material
 @export var reflector_material: Material
@@ -116,6 +120,9 @@ var _missing: Dictionary = {}  # Vector3i -> true
 var _running: int = 0
 var _update_timer: float = 0.0
 var _velocity := Vector2.ZERO
+var _rest_lights: Array[OmniLight3D] = []
+var _glow_timer: float = 0.0
+var _day_night: DayNight
 var _last_target := Vector2.ZERO
 
 
@@ -168,6 +175,8 @@ func start(gen: WorldGen, follow: Node3D) -> void:
 		(highway_material as ShaderMaterial).set_shader_parameter("road_width", HIGHWAY_WIDTH)
 	if ramp_material is ShaderMaterial:
 		(ramp_material as ShaderMaterial).set_shader_parameter("road_width", RAMP_WIDTH)
+	if parking_material is ShaderMaterial:
+		(parking_material as ShaderMaterial).set_shader_parameter("road_width", HighwayLayout.REST_WIDTH)
 
 
 # ---------------------------------------------------------------------------
@@ -183,12 +192,35 @@ static func is_highway_key(key: Vector3i) -> bool:
 
 
 static func is_interchange_key(key: Vector3i) -> bool:
-	return key.z >= 10
+	return key.z >= 10 and key.z < 40
 
 
-## Achse der Autobahn (0 = west–ost, 1 = nord–süd) zu einem Autobahn- oder Anschlussstellen-Schlüssel
+## Raststätte: (k, Linie, 40 + 10 · Achse + (0 bzw. 5 für Fahrtrichtung -1) + Teil),
+## Teil 0 = Parkplatz, 1 = Ausfahrt, 2 = Einfahrt
+static func is_rest_key(key: Vector3i) -> bool:
+	return key.z >= 40
+
+
+static func rest_key(axis: int, line: int, k: int, dir: int, part: int) -> Vector3i:
+	return Vector3i(k, line, 40 + 10 * axis + (0 if dir > 0 else 5) + part)
+
+
+static func rest_dir(key: Vector3i) -> int:
+	return 1 if (key.z - 40) % 10 < 5 else -1
+
+
+static func rest_part(key: Vector3i) -> int:
+	return (key.z - 40) % 5
+
+
+## Achse der Autobahn (0 = west–ost, 1 = nord–süd) zu einem Autobahn-, Anschlussstellen- oder
+## Raststätten-Schlüssel
 static func highway_axis(key: Vector3i) -> int:
-	return key.z - 2 if is_highway_key(key) else floori((key.z - 10) / 10.0)
+	if is_highway_key(key):
+		return key.z - 2
+	if is_rest_key(key):
+		return floori((key.z - 40) / 10.0)
+	return floori((key.z - 10) / 10.0)
 
 
 ## Teil einer Anschlussstelle: 0 = Zubringer, 1–4 = Rampen
@@ -206,6 +238,8 @@ func _key_exists(key: Vector3i) -> bool:
 		return _edge_exists(Vector2i(key.x, key.y), key.z)
 	if is_highway_key(key):
 		return highways.line_exists(highway_axis(key), key.y)
+	if is_rest_key(key):
+		return not highways.rest_area_at(highway_axis(key), key.y, key.x, rest_dir(key)).is_empty()
 	return not highways.interchange_at(highway_axis(key), key.y, key.x).is_empty()
 
 
@@ -219,6 +253,7 @@ func _process(delta: float) -> void:
 		var now := moved / delta if moved.length() < 100.0 else Vector2.ZERO
 		_velocity = _velocity.lerp(now, clampf(delta * 3.0, 0.0, 1.0))
 	_last_target = here
+	_update_night_glow(delta)
 	_update_timer -= delta
 	if _collect_finished() == 0 and _update_timer > 0.0:
 		return
@@ -364,6 +399,10 @@ func _edge_area(key: Vector3i) -> Rect2:
 	if is_highway_key(key):
 		# Die Mittellinie steht ohne Wegsuche fest
 		return highways.centerline_box(highway_axis(key), key.y, key.x).grow(HIGHWAY_WIDTH + RoadSegment.MAX_BANK + 30.0)
+	if is_rest_key(key):
+		var rest := highways.rest_area_at(highway_axis(key), key.y, key.x, rest_dir(key))
+		var center: Vector3 = rest.get("center", Vector3.ZERO)
+		return Rect2(center.x, center.z, 0.0, 0.0).grow(HighwayLayout.REST_HALF_LENGTH + RAMP_LENGTH + 80.0)
 	if is_interchange_key(key):
 		var interchange := highways.interchange_at(highway_axis(key), key.y, key.x)
 		var place: Vector3 = interchange.get("place", Vector3.ZERO)
@@ -399,6 +438,13 @@ func _edges_touching(rect: Rect2) -> Array[Vector3i]:
 			var k: int = section[2]
 			result.append(Vector3i(k, line, 2 + axis))
 			for at: int in [k, k + 1]:
+				for dir: int in [1, -1]:
+					if highways.rest_area_at(axis, line, at, dir).is_empty():
+						continue
+					for part in 3:
+						var rest := rest_key(axis, line, at, dir, part)
+						if not result.has(rest) and _edge_area(rest).intersects(rect):
+							result.append(rest)
 				if highways.interchange_at(axis, line, at).is_empty():
 					continue
 				for part in 5:
@@ -849,6 +895,8 @@ func _make_segment(key: Vector3i) -> RoadSegment:
 		return _make_highway_segment(key)
 	if is_interchange_key(key):
 		return _make_interchange_segment(key)
+	if is_rest_key(key):
+		return _make_rest_segment(key)
 	var crossings := _built_crossings(_edge_area(key), 1)
 	if crossings.size() == 1 and crossings[0] == null:
 		return null
@@ -929,12 +977,14 @@ func _make_highway_segment(key: Vector3i) -> RoadSegment:
 	segment.portal_cost = 100.0
 	segment.crossings = crossings
 	segment.fixed_path = highways.centerline(axis, key.y, key.x)
-	# An Anschlussstellen: Rampen statt äußerer Leitplanke, lange gerade und flach (dort setzen
-	# die Rampen an)
+	# An Anschlussstellen und Raststätten: Rampen statt äußerer Leitplanke, lange gerade und
+	# flach (dort setzen die Rampen an)
 	for at: int in [key.x, key.x + 1]:
 		var interchange := highways.interchange_at(axis, key.y, at)
-		if not interchange.is_empty():
-			var point: Vector3 = interchange["point"]
+		var has_rest := not highways.rest_area_at(axis, key.y, at, 1).is_empty() \
+			or not highways.rest_area_at(axis, key.y, at, -1).is_empty()
+		if not interchange.is_empty() or has_rest:
+			var point := highways.control_point(axis, key.y, at)
 			segment.rail_gaps.append(Vector3(point.x, point.z, RAMP_LENGTH + 50.0))
 			if at == key.x:
 				segment.lead = RAMP_LENGTH + 30.0
@@ -1027,6 +1077,63 @@ func _make_interchange_segment(key: Vector3i) -> RoadSegment:
 		# Ohne Zubringer keine Rampe: ein Weg aus einem Punkt ergibt einen ungültigen Abschnitt
 		segment.fixed_path = PackedVector2Array([a])
 	return segment
+
+
+## Raststätte: Parkplatz (sehr breites, kurzes Straßenstück: so gibt es Gelände-Anpassung,
+## Kollision und Asphalt von selbst), Ausfahrt- und Einfahrt-Rampe. Alles auf der Höhe der
+## Autobahn am Stützpunkt (dort ist sie flach).
+func _make_rest_segment(key: Vector3i) -> RoadSegment:
+	var axis := highway_axis(key)
+	var dir := rest_dir(key)
+	var part := rest_part(key)
+	var rest := highways.rest_area_at(axis, key.y, key.x, dir)
+	var travel: Vector2 = rest["travel"]
+	var ends := rest_ends(axis, key.y, key.x, dir, part)
+	var a := ends[0]
+	var b := ends[1]
+	var path := PackedVector2Array()
+	if part == 0:
+		path = _dense_line(PackedVector2Array([a, b]))
+	else:
+		var length := a.distance_to(b)
+		for i in 81:
+			path.append(_bezier(a, a + travel * length * 0.45, b - travel * length * 0.45, b, i / 80.0))
+	var height: float = (rest["point"] as Vector3).y
+	var segment := RoadSegment.new()
+	segment.world_gen = world_gen
+	segment.key = key
+	segment.kind = RoadSegment.Kind.RAMP
+	segment.road_width = HighwayLayout.REST_WIDTH if part == 0 else RAMP_WIDTH
+	segment.square_ends = part == 0
+	segment.shoulder_width = 1.0
+	segment.max_grade = 0.07
+	segment.follow_ground = false
+	segment.flat_points = 3
+	segment.profile_window = 6
+	segment.fixed_path = path
+	segment.start = Vector3(a.x, height, a.y)
+	segment.end = Vector3(b.x, height, b.y)
+	return segment
+
+
+## Anfang und Ende eines Raststätten-Teils (x/z), in Fahrtrichtung: Parkplatz (Teil 0),
+## Ausfahrt von der Autobahn zum Parkplatz (1), Einfahrt vom Parkplatz zur Autobahn (2).
+## Die Rampen treffen den Parkplatz an seinem autobahnnahen Rand.
+func rest_ends(axis: int, line: int, k: int, dir: int, part: int) -> PackedVector2Array:
+	var rest := highways.rest_area_at(axis, line, k, dir)
+	var point: Vector3 = rest["point"]
+	var x := Vector2(point.x, point.z)
+	var travel: Vector2 = rest["travel"]
+	var side: Vector2 = rest["side"]
+	var half := HighwayLayout.REST_HALF_LENGTH
+	if part == 0:
+		return PackedVector2Array([x + side * HighwayLayout.REST_OFFSET - travel * half,
+			x + side * HighwayLayout.REST_OFFSET + travel * half])
+	var on_highway := x + side * (HIGHWAY_WIDTH * 0.5 + RAMP_WIDTH * 0.5 + 0.3)
+	var lane := x + side * (HighwayLayout.REST_OFFSET - HighwayLayout.REST_WIDTH * 0.5 + 4.0)
+	if part == 1:
+		return PackedVector2Array([on_highway - travel * RAMP_LENGTH, lane - travel * half])
+	return PackedVector2Array([lane + travel * half, on_highway + travel * RAMP_LENGTH])
 
 
 ## Anfang und Ende einer Rampe (x/z). Teil 1 = Ausfahrt links, 2 = Einfahrt links,
@@ -1214,6 +1321,8 @@ func _update_visuals() -> void:
 				var surface_material := road_material
 				if segment.kind == RoadSegment.Kind.HIGHWAY and highway_material:
 					surface_material = highway_material
+				elif is_rest_key(key) and rest_part(key) == 0 and parking_material:
+					surface_material = parking_material
 				elif segment.kind == RoadSegment.Kind.RAMP and ramp_material:
 					surface_material = ramp_material
 				mesh.surface_set_material(0, surface_material)
@@ -1247,6 +1356,8 @@ func _update_visuals() -> void:
 					entry.mesh_instance.add_child(_make_posts(segment))
 				if is_highway_key(key):
 					_add_signs(segment, key, entry.mesh_instance)
+				if is_rest_key(key) and rest_part(key) == 0:
+					_add_rest_props(segment, key, entry.mesh_instance)
 				# Parkbucht mit Schild und Bank am Aussichtspunkt
 				if not segment.bay_arrays.is_empty():
 					var bay_mesh := ArrayMesh.new()
@@ -1327,7 +1438,8 @@ func _add_signs(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
 		var targets: Array = [key.x + 1, key.x + 2] if forward else [key.x, key.x - 1]
 		for exit_k: int in targets:
 			var interchange := highways.interchange_at(axis, key.y, exit_k)
-			if interchange.is_empty():
+			var rest := highways.rest_area_at(axis, key.y, exit_k, 1 if forward else -1)
+			if interchange.is_empty() and rest.is_empty():
 				continue
 			# Strecke vom Abschnittsende (in Fahrtrichtung) bis zum Stützpunkt der Ausfahrt
 			var extra := 0.0
@@ -1347,11 +1459,171 @@ func _add_signs(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
 				if segment.tunnel[i] == 1:
 					continue
 				var travel := segment.direction_at(i) * (1.0 if forward else -1.0)
-				if sign_at > 0.0:
-					_gantry(parent, segment.points[i] - segment.origin, travel, interchange,
-						"%d m" % roundi(sign_at))
+				var at := segment.points[i] - segment.origin
+				if not rest.is_empty():
+					if sign_at > 0.0:
+						_rest_sign(parent, at, travel, rest, "%d m" % roundi(sign_at))
+					else:
+						_rest_exit_sign(parent, at, travel)
+				elif sign_at > 0.0:
+					_gantry(parent, at, travel, interchange, "%d m" % roundi(sign_at))
 				else:
-					_exit_sign(parent, segment.points[i] - segment.origin, travel, interchange)
+					_exit_sign(parent, at, travel, interchange)
+
+
+## Vorankündigung einer Raststätte: blaues Schild rechts neben der Fahrbahn mit Name,
+## Entfernung und weißen Feldern mit Zapfsäule und Tasse
+func _rest_sign(parent: Node3D, center: Vector3, travel: Vector3, rest: Dictionary, distance_text: String) -> void:
+	var right := travel.cross(Vector3.UP).normalized()
+	var facing := Basis.looking_at(travel)
+	var foot := center + right * (HIGHWAY_WIDTH * 0.5 + 3.5)
+	# Pfosten hinter der Tafel (vom Verkehr aus gesehen)
+	for offset: float in [-2.2, 2.2]:
+		_box(parent, foot + right * offset + travel * 0.2 + Vector3.UP * 2.8, Vector3(0.18, 5.6, 0.18), Basis(), "steel")
+	var panel := foot + Vector3.UP * 4.5
+	_box(parent, panel, Vector3(6.0, 3.2, 0.15), facing, "blue")
+	var front := -travel * 0.1
+	_sign_text(parent, (rest["name"] as String).trim_prefix("Rastanlage "), panel + front + Vector3.UP * 0.95,
+		facing, 64, Color.WHITE)
+	_sign_text(parent, "Rastanlage", panel + front + Vector3.UP * 0.3, facing, 44, Color(1, 1, 1, 0.9))
+	_sign_text(parent, distance_text, panel + front + right * 1.3 + Vector3.DOWN * 0.75, facing, 56, Color.WHITE)
+	# Symbole links unten: Zapfsäule und Tasse (aus Kästchen) auf weißen Feldern
+	for k in 2:
+		var tile := panel + front + right * (-2.0 + 0.95 * k) + Vector3.DOWN * 0.75
+		_box(parent, tile, Vector3(0.8, 0.8, 0.04), facing, "white")
+		var icon := tile + front * 0.4
+		if k == 0:
+			_box(parent, icon - right * 0.07, Vector3(0.3, 0.5, 0.02), facing, "dark")
+			_box(parent, icon - right * 0.07 + Vector3.UP * 0.12, Vector3(0.18, 0.12, 0.025), facing, "white")
+			_box(parent, icon + right * 0.16 + Vector3.UP * 0.06, Vector3(0.05, 0.32, 0.02), facing, "dark")
+		else:
+			_box(parent, icon + Vector3.DOWN * 0.04 - right * 0.04, Vector3(0.32, 0.32, 0.02), facing, "dark")
+			_box(parent, icon + right * 0.17, Vector3(0.1, 0.16, 0.02), facing, "dark")
+			_box(parent, icon + Vector3.DOWN * 0.25, Vector3(0.46, 0.05, 0.02), facing, "dark")
+
+
+## Am Beginn der Ausfahrt zur Raststätte
+func _rest_exit_sign(parent: Node3D, center: Vector3, travel: Vector3) -> void:
+	var right := travel.cross(Vector3.UP).normalized()
+	var facing := Basis.looking_at(travel)
+	var foot := center + right * (HIGHWAY_WIDTH * 0.5 + RAMP_WIDTH + 2.5)
+	_box(parent, foot + Vector3.UP * 1.6, Vector3(0.15, 3.2, 0.15), Basis(), "steel")
+	var panel := foot + Vector3.UP * 3.2
+	_box(parent, panel, Vector3(3.0, 1.2, 0.1), facing, "blue")
+	_sign_text(parent, "Rastanlage", panel - travel * 0.08, facing, 50, Color.WHITE)
+
+
+## Raststätte: Parkplatz, Tankstelle mit Dach (Unterseite leuchtet) und Zapfsäulen, Rasthof
+## mit Fenstern auf dem Vorplatz, Laternen, Bänke und Bäume. Nachts leuchten die Flächen, dazu
+## drei echte Lichter (nur nah am Auto). Lage wie im Straßen-Shader (Profil 3): „along“ in
+## Fahrtrichtung (0–220 m), „across“ vom autobahnseitigen Rand (0–46 m). Fahrgasse 0–9 m,
+## Stellplätze bei along 12–145, Tankstelle bei 155–205, Vorplatz ab across 34.
+func _add_rest_props(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
+	var rest := highways.rest_area_at(highway_axis(key), key.y, key.x, rest_dir(key))
+	var travel2: Vector2 = rest["travel"]
+	var side2: Vector2 = rest["side"]
+	var t := Vector3(travel2.x, 0.0, travel2.y)
+	var r := Vector3(side2.x, 0.0, side2.y)
+	var center: Vector3 = rest["center"]
+	var half_length := HighwayLayout.REST_HALF_LENGTH
+	var half_width := HighwayLayout.REST_WIDTH * 0.5
+	var at := func(along: float, across: float, y: float) -> Vector3:
+		return center + t * (along - half_length) + r * (across - half_width) + Vector3.UP * y - segment.origin
+	# Basis: x quer (weg von der Autobahn), y hoch, z gegen die Fahrtrichtung
+	var frame := Basis(r, Vector3.UP, -t)
+	# Tankstelle: Dach über den Spuren 9–27 m, drei Zapfsäulen-Inseln längs
+	_box(parent, at.call(180.0, 18.0, 5.6), Vector3(20.0, 0.7, 34.0), frame, "canopy")
+	_box(parent, at.call(180.0, 18.0, 5.23), Vector3(19.0, 0.06, 33.0), frame, "canopy_glow")
+	_box(parent, at.call(180.0, 18.0, 5.75), Vector3(20.1, 0.25, 34.1), frame, "red")
+	for across: float in [12.0, 18.0, 24.0]:
+		_box(parent, at.call(180.0, across, 0.1), Vector3(1.3, 0.2, 10.0), frame, "shop")
+		_box(parent, at.call(180.0, across, 2.8), Vector3(0.35, 5.4, 0.35), frame, "canopy")
+		for along: float in [176.5, 183.5]:
+			_box(parent, at.call(along, across, 0.95), Vector3(0.6, 1.7, 0.8), frame, "red")
+			_box(parent, at.call(along, across, 1.4), Vector3(0.66, 0.35, 0.5), frame, "screen_glow")
+	# Tankstellen-Kasse am Vorplatz neben dem Dach
+	_box(parent, at.call(180.0, 39.0, 1.8), Vector3(9.0, 3.6, 16.0), frame, "shop")
+	_box(parent, at.call(180.0, 39.0, 3.75), Vector3(9.6, 0.3, 16.6), frame, "red")
+	_box(parent, at.call(180.0, 34.47, 1.5), Vector3(0.05, 2.0, 12.0), frame, "window_glow")
+	# Mast mit Tankstellen-Schild zwischen Autobahn und Parkplatz (von der Autobahn zu sehen)
+	var pylon_basis := Basis.looking_at(t)
+	_box(parent, at.call(150.0, -6.0, 4.5), Vector3(0.4, 9.0, 0.4), frame, "steel")
+	_box(parent, at.call(150.0, -6.0, 8.2), Vector3(3.2, 2.0, 0.3), pylon_basis, "red")
+	_sign_text(parent, "Tankstelle", at.call(150.0, -6.0, 8.2) - t * 0.2, pylon_basis, 44, Color.WHITE)
+	# Rasthof auf dem Vorplatz, Fensterfront zum Parkplatz
+	_box(parent, at.call(60.0, 40.0, 2.5), Vector3(10.0, 5.0, 34.0), frame, "shop")
+	_box(parent, at.call(60.0, 40.0, 5.2), Vector3(11.2, 0.4, 35.2), frame, "roof")
+	_box(parent, at.call(60.0, 34.97, 1.7), Vector3(0.05, 2.4, 28.0), frame, "window_glow")
+	# Text zeigt nach +Z, also zum Parkplatz (-r)
+	var facade := Basis.looking_at(r)
+	_sign_text(parent, "Rasthof", at.call(60.0, 34.9, 4.1), facade, 80, Color("#C8252B"))
+	# Laternen zwischen Fahrgasse und Autobahn und an der Kante zum Vorplatz
+	for along in range(10, 211, 40):
+		for across: float in [-0.9, 33.8]:
+			if across > 30.0 and along > 150:
+				continue
+			_box(parent, at.call(float(along), across, 3.5), Vector3(0.16, 7.0, 0.16), frame, "steel")
+			var arm := 1.2 if across < 0.0 else -1.2
+			_box(parent, at.call(float(along), across + arm * 0.5, 6.95), Vector3(1.3, 0.1, 0.18), frame, "steel")
+			_box(parent, at.call(float(along), across + arm, 6.85), Vector3(0.9, 0.12, 0.35), frame, "lamp_glow")
+	# Bänke (Blick weg von der Autobahn, in die Landschaft) und Bäume auf dem Vorplatz
+	for along: float in [92.0, 112.0, 132.0]:
+		var seat: Vector3 = at.call(along, 41.0, 0.0)
+		_box(parent, seat + Vector3.UP * 0.45, Vector3(0.45, 0.08, 1.8), frame, "wood")
+		_box(parent, seat + Vector3.UP * 0.78 - r * 0.22, Vector3(0.06, 0.4, 1.8), frame, "wood")
+	# Mit Aussicht: braunes Schild „Seeblick“ bzw. „Bergblick“ am Rand des Vorplatzes
+	if rest["view"] != "":
+		var sign_at: Vector3 = at.call(102.0, 44.5, 0.0)
+		for offset: float in [-0.9, 0.9]:
+			_box(parent, sign_at + t * offset + Vector3.UP * 1.1, Vector3(0.1, 2.2, 0.1), frame, "steel")
+		_box(parent, sign_at + Vector3.UP * 2.0 + r * 0.06, Vector3(0.08, 0.7, 2.4), frame, "brown")
+		_sign_text(parent, Viewpoints.REST_VIEW_NAMES[rest["view"]], sign_at + Vector3.UP * 2.0 - r * 0.0,
+			Basis.looking_at(r), 40, Color.WHITE)
+	for spot: Vector2 in [Vector2(20.0, 41.0), Vector2(82.0, 43.0), Vector2(122.0, 44.0), Vector2(142.0, 41.0)]:
+		var foot: Vector3 = at.call(spot.x, spot.y, 0.0)
+		_box(parent, foot + Vector3.UP * 1.5, Vector3(0.3, 3.0, 0.3), frame, "wood")
+		var crown := MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = 2.4
+		sphere.height = 4.2
+		sphere.radial_segments = 10
+		sphere.rings = 6
+		sphere.material = _sign_material("crown")
+		crown.mesh = sphere
+		crown.position = foot + Vector3.UP * 4.4
+		parent.add_child(crown)
+	# Echte Lichter (aus, bis _update_night_glow sie nachts in der Nähe einschaltet)
+	for spot: Array in [[180.0, 18.0, 4.8, 26.0], [80.0, 18.0, 7.0, 34.0], [60.0, 31.0, 3.5, 18.0]]:
+		var light := OmniLight3D.new()
+		light.light_color = Color(1.0, 0.88, 0.7)
+		light.omni_range = spot[3]
+		light.light_energy = 2.2
+		light.shadow_enabled = false
+		light.visible = false
+		light.position = at.call(spot[0], spot[1], spot[2])
+		parent.add_child(light)
+		_rest_lights.append(light)
+
+
+## Nachts leuchten Laternen, Tankstellendach und Fenster; echte Lichter nur nah am Auto
+func _update_night_glow(delta: float) -> void:
+	_glow_timer -= delta
+	if _glow_timer > 0.0:
+		return
+	_glow_timer = 0.25
+	if _day_night == null:
+		_day_night = get_tree().get_first_node_in_group("day_night") as DayNight
+	var night := 1.0 - (_day_night.daylight if _day_night else 1.0)
+	for pair: Array in [["lamp_glow", 7.0], ["canopy_glow", 5.0], ["window_glow", 3.0], ["screen_glow", 2.5]]:
+		_sign_material(pair[0]).emission_energy_multiplier = lerpf(0.15, pair[1], night)
+	var p := target.global_position if target else Vector3.ZERO
+	var kept: Array[OmniLight3D] = []
+	for light in _rest_lights:
+		if not is_instance_valid(light):
+			continue
+		kept.append(light)
+		light.visible = night > 0.5 and light.global_position.distance_to(p) < rest_light_distance
+	_rest_lights = kept
 
 
 ## Am Aussichtspunkt: braunes Schild am Anfang der Parkbucht (für den Verkehr auf dieser
@@ -1420,6 +1692,30 @@ func _sign_material(name_key: String) -> StandardMaterial3D:
 			"wood":
 				material.albedo_color = Color("#7A5636")
 				material.roughness = 0.85
+			"lamp_glow", "canopy_glow", "window_glow", "screen_glow":
+				# Leuchten nachts (Stärke setzt _update_night_glow), tagsüber kaum
+				material.albedo_color = Color(0.95, 0.93, 0.85) if name_key != "window_glow" else Color(0.55, 0.6, 0.62)
+				material.emission_enabled = true
+				material.emission = Color(1.0, 0.86, 0.6) if name_key != "screen_glow" else Color(0.5, 0.8, 1.0)
+				material.emission_energy_multiplier = 0.2
+			"canopy":
+				material.albedo_color = Color(0.92, 0.93, 0.95)
+				material.roughness = 0.5
+			"red":
+				material.albedo_color = Color("#C8252B")
+				material.roughness = 0.5
+			"shop":
+				material.albedo_color = Color("#D9D2C3")
+				material.roughness = 0.8
+			"roof":
+				material.albedo_color = Color("#5B5F66")
+				material.roughness = 0.7
+			"crown":
+				material.albedo_color = Color("#3E6B2C")
+				material.roughness = 0.9
+			"dark":
+				material.albedo_color = Color(0.12, 0.13, 0.15)
+				material.roughness = 0.6
 			_:
 				material.albedo_color = Color(0.55, 0.57, 0.6)
 				material.metallic = 0.6

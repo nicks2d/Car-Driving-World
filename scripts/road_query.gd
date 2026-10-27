@@ -70,14 +70,19 @@ func _init(segments: Array, pads: PackedVector4Array, area: Rect2) -> void:
 			var plane := _nearest_plane(portals, segment.points[i])
 			# Vor Tunnelportalen und Brücken hört die Böschung auf: kein Halbkreis über das Stückende
 			# hinaus, sonst ragt dort Gelände über die Fahrbahn, wenn sie auf der Brücke abfällt
-			var cap_a := not _stop_within(segment.points, stops, i, -1, core)
-			var cap_b := not _stop_within(segment.points, stops, i + 1, 1, core)
+			# Kappe: 0 = keine, 1 = Halbkreis, 2 = gerade (breiter, gerader Parkplatz: an jedem
+			# Stück, sonst reichen die Halbkreise der inneren Stücke über das Ende hinaus)
+			var cap_a := 1 if not _stop_within(segment.points, stops, i, -1, core) else 0
+			var cap_b := 1 if not _stop_within(segment.points, stops, i + 1, 1, core) else 0
+			if segment.square_ends:
+				cap_a = 2
+				cap_b = 2
 			_add_piece(segment.points[i], segment.points[i + 1], core, piece_bank, carves, grown,
 				cap_a, cap_b, plane)
 	for pad in pads:
 		var center := Vector3(pad.x, pad.y, pad.z)
 		reach = maxf(reach, pad.w + RoadSegment.MAX_BANK)
-		_add_piece(center, center, pad.w, 0.0, true, grown, true, true, [])
+		_add_piece(center, center, pad.w, 0.0, true, grown, 1, 1, [])
 
 
 ## Liegt ab Punkt i in Richtung step (1 oder -1) innerhalb von distance Metern eine Brücke
@@ -131,7 +136,7 @@ func _portal_distances(segment: RoadSegment) -> PackedFloat32Array:
 
 
 func _add_piece(a: Vector3, b: Vector3, core: float, piece_bank: float, carves: bool, area: Rect2,
-		cap_a: bool, cap_b: bool, plane: Array) -> void:
+		cap_a: int, cap_b: int, plane: Array) -> void:
 	var box := Rect2(a.x, a.z, 0.0, 0.0).expand(Vector2(b.x, b.z)).grow(core + RoadSegment.MAX_BANK)
 	if not box.intersects(area):
 		return
@@ -141,8 +146,8 @@ func _add_piece(a: Vector3, b: Vector3, core: float, piece_bank: float, carves: 
 	_core.append(core)
 	_bank.append(piece_bank)
 	_carves.append(1 if carves else 0)
-	_cap_a.append(1 if cap_a else 0)
-	_cap_b.append(1 if cap_b else 0)
+	_cap_a.append(cap_a)
+	_cap_b.append(cap_b)
 	_plane_p.append(plane[0] if not plane.is_empty() else Vector2.ZERO)
 	_plane_n.append(plane[1] if not plane.is_empty() else Vector2.ZERO)
 	_sort_into(_cells, box, index)
@@ -211,11 +216,15 @@ func carve(x: float, z: float, natural: float) -> Vector2:
 		var apz := z - a.z
 		var len_sq := abx * abx + abz * abz
 		var t := 0.0
+		var beyond := 0.0
 		if len_sq > 0.0001:
 			t = (apx * abx + apz * abz) / len_sq
 			# Am Portal hört die Böschung an der Portal-Ebene auf (dahinter ist der Berg)
 			if (t < 0.0 and _cap_a[index] == 0) or (t > 1.0 and _cap_b[index] == 0):
 				continue
+			# Gerade Kappe: hinter dem Ende beginnt sofort die Böschung
+			if (t < 0.0 and _cap_a[index] == 2) or (t > 1.0 and _cap_b[index] == 2):
+				beyond = (-t if t < 0.0 else t - 1.0) * sqrt(len_sq)
 			t = clampf(t, 0.0, 1.0)
 		var dx := apx - abx * t
 		var dz := apz - abz * t
@@ -227,6 +236,10 @@ func carve(x: float, z: float, natural: float) -> Vector2:
 		var lateral := 0.0
 		if len_sq > 0.0001:
 			lateral = (dx * abz - dz * abx) / sqrt(len_sq)
+		if beyond > 0.0:
+			over = maxf(absf(lateral) - _core[index], beyond)
+			if over > RoadSegment.MAX_BANK:
+				continue
 		lateral = clampf(lateral, -_core[index], _core[index])
 		# Gelände knapp unter der Fahrbahn, daneben die Böschung
 		var target := lerpf(a.y, b.y, t) - _bank[index] * lateral - 0.3

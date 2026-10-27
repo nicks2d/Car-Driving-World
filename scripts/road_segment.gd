@@ -65,6 +65,9 @@ var portal_cost: float = PORTAL_COST
 var fixed_path: PackedVector2Array
 ## false: Höhe gleichmäßig von start.y nach end.y (Rampen), statt dem Gelände zu folgen
 var follow_ground: bool = true
+## Gerade abgeschnittene Enden (breite, gerade Parkplätze): Das Gelände wird hinter den Enden
+## nicht halbkreisförmig eingeebnet
+var square_ends: bool = false
 ## Andere fertige Straßen, die dieser Abschnitt kreuzt: Er führt darüber (Brücke) oder,
 ## wenn die andere hoch auf einer Brücke liegt, darunter durch. Nie auf gleicher Höhe.
 var crossings: Array = []

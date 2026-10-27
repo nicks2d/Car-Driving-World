@@ -147,6 +147,15 @@ shader_parameter/gravel_normal = ExtResource("26_gravel_n")
 shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 shader_parameter/lane_profile = 2
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_parking"]
+shader = ExtResource("22_road_shader")
+shader_parameter/asphalt_albedo = ExtResource("23_asphalt_a")
+shader_parameter/asphalt_normal = ExtResource("24_asphalt_n")
+shader_parameter/gravel_albedo = ExtResource("25_gravel_a")
+shader_parameter/gravel_normal = ExtResource("26_gravel_n")
+shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
+shader_parameter/lane_profile = 3
+
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_post"]
 vertex_color_use_as_albedo = true
 vertex_color_is_srgb = true
@@ -286,6 +295,7 @@ tunnel_material = SubResource("StandardMaterial3D_tunnel")
 lamp_material = SubResource("StandardMaterial3D_lamp")
 highway_material = SubResource("ShaderMaterial_highway")
 ramp_material = SubResource("ShaderMaterial_ramp")
+parking_material = SubResource("ShaderMaterial_parking")
 post_material = SubResource("StandardMaterial3D_post")
 reflector_material = SubResource("ShaderMaterial_reflector")
 

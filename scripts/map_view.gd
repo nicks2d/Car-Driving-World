@@ -30,6 +30,14 @@ const HIGHWAY_PIXELS: float = 6.5
 const ROAD_PIXELS: float = 3.5
 const ROUTE_PIXELS: float = 5.0
 
+## Raststätten: Symbol nur bis zu diesem Maßstab (Meter pro Bildpunkt)
+const REST_MAX_METERS_PER_PIXEL: float = 24.0
+## Raststätten werden pro 4-km-Feld gesucht und gemerkt, höchstens zwei neue Felder pro Bild
+const REST_CELL: float = 4000.0
+
+var _rest_cells: Dictionary = {}  # Vector2i -> Array[Dictionary]
+var _view_rect := Rect2()
+
 ## Ausgedünnte Straßenlinien pro Abschnitt (Welt x/z), aufgeteilt in Stücke:
 ## [[Linie, true = Tunnel], ...]
 var _road_lines: Dictionary = {}  # RoadSegment -> Array
@@ -70,6 +78,7 @@ func _draw() -> void:
 	draw_set_transform_matrix(view)
 	var radius := size.length() * 0.5 * meters_per_pixel
 	var view_rect := Rect2(center - Vector2(radius, radius), Vector2(radius, radius) * 2.0)
+	_view_rect = view_rect
 	_draw_tiles(view_rect)
 	if show_unknown:
 		_draw_places(view_rect)
@@ -228,6 +237,7 @@ func _draw_dashed_polyline(points: PackedVector2Array, color: Color, width: floa
 
 
 func _draw_markers() -> void:
+	_draw_rest_areas()
 	if viewpoints:
 		_draw_viewpoints()
 	# Ziel: weißer Ring mit Punkt in Akzentfarbe
@@ -247,6 +257,31 @@ func _draw_markers() -> void:
 		draw_colored_polygon(arrow, Color.WHITE)
 
 
+## Raststätten: Zapfsäule im dunklen Kreis (an der Parkplatz-Mitte)
+func _draw_rest_areas() -> void:
+	if roads.highways == null or meters_per_pixel > REST_MAX_METERS_PER_PIXEL:
+		return
+	var visible_rect := Rect2(Vector2.ZERO, size).grow(12.0)
+	var budget := 2
+	for cz in range(floori(_view_rect.position.y / REST_CELL), floori(_view_rect.end.y / REST_CELL) + 1):
+		for cx in range(floori(_view_rect.position.x / REST_CELL), floori(_view_rect.end.x / REST_CELL) + 1):
+			var cell := Vector2i(cx, cz)
+			if not _rest_cells.has(cell):
+				if budget == 0:
+					queue_redraw()
+					continue
+				budget -= 1
+				_rest_cells[cell] = roads.highways.rest_areas_in(Rect2(cell * REST_CELL, Vector2.ONE * REST_CELL))
+			for rest: Dictionary in _rest_cells[cell]:
+				var c: Vector3 = rest["center"]
+				var p := world_to_screen(Vector2(c.x, c.z))
+				if not visible_rect.has_point(p):
+					continue
+				draw_circle(p, 11.0, Color(0.06, 0.08, 0.12, 0.9))
+				draw_arc(p, 11.0, 0.0, TAU, 24, Color(HIGHWAY_COLOR, 0.95), 1.5, true)
+				UiIcons.draw(self, "fuel", p, 13.0, Color.WHITE, 1.4)
+
+
 ## Entdeckte Aussichtspunkte: Kamera-Symbol im dunklen Kreis. Unentdeckte (nur große Karte):
 ## grauer Kreis mit „?“.
 func _draw_viewpoints() -> void:
@@ -255,6 +290,9 @@ func _draw_viewpoints() -> void:
 		if not spot["found"] and not show_unknown:
 			continue
 		var p := world_to_screen(spot["position"])
+		# Aussicht an einer Raststätte: kleines Abzeichen neben der Zapfsäule
+		if spot.get("rest", false):
+			p += Vector2(13.0, -13.0)
 		if not visible_rect.has_point(p):
 			continue
 		if spot["found"]:
