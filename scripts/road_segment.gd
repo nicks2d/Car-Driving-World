@@ -991,7 +991,13 @@ func _find_tunnels(smooth: PackedFloat32Array, over_water: PackedByteArray) -> b
 	var keep_clear := flat_points + 2 if kind != Kind.HIGHWAY else 0
 	var i := 0
 	while i < n:
-		if ground[i] - smooth[i] <= TUNNEL_DEPTH or over_water[i] == 1:
+		# Autobahn: An den Abschnittsenden reicht schon die Portaltiefe. Beide Abschnitte an einem
+		# Stützpunkt sehen dort dieselbe Höhe und entscheiden gleich, sonst endet der Tunnel des
+		# einen mitten im Berg, während der andere im offenen Einschnitt beginnt.
+		var seed_depth := TUNNEL_DEPTH
+		if kind == Kind.HIGHWAY and (i == 0 or i == n - 1):
+			seed_depth = PORTAL_DEPTH
+		if ground[i] - smooth[i] <= seed_depth or over_water[i] == 1:
 			i += 1
 			continue
 		var a := i

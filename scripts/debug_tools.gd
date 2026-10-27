@@ -88,6 +88,7 @@ var _route_index: int = 0
 var _distance_driven: float = 0.0
 var _max_off_road: float = 0.0
 var _top_speed: float = 0.0
+var _tunnel_driven: float = 0.0
 var _lowest_up: float = 1.0
 var _last_position: Vector3 = Vector3.ZERO
 var _log_timer: float = 0.0
@@ -293,7 +294,10 @@ func _drive_autopilot() -> void:
 		print("Autopilot weit neben der Straße: %.1f m bei %s, %.0f km/h, Driftwinkel %.0f Grad" % [
 			best_distance, here.round(), car.linear_velocity.length() * 3.6, car.get("drift_angle")])
 	_max_off_road = maxf(_max_off_road, best_distance)
-	_distance_driven += Vector2(here.x - _last_position.x, here.z - _last_position.z).length()
+	var step := Vector2(here.x - _last_position.x, here.z - _last_position.z).length()
+	_distance_driven += step
+	if _game.roads.tunnel_cover(here) > 0.5:
+		_tunnel_driven += step
 	_last_position = here
 	_lowest_up = minf(_lowest_up, car.global_basis.y.y)
 	_top_speed = maxf(_top_speed, car.linear_velocity.length())
@@ -442,8 +446,8 @@ func _print_bench() -> void:
 	print("BENCH gpu_ms avg=%.2f p99=%.2f | cpu_ms avg=%.2f p99=%.2f" % [
 		_average(_gpu_times), _percentile(_gpu_times, 0.99), _average(_cpu_times), _percentile(_cpu_times, 0.99)])
 	print("BENCH window=%s screen_scale=%.1f" % [DisplayServer.window_get_size(), DisplayServer.screen_get_scale()])
-	print("BENCH autopilot: %.0f m gefahren (%.0f km/h im Schnitt, max. %.0f km/h), max. %.1f m neben der Straßenmitte, min. Aufrecht-Wert %.2f" % [
-		_distance_driven, _distance_driven / maxf(_timer, 0.1) * 3.6, _top_speed * 3.6, _max_off_road, _lowest_up])
+	print("BENCH autopilot: %.0f m gefahren (%.0f km/h im Schnitt, max. %.0f km/h, davon %.0f m im Tunnel), max. %.1f m neben der Straßenmitte, min. Aufrecht-Wert %.2f" % [
+		_distance_driven, _distance_driven / maxf(_timer, 0.1) * 3.6, _top_speed * 3.6, _tunnel_driven, _max_off_road, _lowest_up])
 
 
 func _average(values: PackedFloat32Array) -> float:

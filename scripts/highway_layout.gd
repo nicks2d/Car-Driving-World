@@ -35,6 +35,9 @@ const INTERCHANGE_EVERY: int = 2
 ## Abstand Ort–Autobahn an einer Anschlussstelle (Länge des Zubringers bis zur Autobahn)
 const INTERCHANGE_MIN: float = 220.0
 const INTERCHANGE_REACH: float = 900.0
+## An einer Anschlussstelle liegt das Gelände höchstens so viel über oder unter der Autobahn
+## (sonst Tunnel oder Brücke, an die keine Rampe anschließen kann)
+const INTERCHANGE_MAX_CUT: float = 12.0
 ## So weit bleiben Orte von der Mittellinie weg
 const PLACE_CLEARANCE: float = 220.0
 
@@ -276,6 +279,18 @@ func _find_interchange(axis: int, line: int, k: int) -> Dictionary:
 	var point := control_point(axis, line, k)
 	var q := Vector2(point.x, point.z)
 	var dir := direction_at(axis, line, k)
+	# Die Rampen brauchen die Autobahn an der Oberfläche: kein Tunnel, kein tiefer Einschnitt,
+	# keine hohe Brücke im Bereich der Rampen
+	var normal_dir := Vector2(dir.y, -dir.x)
+	var reach := RoadNetwork.RAMP_LENGTH + 60.0
+	var along_offset := -reach
+	while along_offset <= reach:
+		for side_offset: float in [-30.0, 0.0, 30.0]:
+			var p := q + dir * along_offset + normal_dir * side_offset
+			var lakes: Array = world_gen.lakes_near(Rect2(p - Vector2.ONE, Vector2(2.0, 2.0)))
+			if absf(world_gen.terrain_height(p.x, p.y, lakes) - point.y) > INTERCHANGE_MAX_CUT:
+				return {}
+		along_offset += 60.0
 	var normal := Vector2(dir.y, -dir.x)
 	var best: Dictionary = {}
 	var best_distance := INF

@@ -62,13 +62,24 @@ func run() -> void:
 		for gx in range(-1, n + 2):
 			var wx := origin.x + gx * spacing
 			var h := world_gen.terrain_height(wx, wz, lakes)
-			if check_holes and roads.tunnel_hole(wx, wz, h):
-				holes[i] = 1
-				any_hole = true
 			if has_roads:
 				var carved := roads.carve(wx, wz, h)
 				h = carved.x
 				road_near[i] = carved.y
+			# Tunnel: erst mit der fertigen Höhe entscheiden (Straßen, Böschungen, Kreuzungen und
+			# die Felswand am Portal senken das Gelände über der Röhre manchmal ab)
+			if check_holes:
+				if lod > 0:
+					# Grobe Stufen: Ihre großen Dreiecke schneiden sonst zwischen zwei Rasterpunkten
+					# durch die Röhre. Im Band daneben liegt das Gelände deshalb über dem Scheitel.
+					var coarse := roads.tunnel_coarse(wx, wz, h, spacing * 1.42)
+					h = coarse.x
+					if coarse.y > 0.5:
+						holes[i] = 1
+						any_hole = true
+				if roads.tunnel_hole(wx, wz, h):
+					holes[i] = 1
+					any_hole = true
 			hs[i] = h
 			i += 1
 

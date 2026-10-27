@@ -149,7 +149,8 @@ func _add_piece(a: Vector3, b: Vector3, core: float, piece_bank: float, carves: 
 
 
 func _add_tunnel_piece(a: Vector3, b: Vector3, half: float, portal_a: float, portal_b: float, area: Rect2) -> void:
-	var box := Rect2(a.x, a.z, 0.0, 0.0).expand(Vector2(b.x, b.z)).grow(half + 12.0)
+	# Breit genug für das Band der groben Detailstufen (tunnel_coarse, bis ~23 m)
+	var box := Rect2(a.x, a.z, 0.0, 0.0).expand(Vector2(b.x, b.z)).grow(half + 26.0)
 	if not box.intersects(area):
 		return
 	var index := _t_a.size()
@@ -290,6 +291,58 @@ func tunnel_hole(x: float, z: float, natural: float) -> bool:
 	return false
 
 
+## Für grobe Detailstufen: Liegt ein Rasterpunkt bis band Meter neben einer Röhre (band =
+## Größe seiner Dreiecke) und darunter als 1 m über dem Scheitel, wird er auf diese Höhe
+## gehoben, damit kein Dreieck durch die Röhre schneidet. Nah an den Portalen muss die
+## Öffnung frei bleiben: dort stattdessen ein Loch. Ergebnis: (Höhe, Loch 0/1)
+func tunnel_coarse(x: float, z: float, h: float, band: float) -> Vector2:
+	var hole := 0.0
+	var pieces: Array = _t_cells.get(Vector2i(floori(x / CELL), floori(z / CELL)), [])
+	for index: int in pieces:
+		# Vor dem Portal: Ein grobes Dreieck reicht vom Einschnitt bis in den Berg und würde
+		# den Anfang der Röhre zudecken. Deshalb im Streifen der Röhre vor dem Portal ein Loch
+		# (dort liegt ohnehin die Fahrbahn, die Hänge daneben bleiben).
+		if _in_front_of_portal(index, x, z, band + 1.0):
+			hole = 1.0
+			continue
+		var hit := _tunnel_hit(index, x, z)
+		if hit.x > _t_half[index] + 1.0 + band:
+			continue
+		# Gleich hinter dem Portal im Streifen der Röhre immer ein Loch: Sonst reicht ein grobes
+		# Dreieck vom Berg bis vor das Portal und deckt die Öffnung zu
+		if hit.y < PORTAL_HOLE + band and hit.x <= _t_half[index] + 1.0:
+			hole = 1.0
+			continue
+		var cover := hit.z + RoadSegment.TUBE_APEX + 1.0
+		if h >= cover:
+			continue
+		if hit.y < PORTAL_HOLE + band:
+			hole = 1.0
+		else:
+			h = cover
+	return Vector2(h, hole)
+
+
+## Liegt der Punkt bis zu depth Meter vor einem Portal, im Streifen der Röhre?
+func _in_front_of_portal(index: int, x: float, z: float, depth: float) -> bool:
+	var a := _t_a[index]
+	var b := _t_b[index]
+	var ab := Vector2(b.x - a.x, b.z - a.z)
+	var length := ab.length()
+	if length < 0.01:
+		return false
+	var direction := ab / length
+	var ap := Vector2(x - a.x, z - a.z)
+	var along := ap.dot(direction)
+	var side := absf(ap.dot(Vector2(-direction.y, direction.x)))
+	if side > _t_half[index] + 1.0:
+		return false
+	# Das Stück beginnt an einem Portal und der Punkt liegt davor (bzw. hinter dem Ende)
+	if _t_portal_a[index] < 0.5 and along < 0.0 and along > -depth:
+		return true
+	return _t_portal_b[index] < 0.5 and along > length and along < length + depth
+
+
 ## Lage eines Punkts zu einem Tunnelstück: (seitlicher Abstand, Abstand zum Portal,
 ## Fahrbahnhöhe). Liegt der Punkt vor oder hinter dem Stück, ist der Abstand INF.
 func _tunnel_hit(index: int, x: float, z: float) -> Vector3:
@@ -298,7 +351,8 @@ func _tunnel_hit(index: int, x: float, z: float) -> Vector3:
 	var ab := Vector2(b.x - a.x, b.z - a.z)
 	var ap := Vector2(x - a.x, z - a.z)
 	var t := ap.dot(ab) / maxf(ab.length_squared(), 0.0001)
-	if t < -0.02 or t > 1.02:
+	# Etwas Überlappung: In Kurven bleibt sonst außen zwischen zwei Stücken ein Keil frei
+	if t < -0.15 or t > 1.15:
 		return Vector3(INF, INF, 0.0)
 	t = clampf(t, 0.0, 1.0)
 	return Vector3((ap - ab * t).length(), lerpf(_t_portal_a[index], _t_portal_b[index], t), lerpf(a.y, b.y, t))

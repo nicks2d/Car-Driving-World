@@ -404,6 +404,24 @@ assets/
   147 FPS: Nach Stunden Dauertest drosselt das MacBook Air auf etwa ein Drittel. Messungen für
   „≥ 60 FPS“ nur mit kühlem Mac. Auch die Ladezeit schwankt dann stark (gleicher Code 6,7 s /
   13 s), und nach Shader-Änderungen dauert der erste Start länger (Shader werden neu übersetzt).
+- Tunnel-Bug „Berg im Tunnel“ (behoben): Ob über einer Röhre ein Loch ins Gelände kommt,
+  entscheidet jetzt die fertige Höhe (nach Straßen, Böschungen, Kreuzungen, Parkbuchten und der
+  Felswand am Portal), nicht die natürliche. Grobe Detailstufen (4/8/16 m): Rasterpunkte bis
+  1,42 × Rasterweite neben der Röhre werden über den Scheitel gehoben (`RoadQuery.tunnel_coarse`),
+  nah an Portalen und im Streifen der Röhre bis ~23 m davor gibt es stattdessen Löcher (sonst
+  deckt ein grobes Dreieck vom Berg bis in den Einschnitt die Öffnung zu). Tunnelstücke
+  überlappen etwas (sonst Keil in Kurven). Autobahn: An Abschnittsenden zählt schon die
+  Portaltiefe (12 m) als Tunnel, sonst endete die Röhre des einen Abschnitts mitten im Berg.
+  Anschlussstellen nur, wo das Gelände ±340 m um den Stützpunkt höchstens 12 m von der
+  Autobahn abweicht (keine Rampen an Tunneln oder hohen Brücken).
+- Prüfwerkzeug `tools/tunnel_check.gd` (Aufruf im Kopf der Datei): rechnet für jede Röhre
+  in der Nähe von 6 Stellen alle Detailstufen wie im Spiel und prüft alle 4 m an 5 Querpunkten,
+  ob Gelände zwischen Fahrbahn und Decke liegt, nah am Auto auch die Kollision per Strahl.
+  Vorher 108 Stellen (12 in Stufe 0), jetzt 0 bei 34 Röhren / 25 km. Autopilot (`--bench`)
+  zählt jetzt auch die Meter im Tunnel. Testtunnel: Landstraße `--pos=-1700,-8262
+  --heading=-80`, Autobahn `--pos=-5056,-63 --heading=85 --highway` (272 m).
+- Achtung bei eigenen Prüfskripten (`-s`): Ohne Testargument öffnet nach dem Laden die
+  Garage und pausiert das Spiel, dann kommt z. B. ein `jump_to` nie an. Garage schließen.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in
