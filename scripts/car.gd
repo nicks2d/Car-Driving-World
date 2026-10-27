@@ -72,6 +72,10 @@ var in_tunnel: bool = false
 var sport_exhaust: bool = true
 ## false = Gas und Bremse werden nicht gelesen, Handbremse an (Test-Fotos: Auto bleibt stehen)
 var throttle_enabled: bool = true
+## Blinker (setzt CarSignals): 1 = links, -1 = rechts, 0 = aus; Warnblinker; leuchtet gerade
+var turn_signal: int = 0
+var hazard: bool = false
+var signal_lit: bool = false
 
 ## Werte der Grip-Stufen. grip: Faktor auf den Reifen-Grip, oversteer: Faktor auf
 ## power_oversteer, stability: Stabilitätshilfe (0 = aus), steer_fast: Lenkgeschwindigkeit
@@ -377,6 +381,11 @@ func _update_rear_grip() -> void:
 		wheel.wheel_friction_slip = grip
 	for wheel: VehicleWheel3D in [_front_left, _front_right]:
 		wheel.wheel_friction_slip = profile.grip_front * _grip_scale()
+
+
+## Lenkeinschlag -1 bis 1 (positiv = links), z. B. damit der Blinker nach der Kurve ausgeht
+func steer_amount() -> float:
+	return _steer_input
 
 
 ## Grip-Faktor aus Grip-Stufe und Wetter (nass und Schnee bleiben im Verhältnis rutschiger)

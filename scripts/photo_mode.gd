@@ -149,7 +149,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		match key.physical_keycode:
 			KEY_1, KEY_2, KEY_3, KEY_4:
 				_filter = key.physical_keycode - KEY_1
-			KEY_F:
+			KEY_G:
 				_focus = not _focus
 			KEY_SPACE:
 				_take_photo()
@@ -164,12 +164,12 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if not is_open or car == null:
 		return
-	# Bewegen: W/S vor und zurück in Blickrichtung, A/D seitlich, Q/E runter und rauf
+	# Bewegen: W/S vor und zurück in Blickrichtung, A/D seitlich, R/F rauf und runter
 	var basis := Basis.from_euler(Vector3(_pitch, _yaw, 0.0))
 	var move := Vector3.ZERO
 	move += -basis.z * (_axis(KEY_W, KEY_S))
 	move += basis.x * (_axis(KEY_D, KEY_A))
-	move += Vector3.UP * (_axis(KEY_E, KEY_Q))
+	move += Vector3.UP * (_axis(KEY_R, KEY_F))
 	var target := _camera.global_position + move * move_speed * delta
 	_camera.global_transform = Transform3D(basis, _constrain(target))
 	# Pfeiltasten: Tageszeit (← →, 2 Stunden pro Sekunde) und Belichtung (↑ ↓)
@@ -274,7 +274,7 @@ func _draw_panel() -> void:
 	var columns := [
 		["BELICHTUNG  ↑ ↓", ("%+.1f EV" % (log(_exposure) / log(2.0))).replace(".", ",")],
 		["TAGESZEIT  ← →", "%02d:%02d" % [floori(minutes / 60.0), minutes % 60]],
-		["SCHÄRFE  F", "Auf das Auto" if _focus else "Aus"],
+		["SCHÄRFE  G", "Auf das Auto" if _focus else "Aus"],
 		["ZOOM  Mausrad", "%d mm" % roundi(_focal_length())],
 	]
 	x += 28.0
@@ -284,5 +284,5 @@ func _draw_panel() -> void:
 		x += 170.0
 	# Hinweise unten
 	_panel.draw_line(Vector2(24.0, 88.0), Vector2(PANEL_SIZE.x - 24.0, 88.0), Color(1, 1, 1, 0.12), 1.0)
-	UiStyle.draw_text(_panel, "Maus ziehen: schwenken   ·   W A S D, Q E: bewegen   ·   Leertaste: Foto   ·   O: Ordner   ·   P / Esc: zurück",
+	UiStyle.draw_text(_panel, "Maus ziehen: schwenken   ·   W A S D, R F: bewegen   ·   Leertaste: Foto   ·   O: Ordner   ·   P / Esc: zurück",
 		Vector2(PANEL_SIZE.x * 0.5, 114.0), 14, "regular", UiStyle.TEXT_DIM, 0.5)

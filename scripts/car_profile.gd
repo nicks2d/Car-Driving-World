@@ -143,6 +143,12 @@ extends Resource
 @export_range(0.0, 1.0) var blow_off_volume: float = 0.0
 @export_range(0.0, 1.0) var intake_volume: float = 0.18
 
+@export_group("Blinker und Hupe")
+## Blinker auf der linken Seite: vorne, hinten, Spiegel (rechts gespiegelt), am Modell gemessen
+@export var indicator_points: PackedVector3Array = PackedVector3Array()
+## Hupe: zwei Töne in Hz
+@export var horn_tones: Vector2 = Vector2(410.0, 510.0)
+
 @export_group("Auspuff")
 ## Wie kräftig es beim Gaswegnehmen im Auspuff knallt (0 = kaum, 1 = sehr)
 @export_range(0.0, 1.0) var pops_strength: float = 0.5

@@ -208,8 +208,9 @@ assets/
   M große Karte (Linksklick Ziel, Rechtsklick
   Ziel löschen, Mausrad zoomen, ziehen verschiebt), F5 Wetter (Automatisch → Klar → Bewölkt →
   Regen → Gewitter → Nebel → Schnee), J Jahreszeit, P Fotomodus (Maus ziehen schwenkt,
-  W A S D / Q E bewegen, Mausrad Zoom, 1–4 Filter, ↑ ↓ Belichtung, ← → Tageszeit,
-  F Schärfe aufs Auto, Leertaste Foto, O Foto-Ordner, P/Esc zurück).
+  W A S D / R F bewegen, Mausrad Zoom, 1–4 Filter, ↑ ↓ Belichtung, ← → Tageszeit,
+  G Schärfe aufs Auto, Leertaste Foto, O Foto-Ordner, P/Esc zurück), Q Blinker links,
+  E Blinker rechts (noch mal = aus), X Warnblinker, H Hupe.
 - Karte und Navi: `map_tiles.gd` rechnet das Kartenbild (Höhenfarbe, Schattierung, Wald,
   Wasser) in Kacheln à 128 px im Hintergrund (Stufen 4/16/64 m pro Pixel, max. 400 gemerkt).
   `map_view.gd` zeichnet darüber Straßen, Route, Ziel, Auto in Weltkoordinaten (eine
@@ -438,6 +439,16 @@ assets/
   Handbremse 70 km/h: Hecktriebler drehten sich (76–89°), jetzt 44–60° und fangen sich.
   Komfort: 1,73–1,78 g, Drift kaum. Drift-Stufe = altes Verhalten. Nass (Sport) 1,20 g,
   Power-Drift Heckantrieb 28–41°; Schnee 0,84–0,93 g.
+- Blinker (`car_signals.gd`, Knoten „Signals“ im Auto): Zustand am Auto (`turn_signal` 1 links /
+  -1 rechts, `hazard`, `signal_lit`), Takt 1,5 Hz. Leuchten = kleine orange Kästchen an den
+  Punkten aus `indicator_points` (links gemessen, rechts gespiegelt: äußere Ecke der Scheinwerfer
+  bzw. Rückleuchten, breitester Punkt oben vor der A-Säule = Spiegel), nachts je Seite zwei
+  OmniLights ohne Schatten. Aus nach der Kurve: Lenkrad erst über 0,35, dann unter 0,08.
+  Vollbremsung (Bremse ≥ 0,8 über 100 km/h) → Warnblinker, aus nach Stillstand und
+  Wiederanfahren über 20 km/h. Klicken = zwei kurze im Code erzeugte WAVs, Hupe =
+  AudioStreamGenerator mit zwei Tönen je Auto (`horn_tones`, z. B. M2 410/505 Hz) plus
+  Obertönen. HUD: grüne Pfeile oben im Tacho-Panel, rotes Warndreieck. Test: `--signal=left`.
+  Fotomodus: rauf/runter jetzt R/F, Schärfe G (Q/E sind die Blinker).
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

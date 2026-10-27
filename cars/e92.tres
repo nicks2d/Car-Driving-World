@@ -66,3 +66,5 @@ intake_volume = 0.3
 blow_off_volume = 0
 pops_strength = 1
 exhaust_tips = PackedVector3Array(-0.35, -0.13, -2.39, -0.25, -0.13, -2.39, 0.25, -0.13, -2.39, 0.35, -0.13, -2.39)
+indicator_points = PackedVector3Array(0.83, 0.22, 1.72, 0.71, 0.38, -2.23, 1.02, 0.53, 0.4)
+horn_tones = Vector2(420, 525)

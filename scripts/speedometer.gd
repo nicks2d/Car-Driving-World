@@ -10,6 +10,7 @@ extends Control
 ## So schnell folgt der Zeiger der Drehzahl (höher = direkter)
 @export var needle_speed: float = 12.0
 
+const SIGNAL_GREEN := Color("#3FD47A")
 const START_ANGLE: float = PI * 0.75
 const SWEEP: float = PI * 1.5
 
@@ -68,6 +69,14 @@ func _draw() -> void:
 	var kmh := roundi(car.linear_velocity.length() * 3.6)
 	UiStyle.draw_text(self, str(kmh), center + Vector2(0, 30), 88, "extrabold", UiStyle.TEXT, 0.5)
 	UiStyle.draw_text(self, "km/h", center + Vector2(0, 64), 15, "medium", UiStyle.TEXT_DIM, 0.5)
+	# Blinker: grüne Pfeile oben links und rechts im Takt, Warnblinker: rotes Dreieck
+	if car.signal_lit:
+		if car.hazard or car.turn_signal == 1:
+			_draw_signal_arrow(Vector2(34.0, 34.0), -1.0)
+		if car.hazard or car.turn_signal == -1:
+			_draw_signal_arrow(Vector2(size.x - 34.0, 34.0), 1.0)
+	if car.hazard:
+		_draw_hazard(Vector2(size.x * 0.5, 100.0), car.signal_lit)
 	# Unten: Fahrstufe, Gang im Kästchen, Drehzahl in Tausend
 	var gear_box := Rect2(center.x - 20.0, 248.0, 40.0, 36.0)
 	UiStyle.draw_box(self, gear_box, Color(1, 1, 1, 0.12), 9, Color(1, 1, 1, 0.16), 1)
@@ -76,3 +85,22 @@ func _draw() -> void:
 	UiStyle.draw_text(self, "R" if car.gear < 0 else "D", Vector2(center.x - 38.0, 272.0), 15, "semibold", UiStyle.TEXT_DIM, 0.5)
 	UiStyle.draw_text(self, ("%.1f" % (_rpm / 1000.0)), Vector2(center.x + 44.0, 272.0), 15, "semibold",
 		UiStyle.TEXT_DIM, 0.5)
+
+
+## Blinkerpfeil (direction: -1 = nach links, 1 = nach rechts)
+func _draw_signal_arrow(center: Vector2, direction: float) -> void:
+	var points := PackedVector2Array([Vector2(-13, 0), Vector2(-1, -11), Vector2(-1, -4.5), Vector2(12, -4.5),
+		Vector2(12, 4.5), Vector2(-1, 4.5), Vector2(-1, 11)])
+	for i in points.size():
+		points[i] = center + Vector2(points[i].x * -direction, points[i].y)
+	draw_colored_polygon(points, SIGNAL_GREEN)
+
+
+## Warnblinker-Symbol: rotes Dreieck mit innerem Dreieck, hell im Takt
+func _draw_hazard(center: Vector2, lit: bool) -> void:
+	var color := UiStyle.RED if lit else Color(UiStyle.RED, 0.35)
+	for size_factor: float in [1.0, 0.5]:
+		var r := 15.0 * size_factor
+		var triangle := PackedVector2Array([center + Vector2(0, -r), center + Vector2(r * 0.87, r * 0.5),
+			center + Vector2(-r * 0.87, r * 0.5), center + Vector2(0, -r)])
+		draw_polyline(triangle, color, 3.0 if size_factor == 1.0 else 2.0, true)

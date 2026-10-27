@@ -21,6 +21,7 @@ extends Node
 ## --map          Foto mit geöffneter großer Karte
 ## --flames       vor dem Foto knallt es ständig im Auspuff (Flammen an den Endrohren prüfen)
 ## --rainbow      Regenbogen zeigen (tiefe Sonne, z. B. --time=18 --heading=90)
+## --signal=left|right|hazard  Blinker bzw. Warnblinker fürs Foto an (leuchtend)
 ## --aurora       Polarlicht zeigen (Winternacht, z. B. --season=winter --time=23 --heading=180)
 ## --car=ID       mit diesem Auto starten (Profil cars/ID.tres, z. B. e30, e92, f90, g90)
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
@@ -64,6 +65,7 @@ var _photo: bool = false
 var _open_map: bool = false
 var _flames: bool = false
 var _rainbow: bool = false
+var _signal: String = ""
 var _aurora: bool = false
 var _photo_filter: int = 0
 var _target: Vector2 = Vector2.ZERO
@@ -135,6 +137,8 @@ func _ready() -> void:
 				_flames = true
 			"rainbow":
 				_rainbow = true
+			"signal":
+				_signal = value
 			"aurora":
 				_aurora = true
 			"filter":
@@ -229,6 +233,11 @@ func _process(delta: float) -> void:
 				_prepare_shot()
 		"wait_extra":
 			_timer -= delta
+			# Blinker fürs Foto im leuchtenden Takt halten
+			if _signal != "":
+				_game.car.turn_signal = 1 if _signal == "left" else (-1 if _signal == "right" else 0)
+				_game.car.hazard = _signal == "hazard"
+				_game.car.get_node("Signals").set("_time", 0.0)
 			# Knalle im Auspuff auslösen (Flammen prüfen), etwa alle 50 ms
 			if _flames and fmod(_timer, 0.05) < delta:
 				_game.car.get_node("EngineSound").popped.emit(1.0)
