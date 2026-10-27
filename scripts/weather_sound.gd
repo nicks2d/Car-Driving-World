@@ -33,6 +33,8 @@ func _ready() -> void:
 
 func _make_player() -> AudioStreamPlayer:
 	var player := AudioStreamPlayer.new()
+	# Eigener Lautstärke-Regler „Umgebung“ (default_bus_layout.tres)
+	player.bus = &"Umgebung"
 	add_child(player)
 	return player
 

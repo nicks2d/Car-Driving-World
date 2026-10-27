@@ -40,6 +40,8 @@ extends Node
 @export var night_saturation: float = 0.55
 
 @export_group("Grafik")
+## Sonnenschatten erlaubt (Einstellungen > Grafik > Schatten „Aus“)
+@export var shadows_allowed: bool = true
 ## Volumetrischer Nebel (Lichtstrahlen, schöner, aber teurer)
 @export var volumetric_fog: bool = false
 ## Wie dicht der Fernnebel ist
@@ -164,7 +166,7 @@ func _update_lighting() -> void:
 	# Bei bedecktem Himmel gibt es keine harten Schatten. Ganz ausschalten spart viel
 	# Rechenzeit, die dafür in Regen-Spiegelungen und Partikel geht.
 	var shadow_opacity := 1.0 - smoothstep(0.45, 0.75, overcast)
-	sun.shadow_enabled = shadow_opacity > 0.01
+	sun.shadow_enabled = shadow_opacity > 0.01 and shadows_allowed
 	sun.shadow_opacity = shadow_opacity
 	# Ohne Schatten würde die Sonne durch die Tunnelwände scheinen
 	if not sun.shadow_enabled:

@@ -65,7 +65,8 @@ func _create_bus() -> void:
 		AudioServer.add_bus()
 		index = AudioServer.bus_count - 1
 		AudioServer.set_bus_name(index, BUS_NAME)
-		AudioServer.set_bus_send(index, "Master")
+		# Weiter über den Bus „Motor“ (Lautstärke-Regler für das Auto, default_bus_layout.tres)
+		AudioServer.set_bus_send(index, "Motor" if AudioServer.get_bus_index("Motor") != -1 else "Master")
 		_reverb = AudioEffectReverb.new()
 		_reverb.room_size = reverb_room_size
 		_reverb.damping = 0.35

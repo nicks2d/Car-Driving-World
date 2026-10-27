@@ -531,6 +531,34 @@ assets/
   den Parkplatz, an der Anschlussstelle bei (3200, −4060) Ab- und Auffahrten (Rampe 4,
   Zubringer 5), 13–32 Spurwechsel, kein Auto festgefahren, kleinster Abstand in einer Spur 4 m.
   Autopilot 60 s mit Verkehr (Fenster): Landstraße 139 FPS, Autobahn 121 FPS, keine Fehler.
+- Pausemenü (Teil 6, `pause_menu.gd`, Esc): Glas mit echter Unschärfe (Spiel pausiert),
+  Weiterfahren, Garage, Karte, Fotomodus, Einstellungen, Spiel beenden (zweiter Klick).
+  Esc öffnet nur, wenn nichts anderes pausiert hat; in den Einstellungen geht Esc zurück.
+- Einstellungen (`game_settings.gd`, Knoten „Settings“): Reiter Grafik, Anzeige, Steuerung,
+  Audio, Spiel; alles wirkt sofort, gespeichert in `user://einstellungen.cfg` (Abschnitte
+  grafik, anzeige, steuerung, tasten, audio, spiel), „Zurücksetzen“ je Reiter. HUD-Farbe und
+  Sportauspuff bleiben bei der Garage ([hud]/[auto]), automatisches Wetter = `Weather.mode`.
+  Testläufe (Argumente) nehmen die Standardwerte und speichern nichts; `--quality=niedrig|
+  mittel|hoch|ultra` wählt die Stufe, `--pause=0..5` macht ein Foto mit Menü (0 = Pause,
+  1–5 = Reiter).
+- Qualitätsstufen (`GameSettings.PRESETS`): Render-Auflösung 55/65/75/100 %, Sichtweite
+  1,3/1,7/2,0/2,6 km, Schatten Niedrig/Mittel/Mittel/Hoch (150/300/300/500 m, Karte
+  2048/4096), Vegetation 60/80/100/100 %, Gras Wenig/Normal/Normal/Viel (40/56/56/72 m),
+  SSAO aus/aus/an/an, Regen-Spiegelungen aus/an/an/an, Volumennebel nur Ultra, Wolkenschatten
+  ab Mittel. Weicht ein Regler ab: „Eigene Einstellung“.
+- Wie die Regler wirken: Sichtweite = `TerrainManager.set_detail` (Kachel-Umkreis, LOD-Grenzen
+  ×0,65–1,3, Bäume bis Stufe 1/2/3) und `RoadNetwork.mesh_distance`; Vegetation = Baumabstand
+  7 m / √Dichte, geänderte Vegetation baut alle Kacheln nach und nach neu (`_generation`, die
+  alten bleiben bis dahin sichtbar, Stamm-Kollision wird erneuert); Gras = `GrassManager.
+  set_level` (alle Felder neu); Schatten aus = `DayNight.shadows_allowed`; Wolkenschatten =
+  `Weather.cloud_shadows`. Schwere Regler wirken 0,35 s nach dem letzten Ziehen.
+- Anzeige: Fenster/Vollbild, Fenstergröße 1280×720 bis 2560×1440 (mittig), V-Sync, FPS-Grenze
+  30/60/120/unbegrenzt (`Engine.max_fps`), FPS-Anzeige. Steuerung: Grip-Stufe,
+  Lenkempfindlichkeit 50–150 %, 20 Tasten neu belegbar (physische Taste, Name nach Layout über
+  `keyboard_get_label_from_physical`, Doppelbelegung wird rot angezeigt, Esc bleibt frei).
+- Audio-Busse (`default_bus_layout.tres`): Master, Motor (alle Auto-Geräusche, über den
+  Tunnel-Bus mit Hall), Umgebung (Regen, Wind, Donner), Musik (vorbereitet, noch keine Musik).
+  Spiel: HUD-Farbe, Sportauspuff, km/h oder mph (Tacho), automatisches Wetter, Tageslänge.
 - Testen: Raststätte Falkenweiler `--pos=9560,-3988 --heading=90` (auf dem Parkplatz),
   von oben `--pos=9450,-3988 --highway --heading=90 --fly=110 --pitch=-55 --lookat=9604,-3988`,
   Schild 500 m `--pos=8790,-4056 --highway --heading=90`, Navi `--target=9604,-3982`,

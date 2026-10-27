@@ -371,6 +371,23 @@ func _set_accent(index: int) -> void:
 	_refresh_all()
 
 
+## Für das Einstellungsmenü: HUD-Farbe und Sportauspuff setzen und speichern
+func set_accent(index: int) -> void:
+	_set_accent(clampi(index, 0, UiStyle.ACCENTS.size() - 1))
+	_save_settings()
+
+
+func accent_index() -> int:
+	return _accent_index
+
+
+func set_sport_exhaust(on: bool) -> void:
+	sport_exhaust = on
+	if car:
+		car.sport_exhaust = on
+	_save_settings()
+
+
 func _set_time(index: int) -> void:
 	if day_night:
 		day_night.set_time(TIMES[index])

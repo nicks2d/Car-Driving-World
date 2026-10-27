@@ -9,6 +9,8 @@ extends Control
 @export var arc_width: float = 8.0
 ## So schnell folgt der Zeiger der Drehzahl (höher = direkter)
 @export var needle_speed: float = 12.0
+## Tempo in Meilen pro Stunde statt km/h (Einstellungen > Spiel)
+@export var use_mph: bool = false
 
 const SIGNAL_GREEN := Color("#3FD47A")
 const START_ANGLE: float = PI * 0.75
@@ -66,9 +68,9 @@ func _draw() -> void:
 		UiStyle.draw_text(self, str(k), number_pos + Vector2(0, 5), 13, "medium",
 			Color(UiStyle.RED, 0.95) if red else UiStyle.TEXT_DIM, 0.5)
 	# Tempo groß in der Mitte
-	var kmh := roundi(car.linear_velocity.length() * 3.6)
-	UiStyle.draw_text(self, str(kmh), center + Vector2(0, 30), 88, "extrabold", UiStyle.TEXT, 0.5)
-	UiStyle.draw_text(self, "km/h", center + Vector2(0, 64), 15, "medium", UiStyle.TEXT_DIM, 0.5)
+	var speed := roundi(car.linear_velocity.length() * (2.23694 if use_mph else 3.6))
+	UiStyle.draw_text(self, str(speed), center + Vector2(0, 30), 88, "extrabold", UiStyle.TEXT, 0.5)
+	UiStyle.draw_text(self, "mph" if use_mph else "km/h", center + Vector2(0, 64), 15, "medium", UiStyle.TEXT_DIM, 0.5)
 	# Blinker: grüne Pfeile oben links und rechts im Takt, Warnblinker: rotes Dreieck
 	if car.signal_lit:
 		if car.hazard or car.turn_signal == 1:

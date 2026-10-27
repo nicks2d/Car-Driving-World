@@ -94,6 +94,8 @@ const CHANCES: Array = [
 @export_group("Spiegelungen")
 ## Echte Spiegelungen (SSR) auf nasser Straße. Kostet ein paar FPS, nur bei Nässe an.
 @export var wet_reflections: bool = true
+## Wolkenschatten auf dem Land (Einstellungen > Grafik)
+@export var cloud_shadows: bool = true
 ## Schritte der Spiegelungs-Suche (weniger = schneller, aber Spiegelbilder enden früher)
 @export var reflection_steps: int = 32
 
@@ -414,7 +416,8 @@ func _apply(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("cloud_offset", _cloud_offset)
 	RenderingServer.global_shader_parameter_set("cloud_cover", clouds)
 	var sun_up := day_night.daylight if day_night else 1.0
-	RenderingServer.global_shader_parameter_set("cloud_shadow", sun_up * (1.0 - smoothstep(0.5, 0.85, overcast)))
+	var shadow_strength := sun_up * (1.0 - smoothstep(0.5, 0.85, overcast)) if cloud_shadows else 0.0
+	RenderingServer.global_shader_parameter_set("cloud_shadow", shadow_strength)
 	if terrain:
 		terrain.set_bare_trees(w[Season.WINTER] > 0.5)
 

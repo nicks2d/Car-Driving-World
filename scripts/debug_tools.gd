@@ -36,6 +36,9 @@ extends Node
 ## --weather=ID   Wetter: clear, cloudy, rain, storm, fog, snow (Tests sonst immer klar)
 ## --season=ID    Jahreszeit: spring, summer, autumn, winter (Tests sonst immer Sommer)
 ## --traffic=D    Verkehrsdichte 0 (aus), 0.5 (wenig) oder 1 (normal, Standard)
+## --quality=Q    Grafik-Qualität niedrig, mittel, hoch (Standard) oder ultra
+## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
+##                Audio, Spiel
 
 @export var camera: Camera3D
 
@@ -64,6 +67,7 @@ var _car_view: float = -1.0
 var _steer: String = ""
 var _photo: bool = false
 var _open_map: bool = false
+var _pause_page: int = -1
 var _flames: bool = false
 var _rainbow: bool = false
 var _signal: String = ""
@@ -78,6 +82,8 @@ var weather_id: String = ""
 var season_id: String = ""
 ## Verkehrsdichte aus den Argumenten (negativ = nicht angegeben)
 var traffic_density: float = -1.0
+## Grafik-Qualität aus den Argumenten (leer = Standard „hoch“)
+var quality: String = ""
 var _bench_seconds: float = 0.0
 var _game: Node3D
 var _state: String = "idle"
@@ -136,6 +142,8 @@ func _ready() -> void:
 				_photo = true
 			"map":
 				_open_map = true
+			"pause":
+				_pause_page = int(value)
 			"flames":
 				_flames = true
 			"rainbow":
@@ -172,6 +180,8 @@ func _ready() -> void:
 				_has_jump = true
 			"traffic":
 				traffic_density = float(value)
+			"quality":
+				quality = value
 			"weather":
 				weather_id = value
 			"season":
@@ -185,7 +195,8 @@ func is_benchmark() -> bool:
 
 
 func is_active() -> bool:
-	return _shot_name != "" or _bench_seconds > 0.0 or car_id != "" or weather_id != "" or season_id != ""
+	return _shot_name != "" or _bench_seconds > 0.0 or car_id != "" or weather_id != "" or season_id != "" \
+		or quality != "" or traffic_density >= 0.0
 
 
 ## Das Spiel meldet: Gelände rund ums Auto ist da
@@ -392,8 +403,13 @@ func _prepare_shot() -> void:
 	if _has_target:
 		(_game.get_node("Navigation") as Navigation).set_target(Vector3(_target.x, 0.0, _target.y))
 	# Fotomodus und große Karte halten das Spiel an, das Foto muss trotzdem ausgelöst werden
-	if _photo or _open_map:
+	if _photo or _open_map or _pause_page >= 0:
 		process_mode = Node.PROCESS_MODE_ALWAYS
+	if _pause_page >= 0:
+		var menu := _game.get_node("PauseMenu") as PauseMenu
+		menu.open()
+		if _pause_page > 0:
+			menu.show_settings_tab(_pause_page - 1)
 	if _open_map:
 		(_game.get_node("BigMap") as BigMap).open()
 	if _photo:

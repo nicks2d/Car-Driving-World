@@ -57,6 +57,10 @@ var target: Node3D
 var roads: RoadNetwork
 var _chunks: Dictionary = {}  # Vector2i -> Chunk
 var _running_jobs: int = 0
+## Stand der Einstellungen: Kacheln mit älterem Stand werden nach und nach neu gebaut
+var _generation: int = 0
+var _base_lod_distances := PackedFloat32Array()
+var _base_tree_spacing: float = 0.0
 var _update_timer: float = 0.0
 ## Pflanzen-Modelle: Art -> [nah, fern]
 var _veg_meshes: Dictionary = {}
@@ -95,6 +99,9 @@ class Chunk:
 	## Höhen für die Kollision, mit NaN an Tunnelportalen (leer = wie heights)
 	var collision_heights: PackedFloat32Array
 	var grid_size: int = 0
+	## Mit welchem Stand der Einstellungen gebaut (siehe set_detail)
+	var generation: int = 0
+	var pending_generation: int = 0
 	## Bäume und Felsen: Art -> MultiMeshInstance3D
 	var veg_instances: Dictionary = {}
 	## Stämme und große Felsen (x, y, z, Radius) und ihre Kollisionskörper
@@ -167,7 +174,7 @@ func _update_chunks() -> void:
 				chunk.coord = coord
 				_chunks[coord] = chunk
 			var wanted_lod := _lod_for_distance(distance)
-			if chunk.lod != wanted_lod and chunk.task_id == -1:
+			if (chunk.lod != wanted_lod or chunk.generation != _generation) and chunk.task_id == -1:
 				# Fehlende Kacheln vor feineren Detailstufen, alles vom Bezugspunkt aus gesehen
 				var key := _distance_to_chunk(focus, coord) * (1.0 if chunk.lod == -1 else 1.5)
 				todo.append([key, chunk, wanted_lod])
@@ -237,6 +244,7 @@ func _start_job(chunk: Chunk, lod: int, road_data: Dictionary) -> void:
 	job.with_vegetation = lod <= vegetation_max_lod
 	job.tree_spacing = tree_spacing
 	job.rock_spacing = rock_spacing
+	chunk.pending_generation = _generation
 	chunk.job = job
 	chunk.task_id = WorkerThreadPool.add_task(job.run, false, "Gelände-Kachel")
 	_running_jobs += 1
@@ -280,11 +288,17 @@ func _apply_job(chunk: Chunk) -> void:
 	_apply_water(chunk, job)
 	_apply_vegetation(chunk, job)
 	chunk.lod = job.lod
+	var rebuilt := chunk.generation != chunk.pending_generation
+	chunk.generation = chunk.pending_generation
 	if job.lod == 0:
 		chunk.heights = job.heights
 		chunk.collision_heights = job.collision_heights
 		chunk.grid_size = job.grid_size
 		chunk.colliders = job.colliders
+		# Neu gebaut mit anderer Vegetation: Stämme und Felsen neu
+		if rebuilt and chunk.body != null:
+			_free_vegetation_collision(chunk)
+			_create_vegetation_collision(chunk)
 
 
 func _apply_water(chunk: Chunk, job: TerrainChunkJob) -> void:
@@ -456,6 +470,25 @@ func _lod_for_distance(distance: float) -> int:
 
 
 ## Ist rund um die Position alles mit Kollision geladen? (Zum Freigeben des Autos)
+## Einstellungen: Sichtweite (Meter), Baumdichte (1 = normal) und bis zu welcher Detailstufe
+## es Bäume gibt. Geänderte Vegetation: alle Kacheln werden nach und nach neu gebaut (die alten
+## bleiben sichtbar, bis die neuen fertig sind).
+func set_detail(sight: float, vegetation_density: float, max_vegetation_lod: int) -> void:
+	if _base_lod_distances.is_empty():
+		_base_lod_distances = lod_distances.duplicate()
+		_base_tree_spacing = tree_spacing
+	view_distance = sight
+	var factor := clampf(sight / 2000.0, 0.65, 1.3)
+	for i in lod_distances.size():
+		lod_distances[i] = _base_lod_distances[i] * factor
+	var spacing := _base_tree_spacing / sqrt(maxf(vegetation_density, 0.1))
+	if not is_equal_approx(spacing, tree_spacing) or max_vegetation_lod != vegetation_max_lod:
+		tree_spacing = spacing
+		vegetation_max_lod = max_vegetation_lod
+		_generation += 1
+	_update_timer = 0.0
+
+
 func is_area_ready(position_3d: Vector3) -> bool:
 	if world_gen == null:
 		return false

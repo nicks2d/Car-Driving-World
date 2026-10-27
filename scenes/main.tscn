@@ -55,6 +55,8 @@
 [ext_resource type="Script" path="res://scripts/viewpoints.gd" id="74_viewpoints"]
 [ext_resource type="Script" path="res://scripts/photo_mode.gd" id="75_photo"]
 [ext_resource type="Script" path="res://scripts/traffic.gd" id="76_traffic"]
+[ext_resource type="Script" path="res://scripts/game_settings.gd" id="77_settings"]
+[ext_resource type="Script" path="res://scripts/pause_menu.gd" id="78_pause"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -534,3 +536,28 @@ car = NodePath("../Car")
 camera = NodePath("../Camera")
 day_night = NodePath("../DayNight")
 debug_tools = NodePath("../DebugTools")
+
+[node name="Settings" type="Node" parent="." node_paths=PackedStringArray("world_environment", "sun", "day_night", "weather", "terrain", "grass", "roads", "traffic", "car", "garage", "speedometer", "fps_label", "debug_tools")]
+script = ExtResource("77_settings")
+world_environment = NodePath("../WorldEnvironment")
+sun = NodePath("../Sun")
+day_night = NodePath("../DayNight")
+weather = NodePath("../Weather")
+terrain = NodePath("../Terrain")
+grass = NodePath("../Grass")
+roads = NodePath("../Roads")
+traffic = NodePath("../Traffic")
+car = NodePath("../Car")
+garage = NodePath("../Garage")
+speedometer = NodePath("../HUD/Speedometer")
+fps_label = NodePath("../HUD/FpsLabel")
+debug_tools = NodePath("../DebugTools")
+
+[node name="PauseMenu" type="CanvasLayer" parent="." node_paths=PackedStringArray("settings", "garage", "big_map", "photo_mode", "hud", "weather")]
+script = ExtResource("78_pause")
+settings = NodePath("../Settings")
+garage = NodePath("../Garage")
+big_map = NodePath("../BigMap")
+photo_mode = NodePath("../PhotoMode")
+hud = NodePath("../HUD")
+weather = NodePath("../Weather")

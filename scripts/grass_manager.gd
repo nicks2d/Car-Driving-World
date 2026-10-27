@@ -130,6 +130,16 @@ func _process(_delta: float) -> void:
 			_remove(coord)
 
 
+## Einstellungen: Umkreis (0 = kein Gras) und Dichte; alle Felder werden neu angelegt
+func set_level(new_radius: float, new_density: float) -> void:
+	if is_equal_approx(new_radius, radius) and is_equal_approx(new_density, density):
+		return
+	radius = new_radius
+	density = new_density
+	for coord: Vector2i in _patches.keys():
+		_remove(coord)
+
+
 func _exit_tree() -> void:
 	for patch: Patch in _patches.values():
 		if patch.task_id != -1:
