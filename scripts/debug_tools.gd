@@ -37,6 +37,9 @@ extends Node
 ## --season=ID    Jahreszeit: spring, summer, autumn, winter (Tests sonst immer Sommer)
 ## --traffic=D    Verkehrsdichte 0 (aus), 0.5 (wenig) oder 1 (normal, Standard)
 ## --quality=Q    Grafik-Qualität niedrig, mittel, hoch (Standard) oder ultra
+## --full        Randloses Fenster in Bildschirmgröße (so viele Bildpunkte wie im Vollbild). Echtes
+##                Vollbild übergeht macOS beim Start oft und bremst es auf 60 FPS (V-Sync lässt
+##                sich dort nicht abschalten). Der Benchmark beginnt erst, wenn die Größe stimmt.
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
 ##                Audio, Spiel
 
@@ -68,6 +71,7 @@ var _steer: String = ""
 var _photo: bool = false
 var _open_map: bool = false
 var _pause_page: int = -1
+var _full: bool = false
 var _flames: bool = false
 var _rainbow: bool = false
 var _signal: String = ""
@@ -110,6 +114,8 @@ var _reverse_time: float = 0.0
 
 func _ready() -> void:
 	_load_start_msec = Time.get_ticks_msec()
+	# Nach dem Einlesen der Argumente (unten) schon während des Ladens ins Vollbild
+	_go_full.call_deferred()
 	for arg in OS.get_cmdline_user_args():
 		var parts := arg.trim_prefix("--").split("=", true, 1)
 		var value := parts[1] if parts.size() > 1 else ""
@@ -144,6 +150,8 @@ func _ready() -> void:
 				_open_map = true
 			"pause":
 				_pause_page = int(value)
+			"full":
+				_full = true
 			"flames":
 				_flames = true
 			"rainbow":
@@ -231,10 +239,32 @@ func on_world_ready(game: Node3D) -> void:
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		# Falls das System trotzdem bei 60 FPS bremst: echte Rechenzeit pro Bild messen
 		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
-		_state = "bench"
-		_timer = 0.0
-		_extend_route()
-		_last_position = _game.car.global_position
+		if _full:
+			_state = "wait_full"
+			_timer = 0.0
+		else:
+			_start_bench()
+
+
+func _go_full() -> void:
+	if _full:
+		_fill_screen()
+
+
+func _fill_screen() -> void:
+	var screen := DisplayServer.screen_get_size()
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+	DisplayServer.window_set_position(DisplayServer.screen_get_position())
+	DisplayServer.window_set_size(screen)
+
+
+func _start_bench() -> void:
+	# Das Umschalten ins Vollbild setzt V-Sync zurück: hier noch einmal ausschalten
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	_state = "bench"
+	_timer = 0.0
+	_extend_route()
+	_last_position = _game.car.global_position
 
 
 func _process(delta: float) -> void:
@@ -269,6 +299,13 @@ func _process(delta: float) -> void:
 			if _timer <= 0.0:
 				_state = "done"
 				_take_screenshot()
+		"wait_full":
+			# Fenster schon bildschirmgroß?
+			_timer += delta
+			if DisplayServer.window_get_size() != DisplayServer.screen_get_size() and fmod(_timer, 1.0) < delta:
+				_fill_screen()
+			if DisplayServer.window_get_size() == DisplayServer.screen_get_size() and _timer > 1.0 or _timer > 8.0:
+				_start_bench()
 		"bench":
 			_timer += delta
 			_frame_times.append(delta)

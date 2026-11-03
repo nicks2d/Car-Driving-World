@@ -110,7 +110,7 @@ assets/
 - [x] Extra: Regenbogen, Wolkenschatten, Polarlicht
 - [x] Extra: Tunnel-Bug behoben, mehr Grip (Grip-Stufen), Blinker/Warnblinker/Hupe
 - [x] Extra: Anschlussstellen an jedem Stützpunkt, Raststätten mit Tankstelle und Rasthof
-- [ ] Meilenstein 8
+- [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
 ## Notizen / Entscheidungen
@@ -212,7 +212,8 @@ assets/
   Regen → Gewitter → Nebel → Schnee), J Jahreszeit, P Fotomodus (Maus ziehen schwenkt,
   W A S D / R F bewegen, Mausrad Zoom, 1–4 Filter, ↑ ↓ Belichtung, ← → Tageszeit,
   G Schärfe aufs Auto, Leertaste Foto, O Foto-Ordner, P/Esc zurück), Q Blinker links,
-  E Blinker rechts (noch mal = aus), X Warnblinker, H Hupe.
+  E Blinker rechts (noch mal = aus), X Warnblinker, H Hupe, Esc Pausemenü (dort Einstellungen;
+  alle Tasten außer Esc lassen sich unter Steuerung neu belegen).
 - Karte und Navi: `map_tiles.gd` rechnet das Kartenbild (Höhenfarbe, Schattierung, Wald,
   Wasser) in Kacheln à 128 px im Hintergrund (Stufen 4/16/64 m pro Pixel, max. 400 gemerkt).
   `map_view.gd` zeichnet darüber Straßen, Route, Ziel, Auto in Weltkoordinaten (eine
@@ -556,6 +557,20 @@ assets/
   30/60/120/unbegrenzt (`Engine.max_fps`), FPS-Anzeige. Steuerung: Grip-Stufe,
   Lenkempfindlichkeit 50–150 %, 20 Tasten neu belegbar (physische Taste, Name nach Layout über
   `keyboard_get_label_from_physical`, Doppelbelegung wird rot angezeigt, Esc bleibt frei).
+- Messung Qualitätsstufen (3.11., Mac nach einer Woche Pause kühl, aber auf Akku; Autobahn-
+  Benchmark 30 s mit Verkehr, `--bench=30 --highway --full --quality=…`, 2940 × 1912):
+  Niedrig 129,6 FPS (1%-Low 91), Mittel 88,9 (62), Hoch 63,5 und zur Kontrolle am Ende 66,4
+  (46–48), Ultra 36,5 (29). Ziele erreicht (Niedrig > 90, Mittel ~75, Hoch ≥ 60), Hoch aber
+  knapp; der Sprung Mittel → Hoch kommt von Render-Auflösung 65 → 75 % und SSAO.
+- Absturz-Suche („stiller Lauf ohne Ausgabe“): 10 Starts mit `--weather=rain`, 8 mit Pausemenü,
+  3 ohne Argumente: alle mit Exit-Code 0, Foto bzw. „Welt geladen“, keine Fehler. Die früheren
+  Läufe ohne Ausgabe hatten weder Absturzbericht (macOS) noch Fehlerzeile im Godot-Log, nur die
+  Kopfzeilen: passt zu einem geschlossenen Fenster, nicht zu einem Absturz. Prüfskripte dafür
+  (Exit-Code, Foto, Fehlerzeilen) lagen im Scratchpad.
+- Vollbild-Messungen: Godots `--fullscreen` übergeht macOS beim Start oft, und im echten
+  Vollbild (auch exklusiv) bremst macOS auf genau 60 FPS, obwohl V-Sync aus ist. Deshalb
+  `--full`: randloses Fenster in Bildschirmgröße (gleich viele Bildpunkte, keine Bremse),
+  der Benchmark beginnt erst, wenn die Größe stimmt. Im Akkubetrieb ist alles etwas langsamer.
 - Audio-Busse (`default_bus_layout.tres`): Master, Motor (alle Auto-Geräusche, über den
   Tunnel-Bus mit Hall), Umgebung (Regen, Wind, Donner), Musik (vorbereitet, noch keine Musik).
   Spiel: HUD-Farbe, Sportauspuff, km/h oder mph (Tacho), automatisches Wetter, Tageslänge.
