@@ -14,7 +14,7 @@ extends Resource
 @export var display_name: String = ""
 ## Zweite Zeile in der Garage, z. B. „F87 · 2018“
 @export var subtitle: String = ""
-## Ordner unter assets/models/ mit scene.gltf
+## Ordner unter assets/models/ mit scene.gltf oder einer .glb-Datei
 @export var model_folder: String = ""
 ## Credit-Text aus der license.txt (Pflicht bei CC BY)
 @export_multiline var credit: String = ""

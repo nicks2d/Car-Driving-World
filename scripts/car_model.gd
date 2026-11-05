@@ -66,14 +66,23 @@ var _calipers: Array = []
 var _extra_nodes: Array[Node] = []
 
 
-## Pfad zum Modell eines Profils
+## Pfad zum Modell eines Profils: scene.gltf (ältere Downloads) oder die .glb im Ordner
+## (neuere Sketchfab-Downloads). Leer, wenn der Ordner fehlt.
 static func model_path(profile: CarProfile) -> String:
-	return "res://assets/models/%s/scene.gltf" % profile.model_folder
+	var folder := "res://assets/models/%s" % profile.model_folder
+	if ResourceLoader.exists(folder + "/scene.gltf"):
+		return folder + "/scene.gltf"
+	if DirAccess.dir_exists_absolute(folder):
+		for file in DirAccess.get_files_at(folder):
+			if file.get_extension().to_lower() == "glb":
+				return folder.path_join(file)
+	return ""
 
 
 ## Liegt das Modell dieses Autos im Projekt?
 static func is_available(profile: CarProfile) -> bool:
-	return ResourceLoader.exists(model_path(profile))
+	var path := model_path(profile)
+	return path != "" and ResourceLoader.exists(path)
 
 
 func _ready() -> void:

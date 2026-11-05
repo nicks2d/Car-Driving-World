@@ -578,6 +578,34 @@ assets/
   von oben `--pos=9450,-3988 --highway --heading=90 --fly=110 --pitch=-55 --lookat=9604,-3988`,
   Schild 500 m `--pos=8790,-4056 --highway --heading=90`, Navi `--target=9604,-3982`,
   Bergblick Fichtenstein `--pos=-6420,-10337 --heading=90`.
+- Neue Modelle (Nov. 2026, alle GLB): Garage M4 CSL, SL 65, C 63; Verkehr (assets/models/verkehr/)
+  Audi S3, Accord, Aztek, ID. Buzz, LC 500; Tankstelle (assets/models/raststaette/). Lizenzen in
+  `assets/CREDITS.md`, Download in `assets/models/README.md`. `CarModel.model_path` nimmt
+  `scene.gltf` oder die `.glb` im Ordner. `tools/setup_models.gd` findet jetzt auch die Bilder,
+  die Godot neben eine GLB auspackt, Verkehr max. 1024 px (Tankstellen-Normal-Map 50 → 2,8 MB).
+- Kia Stinger weggelassen: Rennversion mit Überrollkäfig ohne Seitenscheiben, nach dem
+  Vereinfachen fehlen Teile der hinteren Tür. Seine „edge_color“-Materialien sind Linien
+  (SketchUp-Kanten, 280.000 Elemente), keine Flächen.
+- `tools/setup_traffic_models.gd` (mit Fenster, einmal nach dem Download): je Verkehrsmodell
+  `prepared/model.res` (`PreparedModel`) + Vorschaubilder. Ablauf: auf echte Länge skalieren,
+  Teile nach Material einordnen (Tabelle `MODELS`: Lack, Glas, Licht, Reifen, Felge, weg),
+  Sichtbarkeitstest (48 Richtungen × 140² Strahlen, Teile der Karosserie mit < 3 Treffern
+  fliegen raus; Räder nie, sie stecken oft hinter Radkappen), Glas vorne/hinten unter 0,95 m =
+  fast klare Leuchten-Abdeckung („cover“), Reifen/Felge nur in Radnähe, sonst Karosserie.
+  Je Rolle eine Fläche (Karosserie mit Punktfarben = Materialfarbe × mittlere Texturfarbe),
+  vereinfacht mit `ImporterMesh.generate_lods` (Budget nach Dreiecken × Gewicht, Lack 2,2):
+  Stufe nur nehmen, solange Lack/Glas ≥ 85 % ihrer Fläche behalten (sonst Löcher in Türen).
+  Normalen ganz zu verschmelzen ging weiter, riss aber Löcher. Räder nah je Ecke ein Mesh
+  (dreht sich), mittel einfache Zylinder (12 Seiten).
+- Ergebnis (nah / mittel Dreiecke): S3 49.800 / 17.500, Accord 52.100 / 29.000, Aztek
+  70.900 / 31.600 (von 3,1 Mio.), ID. Buzz 61.100 / 15.300, LC 500 55.900 / 6.100. Die mittlere
+  Stufe liegt meist über den gewünschten ~10.000, sonst reißt sie auf.
+- Tankstelle: 616.000 → 201.700 Dreiecke ohne Asphaltfläche und Ladenregale (Cube.006/.038,
+  390.000 Dreiecke), vereinfacht nah 51.600 / mittel 8.650 (mittel ohne Teile unter 1,5 m).
+  Echte Marken: Regal-Fotos (Coca-Cola, Fanta, Sprite, Cheerios, Chex) und Werbetafel „MILES+“
+  (Circle K) → im Werkzeug neutral erzeugte Bilder. Maße 38 × 6,6 × 22,9 m, lichte Höhe unter den
+  Leuchtkästen 4,81 m (echte Größe), 22 einfache Kollisionsformen (Laden, Stützen, Inseln,
+  Zapfsäulen). Leuchtende Materialien: glowin (Dach-Unterseite), Material.026/.027/.029.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in
