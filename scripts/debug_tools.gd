@@ -19,6 +19,7 @@ extends Node
 ## --target=X,Z   vor dem Foto ein Navi-Ziel setzen (Route und Hinweis im HUD prüfen)
 ## --photo        Foto im Fotomodus machen (mit Bedienfeld), --filter=N wählt den Filter (0–3)
 ## --map          Foto mit geöffneter großer Karte
+## --garage       Foto mit geöffneter Garage (mit --car=ID ist dieses Auto und seine Marke gewählt)
 ## --flames       vor dem Foto knallt es ständig im Auspuff (Flammen an den Endrohren prüfen)
 ## --rainbow      Regenbogen zeigen (tiefe Sonne, z. B. --time=18 --heading=90)
 ## --signal=left|right|hazard  Blinker bzw. Warnblinker fürs Foto an (leuchtend)
@@ -70,6 +71,7 @@ var _car_view: float = -1.0
 var _steer: String = ""
 var _photo: bool = false
 var _open_map: bool = false
+var _open_garage: bool = false
 var _pause_page: int = -1
 var _full: bool = false
 var _flames: bool = false
@@ -148,6 +150,8 @@ func _ready() -> void:
 				_photo = true
 			"map":
 				_open_map = true
+			"garage":
+				_open_garage = true
 			"pause":
 				_pause_page = int(value)
 			"full":
@@ -440,8 +444,10 @@ func _prepare_shot() -> void:
 	if _has_target:
 		(_game.get_node("Navigation") as Navigation).set_target(Vector3(_target.x, 0.0, _target.y))
 	# Fotomodus und große Karte halten das Spiel an, das Foto muss trotzdem ausgelöst werden
-	if _photo or _open_map or _pause_page >= 0:
+	if _photo or _open_map or _open_garage or _pause_page >= 0:
 		process_mode = Node.PROCESS_MODE_ALWAYS
+	if _open_garage:
+		(_game.get_node("Garage") as Garage).open()
 	if _pause_page >= 0:
 		var menu := _game.get_node("PauseMenu") as PauseMenu
 		menu.open()

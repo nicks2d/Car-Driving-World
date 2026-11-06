@@ -110,6 +110,7 @@ assets/
 - [x] Extra: Regenbogen, Wolkenschatten, Polarlicht
 - [x] Extra: Tunnel-Bug behoben, mehr Grip (Grip-Stufen), Blinker/Warnblinker/Hupe
 - [x] Extra: Anschlussstellen an jedem Stützpunkt, Raststätten mit Tankstelle und Rasthof
+- [x] Extra: Drei neue Garage-Autos (M4 CSL, SL 65, C 63) mit Marken-Reitern
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -138,8 +139,8 @@ assets/
 - Fahrwerte M7 (Test auf flacher Ebene, Skript im Scratchpad): 0–100 in 4,18 s, 0–200 in
   12,4 s, Spitze 250 km/h (abgeregelt), 100–0 in 33,2 m (`brake_strength` 76).
   Kurve + Vollgas: Heck kommt progressiv bis ~15°, fängt sich nach Gas weg.
-- Autos: fünf Profile in `cars/*.tres` (`CarProfile`): M2 (F87), M3 (E30), M3 GTS (E92),
-  M5 Competition (F90), M5 (G90). Alles Auto-Spezifische steht dort (Modell, Teile-Muster,
+- Autos: acht Profile in `cars/*.tres` (`CarProfile`): M2 (F87), M3 (E30), M3 GTS (E92),
+  M5 Competition (F90), M5 (G90), M4 CSL (G82), SL 65 Black Series, C 63 Black Series. Alles Auto-Spezifische steht dort (Modell, Teile-Muster,
   Maße, Motor, Getriebe, Allrad-Anteil `front_drive_share`, Bremsen, Sound). `Car.apply_profile()`
   stellt um, auch während des Spiels. Godot übernimmt den Befestigungspunkt eines Rads nur
   beim Einhängen (ENTER_TREE) und die Physik überschreibt die Lage der Rad-Knoten (beim
@@ -606,6 +607,31 @@ assets/
   (Circle K) → im Werkzeug neutral erzeugte Bilder. Maße 38 × 6,6 × 22,9 m, lichte Höhe unter den
   Leuchtkästen 4,81 m (echte Größe), 22 einfache Kollisionsformen (Laden, Stützen, Inseln,
   Zapfsäulen). Leuchtende Materialien: glowin (Dach-Unterseite), Material.026/.027/.029.
+- Drei neue Garage-Autos (Teil 2): `cars/m4csl.tres` (BMW M4 CSL G82, S58 405 kW/650 Nm,
+  8-Gang, 1625 kg), `cars/sl65.tres` (SL 65 AMG Black Series R230, V12 493 kW/1000 Nm, 5-Gang,
+  1870 kg), `cars/c63.tres` (C 63 AMG Coupé Black Series C204, Sauger-V8 380 kW/620 Nm bei
+  5200, Begrenzer 7200, 7-Gang MCT, 1710 kg), alle Heckantrieb. Blinker-Punkte, Endrohre, Spur
+  und Radradius am Modell gemessen. Gemessen (`tools/drive_test.gd`, flache Ebene, 0–100 /
+  0–200 / Spitze / 100–0): M4 CSL 3,70 s / 10,4 s / 306 / 32,8 m (Werk 3,7 / 10,7 / 307),
+  SL 65 3,80 s / 10,2 s / 319 / 32,9 m (Werk 3,8 / 320), C 63 4,20 s / 11,6 s / 299 / 33,0 m
+  (Werk 4,2 / 300); M2 zum Vergleich 4,22 s / 12,5 s / 250 / 33,4 m. Grip-Test (Sport): alle
+  1,67–1,68 g bei 80, 1,84–1,89 g bei 130, Power-Drift M4 24°, SL 65 22°, C 63 30° (M2 20°),
+  Handbremse 33–38° (fangen sich).
+- `CarProfile.brand` (Reiter in der Garage) und `year` (Reihenfolge). Garage: Reiter oben rechts
+  (Glas, ↑ ↓ oder Klick), Karten unten rechts nur von der gewählten Marke, nach Baujahr,
+  ← → wechselt darin; beim Markenwechsel kommt das dort zuletzt gewählte Auto. Karten so
+  schmal wie ihr Text (Unterzeile „Baujahr · PS“), lange Namen im Panel kleiner.
+- `CarProfile.min_roughness`: Originalmaterialien mit weniger Rauheit bekommen eine Kopie mit
+  diesem Wert (M4 CSL 0,3: das Modell hat viele perfekt spiegelnde Materialien, das gab
+  Glitzerpunkte an allen Kanten). Die Material-Zwischenspeicher (Glas, Felge …) werden jetzt pro
+  Auto neu angelegt (vorher behielt Glas die Deckkraft des ersten Autos).
+- Bug behoben: `_merge_attached` (zusammenfassen der Radteile, `merge_static_parts`) hat die
+  Platzhalter-Räder (Walze + weißer Balken aus car.tscn) mit eingesammelt, dann waren sie
+  sichtbar. Fiel beim M4 CSL auf (Räder wie graue Scheiben), steckte aber auch in M5 F90/G90.
+- Blinker-Kästchen sind nur noch zu sehen, solange sie leuchten (aus sieht man das Modell).
+- Testen: `--car=m4csl|sl65|c63`, `--garage` macht das Foto mit offener Garage (mit `--car`
+  ist dessen Marke gewählt), Fahrwerte `Godot --path . -s res://tools/drive_test.gd --
+  --cars=m4csl,sl65,c63`.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

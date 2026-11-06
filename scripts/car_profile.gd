@@ -14,6 +14,9 @@ extends Resource
 @export var display_name: String = ""
 ## Zweite Zeile in der Garage, z. B. „F87 · 2018“
 @export var subtitle: String = ""
+## Marke (Reiter in der Garage, z. B. "BMW M", "Mercedes-AMG") und Baujahr (Reihenfolge)
+@export var brand: String = "BMW M"
+@export var year: int = 2000
 ## Ordner unter assets/models/ mit scene.gltf oder einer .glb-Datei
 @export var model_folder: String = ""
 ## Credit-Text aus der license.txt (Pflicht bei CC BY)
@@ -59,6 +62,9 @@ extends Resource
 @export var straighten_front_wheels: bool = false
 ## Wie undurchsichtig die Scheiben sind (0 = klar, 1 = schwarz)
 @export_range(0.0, 1.0) var glass_opacity: float = 0.55
+## Glänzt ein Originalmaterial stärker (Rauheit darunter), bekommt es eine Kopie mit dieser
+## Rauheit. Gegen spiegelnde Felgen und Glitzerpunkte an Zierleisten (0 = nichts ändern)
+@export_range(0.0, 1.0) var min_roughness: float = 0.0
 
 @export_group("Lack")
 ## Farben für die Lackauswahl (die erste ist die Standardfarbe)

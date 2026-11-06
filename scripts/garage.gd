@@ -3,10 +3,11 @@ extends CanvasLayer
 ## Die Garage (Entwurf „Glas“): Das Spiel pausiert, eine Kamera kreist langsam um das Auto an
 ## seiner Stelle in der Welt, das HUD ist aus. Links ein Glas-Panel mit den Daten (Balken im
 ## Vergleich zum stärksten Auto), Lack, HUD-Farbe, Sportauspuff, Welt (Tageszeit, Wetter,
-## Jahreszeit – die Vorschau ändert sich sofort) und „Losfahren“. Unten rechts die Autos als
-## Karten. Auto, Lack und Einstellungen werden in user:// gespeichert.
+## Jahreszeit – die Vorschau ändert sich sofort) und „Losfahren“. Oben rechts Reiter für die
+## Marken (`CarProfile.brand`), unten rechts die Autos der gewählten Marke als Karten (nach
+## Baujahr). Auto, Lack und Einstellungen werden in user:// gespeichert.
 ##
-## Bedienung: Maus, ← → Auto, C Lack, Enter losfahren, Esc zurück (ohne Autowechsel).
+## Bedienung: Maus, ↑ ↓ Marke, ← → Auto, C Lack, Enter losfahren, Esc zurück (ohne Autowechsel).
 
 ## Wird gesendet, wenn die Garage geschlossen wurde
 signal closed
@@ -52,6 +53,11 @@ var _camera: Camera3D
 var _orbit_angle: float = 0.6
 var _dragging: bool = false
 var _hud_was_visible: bool = true
+## Marken in der Reihenfolge ihres ersten Autos in `cars`, je Marke die Nummern ihrer Autos
+## (nach Baujahr) und das zuletzt gewählte Auto (Marke → Nummer)
+var _brands: Array[String] = []
+var _brand_cars: Array = []
+var _brand_choice: Dictionary = {}
 
 # Oberfläche
 var _root: Control
@@ -66,6 +72,7 @@ var _weather_buttons: Array[Button] = []
 var _season_buttons: Array[Button] = []
 var _drive_button: Button
 var _cards: Array[CarCard] = []
+var _brand_tabs: Array[Button] = []
 var _credits: Control
 var _collection: Control
 ## Liste in der Sammlung (füllt fill_collection)
@@ -148,7 +155,7 @@ class CarCard extends Control:
 	var available: bool = true
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(184.0, 94.0)
+		custom_minimum_size = Vector2(132.0, 94.0)
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		var glass := GlassPanel.new()
 		glass.radius = 18.0
@@ -186,6 +193,7 @@ func _ready() -> void:
 	# Das Automodell muss auch bei angehaltenem Spiel laden können
 	if car and car.has_node("Model"):
 		car.get_node("Model").process_mode = Node.PROCESS_MODE_ALWAYS
+	_sort_brands()
 	_build_ui()
 	visible = false
 	_load_settings()
@@ -307,6 +315,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_step_car(-1)
 	elif event.is_action_pressed("ui_right"):
 		_step_car(1)
+	elif event.is_action_pressed("ui_up"):
+		_step_brand(-1)
+	elif event.is_action_pressed("ui_down"):
+		_step_brand(1)
 	elif event.is_action_pressed("cycle_paint"):
 		_set_paint(_paint + 1)
 	else:
@@ -337,18 +349,59 @@ func _process(delta: float) -> void:
 # Auswahl
 # ---------------------------------------------------------------------------
 
+func _sort_brands() -> void:
+	for i in cars.size():
+		if cars[i].brand not in _brands:
+			_brands.append(cars[i].brand)
+			_brand_cars.append([])
+		_brand_cars[_brands.find(cars[i].brand)].append(i)
+	for list: Array in _brand_cars:
+		list.sort_custom(func(a: int, b: int) -> bool: return cars[a].year < cars[b].year)
+
+
+func _brand_of(index: int) -> int:
+	return _brands.find(cars[index].brand)
+
+
+## Nächstes Auto derselben Marke (nach Baujahr, am Ende wieder von vorn)
 func _step_car(step: int) -> void:
-	for k in range(1, cars.size()):
-		var index := posmod(_selected + step * k, cars.size())
+	var list: Array = _brand_cars[_brand_of(_selected)]
+	var at := list.find(_selected)
+	for k in range(1, list.size()):
+		var index: int = list[posmod(at + step * k, list.size())]
 		if CarModel.is_available(cars[index]):
 			_pick_car(index)
 			return
+
+
+## Nächste Marke, von der mindestens ein Modell da ist
+func _step_brand(step: int) -> void:
+	var current := _brand_of(_selected)
+	for k in range(1, _brands.size()):
+		if _pick_brand(posmod(current + step * k, _brands.size())):
+			return
+
+
+## Zur Marke wechseln: das dort zuletzt gewählte Auto, sonst das älteste vorhandene.
+## false = von dieser Marke ist kein Modell da
+func _pick_brand(brand: int) -> bool:
+	if brand == _brand_of(_selected):
+		return true
+	var list: Array = _brand_cars[brand].duplicate()
+	if _brand_choice.has(_brands[brand]):
+		list.push_front(_brand_choice[_brands[brand]])
+	for index: int in list:
+		if CarModel.is_available(cars[index]):
+			_pick_car(index)
+			return true
+	return false
 
 
 func _pick_car(index: int) -> void:
 	if index == _selected or not CarModel.is_available(cars[index]):
 		return
 	_selected = index
+	_brand_choice[cars[index].brand] = index
 	_paint = 0
 	car.apply_profile(cars[index])
 	_rest_wheels()
@@ -413,6 +466,11 @@ func _set_season(index: int) -> void:
 func _refresh_all() -> void:
 	var p := cars[_selected]
 	_name_label.text = p.display_name
+	# Lange Namen (z. B. „C 63 AMG Coupé Black Series“) kleiner, damit sie ins Panel passen
+	var name_size := 38
+	while name_size > 26 and UiStyle.text_width(p.display_name, name_size, "extrabold") > PANEL_RECT.size.x - 66.0:
+		name_size -= 2
+	_name_label.add_theme_font_size_override("font_size", name_size)
 	_subtitle_label.text = p.subtitle
 	_fill_bars(p)
 	_fill_paint()
@@ -437,8 +495,11 @@ func _refresh_all() -> void:
 	_drive_button.add_theme_stylebox_override("normal", UiStyle.box(UiStyle.accent, 16))
 	_drive_button.add_theme_stylebox_override("hover", UiStyle.box(UiStyle.accent.lightened(0.12), 16))
 	_drive_button.add_theme_stylebox_override("pressed", UiStyle.box(UiStyle.accent.darkened(0.1), 16))
+	var brand := _brand_of(_selected)
+	_select_segment(_brand_tabs, brand)
 	for i in _cards.size():
 		_cards[i].selected = i == _selected
+		_cards[i].visible = _brand_of(i) == brand
 		_cards[i].queue_redraw()
 	for bar: Array in _bars:
 		(bar[2] as Bar).queue_redraw()
@@ -536,6 +597,7 @@ func _build_ui() -> void:
 	add_child(_root)
 	_build_panel()
 	_build_cards()
+	_build_brand_tabs()
 	_credits = _build_overlay("Credits")
 	var text := RichTextLabel.new()
 	text.bbcode_enabled = true
@@ -677,21 +739,87 @@ func _build_panel() -> void:
 		bottom.add_child(word)
 
 
+## Karten aller Autos (nach Marke und Baujahr), sichtbar sind nur die der gewählten Marke
 func _build_cards() -> void:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
+	row.add_theme_constant_override("separation", 12)
+	row.alignment = BoxContainer.ALIGNMENT_END
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	# Unten rechts (40 Punkte Rand), so breit wie der Platz rechts neben dem Panel
+	row.anchor_left = 0.0
+	row.anchor_right = 1.0
+	row.anchor_top = 1.0
+	row.anchor_bottom = 1.0
+	row.offset_left = PANEL_RECT.end.x + 40.0
+	row.offset_right = -40.0
+	row.offset_top = -40.0 - 94.0
+	row.offset_bottom = -40.0
 	_root.add_child(row)
-	for i in cars.size():
-		var p := cars[i]
-		var card := CarCard.new()
-		card.title = p.display_name.trim_prefix("BMW ")
-		card.subtitle = "%d PS · %s" % [p.power_ps, _short_drive(p)]
-		card.available = CarModel.is_available(p)
-		card.pressed.connect(_pick_car.bind(i))
-		row.add_child(card)
-		_cards.append(card)
-	# Rechts unten ausrichten (40 Punkte Rand)
-	row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 40)
+	_cards.resize(cars.size())
+	for list: Array in _brand_cars:
+		for i: int in list:
+			var p := cars[i]
+			var card := CarCard.new()
+			card.title = p.display_name.trim_prefix("BMW ")
+			card.subtitle = "%d · %d PS" % [p.year, p.power_ps]
+			card.available = CarModel.is_available(p)
+			# So schmal wie möglich, damit alle Autos einer Marke nebeneinander passen
+			card.custom_minimum_size.x = maxf(132.0, maxf(UiStyle.text_width(card.title, 18, "semibold"),
+				UiStyle.text_width(card.subtitle, 14, "regular")) + 36.0)
+			card.pressed.connect(_pick_car.bind(i))
+			row.add_child(card)
+			_cards[i] = card
+
+
+## Reiter für die Marken oben rechts (Glas), daneben der Tastenhinweis ↑ ↓
+func _build_brand_tabs() -> void:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_END
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	row.anchor_right = 1.0
+	row.offset_left = PANEL_RECT.end.x + 40.0
+	row.offset_right = -40.0
+	row.offset_top = PANEL_RECT.position.y
+	row.visible = _brands.size() > 1
+	_root.add_child(row)
+	var bar := PanelContainer.new()
+	bar.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.add_child(bar)
+	var glass := GlassPanel.new()
+	glass.radius = 18.0
+	bar.add_child(glass)
+	var margin := MarginContainer.new()
+	for side: String in ["left", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 5)
+	margin.add_theme_constant_override("margin_right", 12)
+	bar.add_child(margin)
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 4)
+	margin.add_child(tabs)
+	for i in _brands.size():
+		var button := Button.new()
+		button.text = _brands[i]
+		button.focus_mode = Control.FOCUS_NONE
+		button.add_theme_font_size_override("font_size", 17)
+		button.custom_minimum_size = Vector2(UiStyle.text_width(_brands[i], 17, "semibold") + 44.0, 42.0)
+		button.pressed.connect(_pick_brand.bind(i))
+		# Von dieser Marke ist kein Modell da: Reiter blass
+		var any_model := false
+		for index: int in _brand_cars[i]:
+			any_model = any_model or CarModel.is_available(cars[index])
+		if not any_model:
+			button.modulate.a = 0.4
+		tabs.add_child(button)
+		_brand_tabs.append(button)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(6.0, 0.0)
+	tabs.add_child(gap)
+	var key := UiStyle.label("↑ ↓", 13, "semibold")
+	key.add_theme_stylebox_override("normal", _key_style())
+	key.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tabs.add_child(key)
+	_select_segment(_brand_tabs, -1)
 
 
 ## Umschalter mit mehreren Feldern nebeneinander; gibt die Knöpfe zurück

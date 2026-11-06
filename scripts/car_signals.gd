@@ -3,7 +3,8 @@ extends Node3D
 ## Q/E blinken links/rechts (noch mal drücken = aus; nach einer Kurve geht der Blinker von
 ## selbst aus, wenn das Lenkrad zurückgeht), X Warnblinker, H Hupe (solange gedrückt).
 ## Orange Leuchten vorne, hinten und an den Spiegeln (Lage im Profil: indicator_points),
-## Takt 1,5 Hz, nachts mit kleinem Lichtschein. Klicken und Hupe entstehen im Code.
+## Takt 1,5 Hz, nachts mit kleinem Lichtschein. Die Leuchten sind nur zu sehen, solange sie
+## leuchten (aus: sieht man das Modell). Klicken und Hupe entstehen im Code.
 ## Bei einer Vollbremsung über 100 km/h geht der Warnblinker an und nach dem
 ## Wiederanfahren wieder aus (wie bei BMW).
 
@@ -103,6 +104,8 @@ func _build(profile: CarProfile) -> void:
 			# Etwas nach außen, damit die Leuchte nicht im Scheinwerfer- bzw. Spiegelgehäuse steckt
 			var outward := [Vector3(0.0, 0.0, 0.015), Vector3(0.0, 0.0, -0.015), Vector3(mirror * 0.02, 0.0, 0.0)]
 			lamp.position = p + outward[k]
+			lamp.visible = false
+			lamp.set_meta("side", side)
 			add_child(lamp)
 			_lamps.append(lamp)
 			# Lichtschein nur vorne und hinten (Spiegel ohne)
@@ -142,6 +145,9 @@ func _process(delta: float) -> void:
 		var on := lit and (_car.hazard or _car.turn_signal == (1 if side == 0 else -1))
 		_materials[side].emission_energy_multiplier = 4.0 if on else 0.0
 		_materials[side].albedo_color = ORANGE if on else ORANGE.darkened(0.5)
+		for lamp in _lamps:
+			if lamp.get_meta("side") == side:
+				lamp.visible = on
 	for light in _lights:
 		var side: int = light.get_meta("side")
 		var on := night and lit and (_car.hazard or _car.turn_signal == (1 if side == 0 else -1))

@@ -42,6 +42,9 @@
 [ext_resource type="Resource" path="res://cars/e92.tres" id="54_e92"]
 [ext_resource type="Resource" path="res://cars/f90.tres" id="55_f90"]
 [ext_resource type="Resource" path="res://cars/g90.tres" id="56_g90"]
+[ext_resource type="Resource" path="res://cars/m4csl.tres" id="79_m4csl"]
+[ext_resource type="Resource" path="res://cars/sl65.tres" id="80_sl65"]
+[ext_resource type="Resource" path="res://cars/c63.tres" id="81_c63"]
 [ext_resource type="Script" path="res://scripts/map_tiles.gd" id="60_tiles"]
 [ext_resource type="Script" path="res://scripts/navigation.gd" id="61_nav"]
 [ext_resource type="Script" path="res://scripts/minimap.gd" id="62_minimap"]
@@ -471,7 +474,7 @@ hud = NodePath("../HUD")
 day_night = NodePath("../DayNight")
 weather = NodePath("../Weather")
 viewpoints = NodePath("../Viewpoints")
-cars = Array[ExtResource("57_profile")]([ExtResource("52_m2"), ExtResource("53_e30"), ExtResource("54_e92"), ExtResource("55_f90"), ExtResource("56_g90")])
+cars = Array[ExtResource("57_profile")]([ExtResource("52_m2"), ExtResource("53_e30"), ExtResource("54_e92"), ExtResource("55_f90"), ExtResource("56_g90"), ExtResource("79_m4csl"), ExtResource("80_sl65"), ExtResource("81_c63")])
 
 [node name="MapTiles" type="Node" parent="."]
 process_mode = 3

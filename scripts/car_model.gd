@@ -37,6 +37,9 @@ signal model_ready
 ## Diese Teile wechseln früher auf vereinfachte Versionen (LOD), Wert < 1 = früher
 @export var low_detail_lod_bias: float = 0.35
 
+## Platzhalter-Reifen und -Speiche an jedem Rad (car.tscn), solange kein Modell da ist
+const PLACEHOLDER_WHEEL_PARTS: Array[String] = ["Tire", "Spoke"]
+
 ## Aktuelle Lackfarbe (Index in profile.paint_colors)
 var paint_index: int = 0
 ## Gemessen am Modell (in Metern, nach dem Einpassen): Radstand, Spurweiten, Radradius.
@@ -236,7 +239,7 @@ func _set_placeholder(on: bool) -> void:
 	for path in ["BodyMesh", "CabinMesh", "HeadlightLeft", "HeadlightRight"]:
 		(_car.get_node(path) as Node3D).visible = on
 	for wheel in _wheels():
-		for child in ["Tire", "Spoke"]:
+		for child in PLACEHOLDER_WHEEL_PARTS:
 			(wheel.get_node(child) as Node3D).visible = on
 
 
@@ -601,7 +604,8 @@ func _merge_attached(holder: Node3D) -> Array[MeshInstance3D]:
 	var by_material := {}
 	for child in holder.get_children():
 		var mi := child as MeshInstance3D
-		if mi == null or mi.mesh == null or mi.is_queued_for_deletion():
+		# Die Platzhalter-Räder des Autos hängen auch hier, die gehören nicht dazu
+		if mi == null or mi.mesh == null or mi.is_queued_for_deletion() or mi.name in PLACEHOLDER_WHEEL_PARTS:
 			continue
 		for s in mi.mesh.get_surface_count():
 			var material := mi.mesh.surface_get_material(s)
@@ -625,6 +629,12 @@ func _merge_attached(holder: Node3D) -> Array[MeshInstance3D]:
 
 ## Eigene Materialien für Lack, Glas, Felgen, Reifen und Lichter
 func _make_materials() -> void:
+	# Pro Auto neu (Glas-Deckkraft und Glanzgrenze stehen im Profil)
+	_glass = null
+	_rim = null
+	_tire = null
+	_exhaust = null
+	_smoothed.clear()
 	_paint = StandardMaterial3D.new()
 	_paint.albedo_color = _profile.paint_colors[paint_index] if not _profile.paint_colors.is_empty() else Color.GRAY
 	_paint.metallic = _profile.paint_metallic
@@ -646,6 +656,8 @@ var _glass: StandardMaterial3D
 var _rim: StandardMaterial3D
 var _tire: StandardMaterial3D
 var _exhaust: StandardMaterial3D
+## Kopien zu glatter Originalmaterialien (Original → Kopie), siehe CarProfile.min_roughness
+var _smoothed: Dictionary = {}
 
 
 ## front: liegt das Teil in der vorderen Hälfte des Autos? (Scheinwerfer leuchten nur vorne,
@@ -688,6 +700,13 @@ func _replacement_for(material: Material, front: bool) -> Material:
 			_exhaust.metallic = 1.0
 			_exhaust.roughness = 0.25
 		return _exhaust
+	var base := material as BaseMaterial3D
+	if base and base.roughness < _profile.min_roughness:
+		if not _smoothed.has(base):
+			var copy := base.duplicate() as BaseMaterial3D
+			copy.roughness = _profile.min_roughness
+			_smoothed[base] = copy
+		return _smoothed[base]
 	return null
 
 
