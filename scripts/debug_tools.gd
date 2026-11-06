@@ -37,6 +37,9 @@ extends Node
 ## --weather=ID   Wetter: clear, cloudy, rain, storm, fog, snow (Tests sonst immer klar)
 ## --season=ID    Jahreszeit: spring, summer, autumn, winter (Tests sonst immer Sommer)
 ## --traffic=D    Verkehrsdichte 0 (aus), 0.5 (wenig) oder 1 (normal, Standard)
+## --boxcars      Verkehr ohne echte Modelle (nur gebaute Kästchen, zum Vergleichen der Leistung)
+## --lineup=M     vor dem Foto von jedem Verkehrs-Typ ein stehendes Auto ab M Metern vor dem
+##                Spieler (Standard 18), z. B. mit --fly=6 oder --time=22
 ## --quality=Q    Grafik-Qualität niedrig, mittel, hoch (Standard) oder ultra
 ## --full        Randloses Fenster in Bildschirmgröße (so viele Bildpunkte wie im Vollbild). Echtes
 ##                Vollbild übergeht macOS beim Start oft und bremst es auf 60 FPS (V-Sync lässt
@@ -88,6 +91,9 @@ var weather_id: String = ""
 var season_id: String = ""
 ## Verkehrsdichte aus den Argumenten (negativ = nicht angegeben)
 var traffic_density: float = -1.0
+## Verkehr nur mit gebauten Kästchen (--boxcars)
+var traffic_boxes: bool = false
+var _lineup: float = -1.0
 ## Grafik-Qualität aus den Argumenten (leer = Standard „hoch“)
 var quality: String = ""
 var _bench_seconds: float = 0.0
@@ -192,6 +198,10 @@ func _ready() -> void:
 				_has_jump = true
 			"traffic":
 				traffic_density = float(value)
+			"boxcars":
+				traffic_boxes = true
+			"lineup":
+				_lineup = float(value) if value != "" else 18.0
 			"quality":
 				quality = value
 			"weather":
@@ -443,6 +453,8 @@ func _prepare_shot() -> void:
 		weather.force_aurora()
 	if _has_target:
 		(_game.get_node("Navigation") as Navigation).set_target(Vector3(_target.x, 0.0, _target.y))
+	if _lineup >= 0.0:
+		(_game.get_node("Traffic") as Traffic).spawn_lineup(_lineup)
 	# Fotomodus und große Karte halten das Spiel an, das Foto muss trotzdem ausgelöst werden
 	if _photo or _open_map or _open_garage or _pause_page >= 0:
 		process_mode = Node.PROCESS_MODE_ALWAYS

@@ -202,6 +202,12 @@ func _prepare_vehicle(model_name: String, folder: String, glb: String, config: D
 	var glass_split := _split_covers(groups["glass"], config["length"])
 	groups["glass"] = glass_split[0]
 	groups["cover"] = glass_split[1]
+	# Ohne eigenes Scheinwerfer-Material (Accord): was direkt hinter der vorderen Abdeckung
+	# liegt (Reflektoren im Gehäuse), leuchtet als Scheinwerfer
+	if _tris(groups["head"]) == 0 and _tris(groups["cover"]) > 0:
+		var head_split := _heads_behind_cover(groups["body"], groups["cover"])
+		groups["body"] = head_split[0]
+		groups["head"] = head_split[1]
 	# Reifen und Felgen: nur Dreiecke in Radnähe, der Rest gehört zur Karosserie
 	var width := _arrays_bounds(_merge(parts, ["body", "paint"])).size.x
 	var wheel_split := _split_wheel_zone(_merge(parts, ["tire", "rim"]), width)
@@ -467,6 +473,41 @@ func _split_covers(data: Array, length: float) -> Array:
 		else:
 			window_indices.append_array([a, b, c])
 	return [_compact([verts, data[1], data[2], window_indices]), _compact([verts, data[1], data[2], cover_indices])]
+
+
+## Karosserie in [Rest, Scheinwerfer] teilen: Scheinwerfer = Dreiecke im Raum der vorderen
+## Leuchten-Abdeckung (je Seite, bis 15 cm dahinter)
+func _heads_behind_cover(body: Array, cover: Array) -> Array:
+	var boxes: Array[AABB] = []
+	for side: float in [1.0, -1.0]:
+		var box := AABB()
+		var found := false
+		for p in (cover[0] as PackedVector3Array):
+			if p.z > 0.0 and p.x * side > 0.0:
+				box = box.expand(p) if found else AABB(p, Vector3.ZERO)
+				found = true
+		if found:
+			box = box.grow(0.03)
+			box.position.z -= 0.15
+			box.size.z += 0.15
+			boxes.append(box)
+	var verts: PackedVector3Array = body[0]
+	var indices: PackedInt32Array = body[3]
+	var rest_indices := PackedInt32Array()
+	var head_indices := PackedInt32Array()
+	for t in indices.size() / 3:
+		var a := indices[t * 3]
+		var b := indices[t * 3 + 1]
+		var c := indices[t * 3 + 2]
+		var middle := (verts[a] + verts[b] + verts[c]) / 3.0
+		var inside := false
+		for box in boxes:
+			inside = inside or box.has_point(middle)
+		if inside:
+			head_indices.append_array([a, b, c])
+		else:
+			rest_indices.append_array([a, b, c])
+	return [_compact([verts, body[1], body[2], rest_indices]), _compact([verts, body[1], body[2], head_indices])]
 
 
 ## Reifen/Felge in Rad-Dreiecke (unten, außen) und den Rest teilen

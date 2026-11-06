@@ -522,13 +522,29 @@ assets/
   unter 650 m nur hinter der Kamera; verschwinden über 1300 m, über 650 m hinter der Kamera
   oder wenn ihre Straße nicht mehr geladen ist. Nach dem Ladebildschirm 1,5 s „Füllen“: dann
   auch 60–400 m vom Spieler (die Welt ist sofort belebt).
-- Fahrzeuge (`_vehicle_mesh`, Kästchen + achteckige Räder, je Typ ein Mesh mit 8 Flächen):
-  Limousine, Kombi, SUV, Transporter (60 % weiß), Lkw (Fahrerhaus + Koffer). Lack = eigenes
-  Material pro Farbe (10 Farben), Bremslicht und Blinker per Material-Tausch nur bei Änderung.
-  Nachts Licht-Materialien heller und echte SpotLights (ohne Schatten) an den nächsten 3 Autos.
-  Schatten bis 120 m, Kollision (AnimatableBody3D) bis 160 m. Stoß mit dem Spieler: 6 s stehen
-  mit Warnblinker, dann weiter. Benchmark (`--bench`): ohne Kollision (Autopilot weicht nicht
-  aus). Test: `--traffic=0|0.5|1`, das Foto nennt die Zahl der Autos.
+- Fahrzeuge (Teil 3 der Modell-Sitzung): Pkw sind echte Modelle (`TYPES` in `traffic.gd`):
+  Audi S3 und Accord häufig (je 30/26 von 100 auf Landstraße/Autobahn), ID. Buzz mittel (16/11),
+  Aztek (7/5) und LC 500 (5/7) selten; der LC 500 ist zu 60 % einer der „Schnellen“ links
+  (sonst 5–12 %). Kombi und gebauter Transporter entfallen, der Lkw bleibt gebaut. Lackfarben
+  gewichtet (`PAINTS`): je ~19 % Weiß/Schwarz, 16 % Grau, 14 % Silber, selten Blau, Rot, Grün,
+  Beige, Bordeaux. Jedes Modell wird einmal im Hintergrund geladen (`load_threaded_request`,
+  bis dahin die gebaute Version). Drei Stufen über Godots Sichtbarkeitsbereiche (kein Skript
+  pro Bild): bis `near_distance` 60 m das volle Modell (~50–70k Dreiecke, eigene Rad-Meshes, die
+  sich drehen), bis `mid_distance` 220 m die mittlere Stufe (Räder als Zylinder), dahinter die
+  gebaute Kiste in Lackfarbe (auch Ersatz, wenn das Modell fehlt). Je Stufe 6–7 Draw Calls
+  (eine Fläche pro Rolle). Schatten nur bis 120 m (nah/mittel), die ferne Kiste nie.
+  Bremslicht = Material-Tausch der Fläche „tail“, Blinker am Modell = zwei kleine Kästchen je
+  Seite an `front_corner`/`rear_corner`, nur sichtbar, solange sie leuchten. Materialien ohne
+  Backface-Culling (viele Modellteile sind einseitig). Kollision = Box aus Länge/Breite/Höhe.
+- Accord hatte keine eigene Scheinwerfer-Fläche: `setup_traffic_models.gd` nimmt dann die
+  Karosserie-Dreiecke direkt hinter der vorderen Leuchten-Abdeckung als Scheinwerfer.
+- Leistung Modelle vs. Kästchen (Autobahn-Benchmark 30 s, Verkehr Normal, Hoch, `--full`,
+  abwechselnd gemessen, Mac heiß auf Akku 37 %): Kästchen 23,4 / 24,1 FPS, Modelle 22,9 / 23,3
+  FPS (1%-Low 14 beide) → Modelle kosten ~3 %. Absolutwerte nur mit kühlem Mac vergleichbar.
+- Testen Verkehr: `--boxcars` (ohne Modelle), `--lineup=M` stellt vor dem Foto von jedem Typ ein
+  stehendes Auto M Meter vor den Spieler (Autobahn abwechselnd rechts/links, jedes zweite
+  blinkt, jedes dritte Warnblinker), z. B. `--pos=8790,-4056 --highway --heading=90 --fly=2.2
+  --pitch=-4 --lineup=8 --traffic=0.01` (nachts `--time=22.5`).
 - Gemessen (Prüfskripte, 90 s): an der Raststätte Falkenweiler 7 von 19 Autobahn-Autos über
   den Parkplatz, an der Anschlussstelle bei (3200, −4060) Ab- und Auffahrten (Rampe 4,
   Zubringer 5), 13–32 Spurwechsel, kein Auto festgefahren, kleinster Abstand in einer Spur 4 m.

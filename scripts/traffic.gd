@@ -10,7 +10,10 @@ extends Node3D
 ## Ein Weg besteht aus Stücken (Leg): Straßenabschnitt, Richtung, von/bis (Meter) und Spur.
 ## Am Ende eines Stücks wählt das Auto das nächste (an Kreuzungen zufällig) und fährt eine
 ## kurze Übergangskurve dorthin. Autos entstehen und verschwinden außer Sicht (weit weg oder
-## hinter der Kamera). Fahrzeuge sind im Code gebaut (Kästchen), nachts mit Licht.
+## hinter der Kamera). Pkw sind echte Modelle (vorbereitet von tools/setup_traffic_models.gd) in
+## drei Stufen: nah das volle Modell mit drehenden Rädern, mittel vereinfacht, fern eine gebaute
+## Kiste in Lackfarbe. Fehlt ein Modell, fährt die gebaute Version. Lkw sind gebaut. Nachts
+## mit Licht.
 ## Stößt der Spieler mit einem zusammen, bleibt es mit Warnblinker stehen und fährt nach ein
 ## paar Sekunden weiter.
 
@@ -42,6 +45,12 @@ extends Node3D
 @export var entry_chance: float = 0.3
 ## Nach einem Zusammenstoß so lange stehen bleiben (Sekunden)
 @export var crash_wait: float = 6.0
+## Echte Modelle verwenden (aus = nur gebaute Kästchen, z. B. zum Vergleichen der Leistung)
+@export var use_models: bool = true
+## Detailstufen der Modelle (Meter von der Kamera): bis near_distance das volle Modell, bis
+## mid_distance das vereinfachte, dahinter die gebaute Kiste
+@export var near_distance: float = 60.0
+@export var mid_distance: float = 220.0
 
 ## Spuren (Meter rechts der Mittellinie): Landstraße, Autobahn rechts/links, Rampenanfang neben
 ## der Autobahn, Fahrgasse der Raststätte
@@ -64,16 +73,31 @@ const BLINK_HZ: float = 1.5
 
 enum Kind { ROAD, HIGHWAY, RAMP, CONNECTOR, LOT }
 
-## Fahrzeugtypen: Länge, Breite, Beschleunigung, Anteil auf Landstraße / Autobahn
+## Fahrzeugtypen: Modell (Ordner in assets/models/verkehr), Form der gebauten Version (fern
+## und als Ersatz ohne Modell), Länge, Breite, Höhe (Kollision), Beschleunigung, Anteil auf
+## Landstraße / Autobahn, Chance, auf der Autobahn zu den Schnellen links zu gehören
 const TYPES := {
-	"limousine": {"length": 4.7, "width": 1.82, "accel": 2.0, "road": 34, "highway": 30},
-	"kombi": {"length": 4.8, "width": 1.84, "accel": 1.9, "road": 26, "highway": 22},
-	"suv": {"length": 4.75, "width": 1.95, "accel": 1.8, "road": 20, "highway": 16},
-	"transporter": {"length": 5.4, "width": 2.0, "accel": 1.3, "road": 14, "highway": 10},
-	"lkw": {"length": 12.7, "width": 2.5, "accel": 0.7, "road": 6, "highway": 22},
+	"s3": {"model": "2014_audi_s3_limousine", "shape": "limousine", "length": 4.47, "width": 1.8,
+		"height": 1.42, "accel": 2.2, "road": 30, "highway": 26, "fast": 0.12},
+	"accord": {"model": "2021_honda_accord", "shape": "limousine", "length": 4.87, "width": 1.86,
+		"height": 1.45, "accel": 2.0, "road": 30, "highway": 26, "fast": 0.1},
+	"id_buzz": {"model": "2023_volkswagen_id_buzz_gtx", "shape": "suv", "length": 4.71, "width": 1.98,
+		"height": 1.85, "accel": 1.8, "road": 16, "highway": 11, "fast": 0.0},
+	"aztek": {"model": "2005_pontiac_aztek", "shape": "suv", "length": 4.63, "width": 1.92,
+		"height": 1.75, "accel": 1.6, "road": 7, "highway": 5, "fast": 0.05},
+	"lc500": {"model": "2017_lexus_lc_500", "shape": "limousine", "length": 4.77, "width": 1.92,
+		"height": 1.35, "accel": 2.6, "road": 5, "highway": 7, "fast": 0.6},
+	"lkw": {"shape": "lkw", "length": 12.7, "width": 2.5, "height": 3.9, "accel": 0.7, "road": 6,
+		"highway": 22, "fast": 0.0},
 }
-const PAINTS: Array[Color] = [Color("#E9E9E6"), Color("#1B1C1F"), Color("#9EA3A8"), Color("#4A4E54"),
-	Color("#1F3A66"), Color("#8E1A1A"), Color("#2C5D8C"), Color("#2F4A35"), Color("#C8B89A"), Color("#5C2A3A")]
+const MODEL_PATH := "res://assets/models/verkehr/%s/prepared/model.res"
+## Lackfarben wie auf deutschen Straßen [Farbe, Gewicht]: meist Weiß, Schwarz, Grau, Silber,
+## seltener Blau, Rot, Grün, Beige
+const PAINTS: Array = [
+	[Color("#E9E9E6"), 19], [Color("#1B1C1F"), 19], [Color("#55595E"), 16], [Color("#A9ADB1"), 14],
+	[Color("#1F3A66"), 9], [Color("#2C5D8C"), 3], [Color("#8E1A1A"), 7], [Color("#2F4A35"), 4],
+	[Color("#C8B89A"), 4], [Color("#5C2A3A"), 2],
+]
 const SURFACES: Array[String] = ["paint", "glass", "dark", "white", "head", "tail", "ind_l", "ind_r"]
 
 
@@ -90,12 +114,22 @@ class Leg:
 
 class TrafficCar:
 	var node: Node3D
-	var mesh: MeshInstance3D
+	## Gebaute Version (fern bzw. ohne Modell) und die Stufen des Modells (falls da)
+	var far: MeshInstance3D
+	var near: MeshInstance3D
+	var mid: MeshInstance3D
+	## Räder der nahen Stufe (drehen sich) und Blinker am Modell (links, rechts)
+	var wheels: Array[MeshInstance3D] = []
+	var wheel_centers := PackedVector3Array()
+	var wheel_radius: float = 0.33
+	var wheel_angle: float = 0.0
+	var lamps: Array[MeshInstance3D] = []
 	var light: SpotLight3D
 	var body: AnimatableBody3D
 	var type: String
 	var length: float
 	var width: float
+	var height: float
 	var truck: bool
 	var accel: float
 	## Wunschtempo auf Landstraße und Autobahn (m/s); schnelle Autos bleiben gern links
@@ -127,6 +161,7 @@ class TrafficCar:
 	var shown_brake: bool = false
 	var shown_left: bool = false
 	var shown_right: bool = false
+	var shown_shadow: bool = false
 
 
 var _cars: Array[TrafficCar] = []
@@ -143,6 +178,9 @@ var _ghost: bool = false
 var _meshes: Dictionary = {}  # Typ -> ArrayMesh
 var _surface_index: Dictionary = {}  # Typ -> {Flächenname: Nummer}
 var _materials: Dictionary = {}
+## Vorbereitete Modelle je Typ (null = keins da) und Blinker-Meshes je Modell und Seite
+var _models: Dictionary = {}
+var _lamp_meshes: Dictionary = {}
 
 
 func _ready() -> void:
@@ -151,6 +189,13 @@ func _ready() -> void:
 	_ghost = debug_tools != null and debug_tools.is_benchmark()
 	if debug_tools != null and debug_tools.traffic_density >= 0.0:
 		density = debug_tools.traffic_density
+	if debug_tools != null and debug_tools.traffic_boxes:
+		use_models = false
+	# Modelle einmal im Hintergrund laden (bis sie da sind, fährt die gebaute Version)
+	if use_models:
+		for type: String in TYPES:
+			if TYPES[type].has("model") and ResourceLoader.exists(MODEL_PATH % TYPES[type]["model"]):
+				ResourceLoader.load_threaded_request(MODEL_PATH % TYPES[type]["model"])
 
 
 ## Dichte ändern (Einstellungen): 0 = aus, 0.5 = wenig, 1 = normal
@@ -264,7 +309,7 @@ func _try_spawn() -> void:
 			var offset := _rng.randf_range(60.0, 400.0) * (1.0 if _rng.randf() < 0.5 else -1.0)
 			s = clampf(near + offset, leg.from + 10.0, leg.to - 10.0)
 		var type := _pick_type(highway)
-		var fast := highway and type != "lkw" and type != "transporter" and _rng.randf() < 0.12
+		var fast := highway and _rng.randf() < float(TYPES[type]["fast"])
 		leg.lateral = HW_LEFT if fast else (HW_RIGHT if highway else ROAD_LANE)
 		var pose := _pose(leg, s, leg.lateral)
 		var at: Vector3 = pose[0]
@@ -294,7 +339,7 @@ func _pick_type(highway: bool) -> String:
 		pick -= TYPES[type]["highway" if highway else "road"]
 		if pick < 0:
 			return type
-	return "limousine"
+	return "s3"
 
 
 ## Ist der Punkt vor der Kamera (ungefähr im Bild)?
@@ -311,6 +356,7 @@ func _spawn(type: String, leg: Leg, s: float, fast: bool) -> void:
 	traffic_car.type = type
 	traffic_car.length = info["length"]
 	traffic_car.width = info["width"]
+	traffic_car.height = info["height"]
 	traffic_car.accel = info["accel"]
 	traffic_car.truck = type == "lkw"
 	traffic_car.fast = fast
@@ -318,9 +364,9 @@ func _spawn(type: String, leg: Leg, s: float, fast: bool) -> void:
 		"lkw":
 			traffic_car.road_speed = _rng.randf_range(62.0, 80.0) / 3.6
 			traffic_car.highway_speed = _rng.randf_range(82.0, 89.0) / 3.6
-		"transporter":
-			traffic_car.road_speed = _rng.randf_range(62.0, 90.0) / 3.6
-			traffic_car.highway_speed = _rng.randf_range(105.0, 135.0) / 3.6
+		"id_buzz":
+			traffic_car.road_speed = _rng.randf_range(62.0, 95.0) / 3.6
+			traffic_car.highway_speed = _rng.randf_range(110.0, 150.0) / 3.6
 		_:
 			traffic_car.road_speed = _rng.randf_range(65.0, 100.0) / 3.6
 			traffic_car.highway_speed = _rng.randf_range(185.0, 230.0) / 3.6 if fast \
@@ -330,13 +376,14 @@ func _spawn(type: String, leg: Leg, s: float, fast: bool) -> void:
 	traffic_car.lateral = leg.lateral
 	traffic_car.lane_target = leg.lateral
 	traffic_car.node = Node3D.new()
-	traffic_car.mesh = MeshInstance3D.new()
-	traffic_car.mesh.mesh = _vehicle_mesh(type)
-	var paint := PAINTS[_rng.randi() % PAINTS.size()]
-	if type == "transporter" and _rng.randf() < 0.6:
-		paint = PAINTS[0]
-	traffic_car.mesh.set_surface_override_material(_surface_index[type]["paint"], _paint_material(paint))
-	traffic_car.node.add_child(traffic_car.mesh)
+	var paint := _pick_paint()
+	traffic_car.far = MeshInstance3D.new()
+	traffic_car.far.mesh = _vehicle_mesh(type)
+	traffic_car.far.set_surface_override_material(_surface_index[type]["paint"], _paint_material(paint))
+	traffic_car.node.add_child(traffic_car.far)
+	var model := _model(type)
+	if model:
+		_add_model(traffic_car, model, paint)
 	# Scheinwerfer-Licht (nur die nächsten paar nachts eingeschaltet)
 	traffic_car.light = SpotLight3D.new()
 	traffic_car.light.light_color = Color(1.0, 0.95, 0.85)
@@ -359,6 +406,55 @@ func _spawn(type: String, leg: Leg, s: float, fast: bool) -> void:
 	_place(traffic_car)
 	traffic_car.node.reset_physics_interpolation()
 	_cars.append(traffic_car)
+
+
+## Test (--lineup): von jedem Typ ein stehendes Auto vor dem Spieler, ab start Metern voraus,
+## auf der Autobahn abwechselnd rechte und linke Spur. Jedes zweite blinkt links, jedes dritte
+## hat den Warnblinker an (Licht prüfen).
+func spawn_lineup(start: float) -> void:
+	var p := car.global_position
+	var best: Array = []
+	var best_distance := INF
+	for pair: Array in roads.loaded_segments(Rect2(p.x - 60.0, p.z - 60.0, 120.0, 120.0)):
+		var key: Vector3i = pair[0]
+		if not RoadNetwork.is_road_key(key) and not RoadNetwork.is_highway_key(key):
+			continue
+		var segment: RoadSegment = pair[1]
+		for i in segment.points.size():
+			var d := Vector2(segment.points[i].x - p.x, segment.points[i].z - p.z).length()
+			if d < best_distance:
+				best_distance = d
+				best = [key, segment, i]
+	if best.is_empty():
+		return
+	var segment: RoadSegment = best[1]
+	var i: int = best[2]
+	var along := segment.points[mini(i + 1, segment.points.size() - 1)] - segment.points[maxi(i - 1, 0)]
+	var forward := along.dot(car.global_basis.z) > 0.0
+	var highway := RoadNetwork.is_highway_key(best[0])
+	var s0 := _s_near(segment, forward, Vector2(p.x, p.z))
+	var k := 0
+	for type: String in TYPES:
+		var leg := Leg.new()
+		leg.key = best[0]
+		leg.segment = segment
+		leg.kind = Kind.HIGHWAY if highway else Kind.ROAD
+		leg.forward = forward
+		leg.from = 0.0
+		leg.to = segment.total_length()
+		leg.lateral = (HW_RIGHT if k % 2 == 0 else HW_LEFT) if highway else ROAD_LANE
+		var s := s0 + start + (floorf(k / 2.0) if highway else float(k)) * 16.0
+		if s > leg.to - 10.0:
+			break
+		_spawn(type, leg, s, false)
+		var c := _cars.back() as TrafficCar
+		c.plan.clear()
+		c.speed = 0.0
+		c.crash_timer = 1e9
+		c.blink = 1 if k % 2 == 1 else 0
+		c.blink_timer = 1e9
+		c.hazard = k % 3 == 2
+		k += 1
 
 
 func _remove(traffic_car: TrafficCar) -> void:
@@ -442,18 +538,7 @@ func _place(c: TrafficCar) -> void:
 	var facing := Basis.looking_at(-c.forward, Vector3.UP)
 	c.node.global_transform = Transform3D(facing, c.position)
 	if c.body:
-		c.body.global_transform = Transform3D(facing, c.position + Vector3.UP * _body_height(c) * 0.5)
-
-
-func _body_height(c: TrafficCar) -> float:
-	match c.type:
-		"lkw":
-			return 3.9
-		"transporter":
-			return 2.6
-		"suv":
-			return 1.75
-	return 1.45
+		c.body.global_transform = Transform3D(facing, c.position + Vector3.UP * c.height * 0.5)
 
 
 ## Ende eines Stücks: nächstes wählen und eine kurze Kurve dorthin legen
@@ -918,30 +1003,50 @@ func _check_crash(c: TrafficCar, player: Vector3) -> void:
 
 func _update_looks(delta: float) -> void:
 	var player := car.global_position
+	var eye := camera.global_position if camera else player
 	var lit := fmod(_blink_clock, 1.0 / BLINK_HZ) < 0.5 / BLINK_HZ
 	for c in _cars:
 		var distance := c.position.distance_to(player)
+		# Schatten nur nah (beim Modell die nahe und mittlere Stufe, die ferne Kiste nie)
 		var shadows := distance < shadow_distance
-		c.mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows \
-			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if shadows != c.shown_shadow:
+			c.shown_shadow = shadows
+			var mode := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows \
+				else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			for mesh: MeshInstance3D in ([c.near, c.mid] + c.wheels) if c.near else [c.far]:
+				mesh.cast_shadow = mode
 		var indices: Dictionary = _surface_index[c.type]
 		if c.braking != c.shown_brake:
 			c.shown_brake = c.braking
-			c.mesh.set_surface_override_material(indices["tail"], _material("brake" if c.braking else "tail"))
+			var tail := _material("brake" if c.braking else "tail")
+			c.far.set_surface_override_material(indices["tail"], tail)
+			for mesh: MeshInstance3D in [c.near, c.mid]:
+				if mesh and PreparedModel.surface_index(mesh.mesh, "tail") >= 0:
+					mesh.set_surface_override_material(PreparedModel.surface_index(mesh.mesh, "tail"), tail)
 		var left_on := lit and (c.hazard or c.blink == 1)
 		var right_on := lit and (c.hazard or c.blink == -1)
 		if left_on != c.shown_left:
 			c.shown_left = left_on
-			c.mesh.set_surface_override_material(indices["ind_l"], _material("ind_on" if left_on else "ind_off"))
+			c.far.set_surface_override_material(indices["ind_l"], _material("ind_on" if left_on else "ind_off"))
+			if not c.lamps.is_empty():
+				c.lamps[0].visible = left_on
 		if right_on != c.shown_right:
 			c.shown_right = right_on
-			c.mesh.set_surface_override_material(indices["ind_r"], _material("ind_on" if right_on else "ind_off"))
+			c.far.set_surface_override_material(indices["ind_r"], _material("ind_on" if right_on else "ind_off"))
+			if not c.lamps.is_empty():
+				c.lamps[1].visible = right_on
+		# Räder drehen sich nur in der nahen Stufe
+		if not c.wheels.is_empty() and c.position.distance_to(eye) < near_distance + 5.0:
+			c.wheel_angle = wrapf(c.wheel_angle + c.speed * delta / c.wheel_radius, 0.0, TAU)
+			var spin := Basis(Vector3.RIGHT, c.wheel_angle)
+			for i in c.wheels.size():
+				c.wheels[i].transform = Transform3D(spin, c.wheel_centers[i])
 		# Kollision nur in der Nähe (und nicht im Benchmark)
 		var wants_body := distance < body_distance and not _ghost
 		if wants_body and c.body == null:
 			c.body = AnimatableBody3D.new()
 			var shape := BoxShape3D.new()
-			shape.size = Vector3(c.width, _body_height(c), c.length)
+			shape.size = Vector3(c.width, c.height, c.length)
 			var collision := CollisionShape3D.new()
 			collision.shape = shape
 			c.body.add_child(collision)
@@ -981,7 +1086,19 @@ func _material(key: String) -> StandardMaterial3D:
 	if _materials.has(key):
 		return _materials[key]
 	var material := StandardMaterial3D.new()
+	# Viele Modellteile sind nur von einer Seite gebaut
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	match key:
+		"body":
+			# Karosserie der Modelle: Farben als Punktfarben (Materialfarbe × Textur)
+			material.vertex_color_use_as_albedo = true
+			material.vertex_color_is_srgb = true
+			material.roughness = 0.6
+		"cover":
+			# Fast klare Abdeckung über Scheinwerfern und Rücklichtern
+			material.albedo_color = Color(0.9, 0.95, 1.0, 0.18)
+			material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			material.roughness = 0.05
 		"glass":
 			material.albedo_color = Color(0.07, 0.09, 0.12)
 			material.roughness = 0.08
@@ -1016,12 +1133,130 @@ func _paint_material(color: Color) -> StandardMaterial3D:
 		material.albedo_color = color
 		material.metallic = 0.45
 		material.roughness = 0.32
+		material.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_materials[key] = material
 	return _materials[key]
 
 
+## Zufällige Lackfarbe nach den Gewichten in PAINTS
+func _pick_paint() -> Color:
+	var total := 0
+	for entry: Array in PAINTS:
+		total += entry[1] as int
+	var pick := _rng.randi_range(0, total - 1)
+	for entry: Array in PAINTS:
+		pick -= entry[1] as int
+		if pick < 0:
+			return entry[0]
+	return PAINTS[0][0]
+
+
 # ---------------------------------------------------------------------------
-# Fahrzeuge aus Kästchen (vorne = +Z, Boden = 0)
+# Echte Modelle (nahe und mittlere Stufe)
+# ---------------------------------------------------------------------------
+
+## Vorbereitetes Modell des Typs (null = keins da oder noch beim Laden)
+func _model(type: String) -> PreparedModel:
+	if _models.has(type):
+		return _models[type]
+	if not use_models or not TYPES[type].has("model"):
+		_models[type] = null
+		return null
+	var path := MODEL_PATH % TYPES[type]["model"]
+	match ResourceLoader.load_threaded_get_status(path):
+		ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			return null
+		ResourceLoader.THREAD_LOAD_LOADED:
+			var model := ResourceLoader.load_threaded_get(path) as PreparedModel
+			_models[type] = model
+			if model:
+				_set_model_materials(model)
+			return model
+	_models[type] = null
+	return null
+
+
+## Materialien nach den Rollen der Flächen (einmal pro Modell; Lack und Rücklicht setzt
+## jedes Auto selbst)
+func _set_model_materials(model: PreparedModel) -> void:
+	var meshes: Array[ArrayMesh] = [model.near_mesh, model.mid_mesh]
+	meshes.append_array(model.wheel_meshes)
+	for mesh in meshes:
+		for i in mesh.get_surface_count():
+			var role := mesh.surface_get_name(i)
+			match role:
+				"paint":
+					mesh.surface_set_material(i, _paint_material(PAINTS[0][0]))
+				"glass", "cover", "head", "tail":
+					mesh.surface_set_material(i, _material(role))
+				_:
+					mesh.surface_set_material(i, _material("body"))
+
+
+## Nahe und mittlere Stufe, Räder und Blinker anbauen; die gebaute Kiste ist dann nur fern zu sehen
+func _add_model(c: TrafficCar, model: PreparedModel, paint: Color) -> void:
+	c.far.visibility_range_begin = mid_distance
+	c.far.visibility_range_begin_margin = 5.0
+	c.far.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	c.near = _lod_instance(model.near_mesh, 0.0, near_distance, paint)
+	c.mid = _lod_instance(model.mid_mesh, near_distance, mid_distance, paint)
+	c.node.add_child(c.near)
+	c.node.add_child(c.mid)
+	for i in model.wheel_meshes.size():
+		var wheel := MeshInstance3D.new()
+		wheel.mesh = model.wheel_meshes[i]
+		wheel.position = model.wheel_centers[i]
+		wheel.visibility_range_end = near_distance
+		wheel.visibility_range_end_margin = 5.0
+		c.node.add_child(wheel)
+		c.wheels.append(wheel)
+	c.wheel_centers = model.wheel_centers
+	if not model.wheel_centers.is_empty():
+		c.wheel_radius = maxf(model.wheel_centers[0].y, 0.2)
+	for side in 2:
+		var lamp := MeshInstance3D.new()
+		lamp.mesh = _lamp_mesh(model, side)
+		lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		lamp.visibility_range_end = mid_distance
+		lamp.visible = false
+		c.node.add_child(lamp)
+		c.lamps.append(lamp)
+	c.shown_shadow = false
+	for mesh: MeshInstance3D in [c.near, c.mid] + c.wheels:
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+func _lod_instance(mesh: ArrayMesh, begin: float, end: float, paint: Color) -> MeshInstance3D:
+	var instance := MeshInstance3D.new()
+	instance.mesh = mesh
+	instance.visibility_range_begin = begin
+	instance.visibility_range_begin_margin = 5.0 if begin > 0.0 else 0.0
+	instance.visibility_range_end = end
+	instance.visibility_range_end_margin = 5.0
+	var paint_index := PreparedModel.surface_index(mesh, "paint")
+	if paint_index >= 0:
+		instance.set_surface_override_material(paint_index, _paint_material(paint))
+	return instance
+
+
+## Blinker einer Seite (0 = links = +X): je ein Kästchen an der äußeren Ecke vorne und hinten
+func _lamp_mesh(model: PreparedModel, side: int) -> ArrayMesh:
+	var key := "%s/%d" % [model.resource_path, side]
+	if _lamp_meshes.has(key):
+		return _lamp_meshes[key]
+	var mirror := Vector3(1.0 if side == 0 else -1.0, 1.0, 1.0)
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_box(tool, model.front_corner * mirror - Vector3(0.0, 0.0, 0.03), Vector3(0.1, 0.06, 0.07))
+	_box(tool, model.rear_corner * mirror + Vector3(0.0, 0.0, 0.03), Vector3(0.1, 0.06, 0.07))
+	var mesh := tool.commit()
+	mesh.surface_set_material(0, _material("ind_on"))
+	_lamp_meshes[key] = mesh
+	return mesh
+
+
+# ---------------------------------------------------------------------------
+# Gebaute Fahrzeuge aus Kästchen (fern und als Ersatz ohne Modell; vorne = +Z, Boden = 0)
 # ---------------------------------------------------------------------------
 
 func _vehicle_mesh(type: String) -> ArrayMesh:
@@ -1035,13 +1270,13 @@ func _vehicle_mesh(type: String) -> ArrayMesh:
 	var length: float = TYPES[type]["length"]
 	var width: float = TYPES[type]["width"]
 	var front := length * 0.5
-	match type:
-		"limousine", "kombi", "suv":
-			var suv := type == "suv"
+	match TYPES[type]["shape"]:
+		"limousine", "suv":
+			var suv: bool = TYPES[type]["shape"] == "suv"
 			var low := 0.45 if suv else 0.32
 			var body_top := 1.15 if suv else 0.93
-			var cabin_length := 2.8 if suv else (3.05 if type == "kombi" else 2.5)
-			var cabin_z := -0.35 if suv else (-0.55 if type == "kombi" else -0.25)
+			var cabin_length := 2.8 if suv else 2.5
+			var cabin_z := -0.35 if suv else -0.25
 			var cabin_top := body_top + (0.58 if suv else 0.5)
 			_box(parts["paint"], Vector3(0.0, (low + body_top) * 0.5, 0.0), Vector3(width, body_top - low, length))
 			_box(parts["glass"], Vector3(0.0, (body_top + cabin_top) * 0.5, cabin_z),
@@ -1054,17 +1289,6 @@ func _vehicle_mesh(type: String) -> ArrayMesh:
 				for z: float in [length * 0.31, -length * 0.31]:
 					_wheel(parts["dark"], Vector3(x, radius, z), radius, 0.24)
 			_lights(parts, width, length, low + 0.42, low + 0.5)
-		"transporter":
-			_box(parts["paint"], Vector3(0.0, 1.45, -0.35), Vector3(width, 2.2, length - 0.7))
-			_box(parts["paint"], Vector3(0.0, 0.8, front - 0.4), Vector3(width - 0.05, 0.9, 0.8))
-			_box(parts["glass"], Vector3(0.0, 1.85, front - 0.79), Vector3(width - 0.2, 0.75, 0.04))
-			for x: float in [width * 0.5 + 0.005, -width * 0.5 - 0.005]:
-				_box(parts["glass"], Vector3(x, 1.85, front - 1.35), Vector3(0.02, 0.6, 0.9))
-			_box(parts["dark"], Vector3(0.0, 0.45, front - 0.02), Vector3(width + 0.02, 0.25, 0.1))
-			for x: float in [width * 0.5 - 0.12, -width * 0.5 + 0.12]:
-				for z: float in [length * 0.33, -length * 0.3]:
-					_wheel(parts["dark"], Vector3(x, 0.36, z), 0.36, 0.24)
-			_lights(parts, width, length, 0.95, 1.0)
 		"lkw":
 			# Fahrerhaus vorne, Kofferaufbau, Fahrgestell
 			_box(parts["paint"], Vector3(0.0, 1.95, front - 1.15), Vector3(width, 2.7, 2.3))
@@ -1086,7 +1310,7 @@ func _vehicle_mesh(type: String) -> ArrayMesh:
 			continue
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		indices[key] = mesh.get_surface_count() - 1
-		mesh.surface_set_material(indices[key], _material(key) if key != "paint" else _paint_material(PAINTS[0]))
+		mesh.surface_set_material(indices[key], _material(key) if key != "paint" else _paint_material(PAINTS[0][0]))
 	_meshes[type] = mesh
 	_surface_index[type] = indices
 	return mesh
