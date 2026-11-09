@@ -29,6 +29,8 @@ extends Node
 ## --volfog       volumetrischen Nebel einschalten
 ## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png),
 ##                mehrere mit Komma (--benchshot=8,16,24)
+## --shotevery=M  während des Benchmarks alle M gefahrenen Meter ein Bild (strecke_M.png), z. B.
+##                für Fotos alle 100 m durch einen langen Tunnel
 ## --exitdrive    mit --bench --highway: Der Autopilot nimmt die nächste Ausfahrt (über den
 ##                Verzögerungsstreifen), fährt über den Zubringer und auf der anderen Seite
 ##                wieder auf (Beschleunigungsstreifen)
@@ -120,6 +122,8 @@ var _lowest_up: float = 1.0
 var _last_position: Vector3 = Vector3.ZERO
 var _log_timer: float = 0.0
 var _bench_shots := PackedFloat32Array()
+var _shot_every: float = 0.0
+var _next_distance_shot: float = 0.0
 var _exit_drive: bool = false
 ## Folgt der Autopilot gerade der Route über die Ausfahrt? (Kurven dann wie auf der Landstraße)
 var _on_exit_route: bool = false
@@ -194,6 +198,8 @@ func _ready() -> void:
 					_bench_shots.append(float(part))
 			"exitdrive":
 				_exit_drive = true
+			"shotevery":
+				_shot_every = float(value)
 			"nowait":
 				_no_wait = true
 			"nohud":
@@ -342,6 +348,9 @@ func _process(delta: float) -> void:
 				+ Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
 			_process_times.append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
 			_physics_times.append(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
+			if _shot_every > 0.0 and _distance_driven >= _next_distance_shot:
+				_save_image("strecke_%04d" % roundi(_next_distance_shot))
+				_next_distance_shot += _shot_every
 			if not _bench_shots.is_empty() and _timer >= _bench_shots[0]:
 				_bench_shots.remove_at(0)
 				_save_image("bench_%d" % int(_timer))

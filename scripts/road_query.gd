@@ -308,6 +308,19 @@ func tunnel_hole(x: float, z: float, natural: float) -> bool:
 	return false
 
 
+## Höchste Röhrendecke (+ 0,5 m) über diesem Punkt, wenn er bis margin Meter neben einer
+## Röhre liegt, sonst -INF. Für alles, was nicht in die Röhre hängen darf (Schürzen, Wasser,
+## Pflanzen, Horizont-Ring).
+func tube_top(x: float, z: float, margin: float) -> float:
+	var top := -INF
+	var pieces: Array = _t_cells.get(Vector2i(floori(x / CELL), floori(z / CELL)), [])
+	for index: int in pieces:
+		var hit := _tunnel_hit(index, x, z)
+		if hit.x <= _t_half[index] + margin:
+			top = maxf(top, hit.z + RoadSegment.TUBE_APEX + 0.5)
+	return top
+
+
 ## Für grobe Detailstufen: Liegt ein Rasterpunkt bis band Meter neben einer Röhre (band =
 ## Größe seiner Dreiecke) und darunter als 1 m über dem Scheitel, wird er auf diese Höhe
 ## gehoben, damit kein Dreieck durch die Röhre schneidet. Nah an den Portalen muss die

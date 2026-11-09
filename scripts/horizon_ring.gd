@@ -20,6 +20,8 @@ extends MeshInstance3D
 @export var segment_count: int = 720
 ## Nach so vielen Metern Fahrt wird der Ring neu um das Auto gebaut
 @export var rebuild_distance: float = 600.0
+## Tunnel-Maske (TunnelMask) so oft neu zeichnen (Sekunden): neue Tunnel kommen dazu
+@export var tunnel_mask_interval: float = 2.0
 
 var world_gen: WorldGen
 var target: Node3D
@@ -120,6 +122,10 @@ class RingJob:
 		arrays[Mesh.ARRAY_INDEX] = indices
 
 
+var _tunnel_mask := TunnelMask.new()
+var _tunnel_timer: float = 0.0
+
+
 func start(gen: WorldGen, follow: Node3D, terrain_manager: TerrainManager) -> void:
 	world_gen = gen
 	target = follow
@@ -127,9 +133,10 @@ func start(gen: WorldGen, follow: Node3D, terrain_manager: TerrainManager) -> vo
 	_start_job()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if world_gen == null or target == null:
 		return
+	_update_tunnel_mask(delta)
 	# Wo liegen schon Kacheln? Dort versinkt der Ring.
 	var ring_material := material_override as ShaderMaterial
 	if terrain and ring_material and terrain.chunk_mask:
@@ -151,6 +158,21 @@ func _process(_delta: float) -> void:
 	var ring_center := Vector2(global_position.x, global_position.z)
 	if here.distance_to(ring_center) > rebuild_distance:
 		_start_job()
+
+
+## Unter Tunnel-Korridoren zeichnet der Ring nichts unterhalb der Röhrendecke (horizon.gdshader)
+func _update_tunnel_mask(delta: float) -> void:
+	_tunnel_timer -= delta
+	var ring_material := material_override as ShaderMaterial
+	if _tunnel_timer > 0.0 or ring_material == null or terrain == null or terrain.roads == null:
+		return
+	_tunnel_timer = tunnel_mask_interval
+	var here := Vector2(target.global_position.x, target.global_position.z)
+	var half := TunnelMask.SIZE * TunnelMask.CELL * 0.5
+	_tunnel_mask.rasterize(terrain.roads.loaded_segments(Rect2(here - Vector2(half, half), Vector2(half, half) * 2.0)), here)
+	ring_material.set_shader_parameter("tunnel_mask", _tunnel_mask.texture)
+	ring_material.set_shader_parameter("tunnel_origin", _tunnel_mask.origin)
+	ring_material.set_shader_parameter("tunnel_size", TunnelMask.SIZE * TunnelMask.CELL)
 
 
 func _exit_tree() -> void:

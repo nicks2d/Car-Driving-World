@@ -31,6 +31,8 @@ var collision_heights: PackedFloat32Array
 var grid_size: int = 0
 ## Mesh-Daten der Flussoberfläche in dieser Kachel (leer = kein Fluss)
 var water_arrays: Array = []
+## Unterkante der Schürze an jedem Randpunkt (Welthöhe), Reihenfolge wie die Schürzen-Punkte
+var skirt_bottoms := PackedFloat32Array()
 ## Pflanzen und Felsen: Art -> MultiMesh-Puffer (je Exemplar 12 Zahlen Transform + 4 Zufallswerte)
 var vegetation: Dictionary = {}
 ## Hindernisse für die Kollision: je 4 Zahlen (x, y, z, Radius) relativ zur Kachel
@@ -142,11 +144,21 @@ func run() -> void:
 	# Er verdeckt kleine Lücken zu Nachbar-Kacheln mit anderer Detailstufe.
 	var skirt_depth := spacing * 2.0 + 3.0
 	var outward := [Vector3(0, 0, -1), Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(1, 0, 0)]
+	skirt_bottoms.resize(skirt_count)
 	for edge in 4:
 		var first := v
 		for e in grid_size:
 			var src := _edge_vertex(edge, e)
-			verts[v] = verts[src] - Vector3(0.0, skirt_depth, 0.0)
+			# Über einer Tunnelröhre hängt sie nur bis knapp über die Decke (sonst stünde sie als
+			# Wand in der Röhre, ohne Kollision)
+			var bottom := verts[src].y - skirt_depth
+			if check_holes:
+				# Abstand bis eine Rasterweite: das Schürzenstück zum Nachbarpunkt reicht so weit
+				var top := roads.tube_top(origin.x + verts[src].x, origin.y + verts[src].z, spacing + 2.0)
+				if top > bottom:
+					bottom = minf(top, verts[src].y)
+			verts[v] = Vector3(verts[src].x, bottom, verts[src].z)
+			skirt_bottoms[v - grid_count] = bottom
 			normals[v] = normals[src]
 			colors[v] = colors[src]
 			v += 1
@@ -289,6 +301,8 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 					continue
 				# Am Hang den Stamm so weit einsinken lassen, dass er talseitig nicht schwebt
 				var base := h - 0.3 - gradient * trunk
+				if _over_tube(roads, x, z, base, crown * 0.5):
+					continue
 				if conifer:
 					conifers.append_array(_instance(lx, base, lz, angle, height * 0.95, height, height * 0.95, shade))
 				else:
@@ -297,6 +311,8 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 			else:
 				var scale := lerpf(1.0, 2.6, size)
 				if _blocked_by_road(x, z, scale * 0.9, roads, lakes):
+					continue
+				if _over_tube(roads, x, z, h - 0.2 - gradient * scale * 0.6, scale):
 					continue
 				bushes.append_array(_instance(lx, h - 0.2 - gradient * scale * 0.6, lz, angle, scale, scale * 0.8, scale, shade))
 	# Felsen: seltener, häufiger an steilen Hängen und über der Baumgrenze
@@ -323,6 +339,9 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 			var scale := lerpf(0.6, 3.8, size * size) * (1.0 + slope)
 			if _blocked_by_road(x, z, scale * lerpf(0.8, 1.3, stretch) * 0.6, roads, lakes):
 				continue
+			# Felsen sinken tief ein: nicht auf dünner Decke über einer Röhre
+			if _over_tube(roads, x, z, h - scale * 0.6 - gradient * scale * 0.4, scale * 1.3):
+				continue
 			var shade := Color(stretch, 0.0, 0.0, 0.0)
 			var row := _instance(lx, h - scale * 0.2 - gradient * scale * 0.4, lz, angle,
 				scale * lerpf(0.8, 1.3, stretch), scale * lerpf(0.6, 1.0, size), scale, shade)
@@ -336,6 +355,11 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 				colliders.append_array([lx, h, lz, scale * 0.45])
 	vegetation = {"conifer": conifers, "broadleaf": broadleafs, "bush": bushes,
 		"rock0": rocks_a, "rock1": rocks_b, "rock2": rocks_c}
+
+
+## Reicht etwas mit dieser Unterkante (Welthöhe) und diesem Radius in eine Tunnelröhre?
+func _over_tube(roads: RoadQuery, x: float, z: float, bottom: float, radius: float) -> bool:
+	return roads.has_tunnels() and roads.tube_top(x, z, radius) > bottom
 
 
 ## Eine Zeile für den MultiMesh-Puffer: Drehung um die Hochachse, Größe, Position, Zufallswerte
@@ -408,6 +432,24 @@ func _build_river_water(origin: Vector2) -> void:
 	water_arrays[Mesh.ARRAY_NORMAL] = normals
 	water_arrays[Mesh.ARRAY_TEX_UV] = uvs
 	water_arrays[Mesh.ARRAY_INDEX] = indices
+
+
+## Unterkante der Schürze am Randpunkt, der (x, z) am nächsten liegt (für tools/tunnel_check.gd)
+func skirt_bottom_at(x: float, z: float) -> float:
+	var lx := x - coord.x * chunk_size
+	var lz := z - coord.y * chunk_size
+	var best := 0
+	var best_distance := INF
+	for edge in 4:
+		for e in grid_size:
+			var vert := _edge_vertex(edge, e)
+			var vx := float(vert % grid_size) * spacing
+			var vz := float(vert / grid_size) * spacing
+			var d := (vx - lx) * (vx - lx) + (vz - lz) * (vz - lz)
+			if d < best_distance:
+				best_distance = d
+				best = edge * grid_size + e
+	return skirt_bottoms[best]
 
 
 ## Index des e-ten Rasterpunkts an einer Kante (0 = vorne, 1 = hinten, 2 = links, 3 = rechts)

@@ -9,6 +9,7 @@
 [ext_resource type="Script" path="res://scripts/fps_display.gd" id="8_fps"]
 [ext_resource type="Script" path="res://scripts/debug_tools.gd" id="9_debug"]
 [ext_resource type="Shader" path="res://shaders/terrain.gdshader" id="10_terrain_shader"]
+[ext_resource type="Shader" path="res://shaders/horizon.gdshader" id="82_horizon_shader"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
@@ -245,7 +246,7 @@ uv1_triplanar = true
 uv1_world_triplanar = true
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ring"]
-shader = ExtResource("10_terrain_shader")
+shader = ExtResource("82_horizon_shader")
 shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 shader_parameter/far_mode = true
 shader_parameter/sink_into_chunks = true

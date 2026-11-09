@@ -113,6 +113,7 @@ assets/
 - [x] Extra: Drei neue Garage-Autos (M4 CSL, SL 65, C 63) mit Marken-Reitern
 - [x] Extra: Verkehr mit echten Modellen, Verzögerungs- und Beschleunigungsstreifen
 - [x] Extra: Raststätten neu (Tankstellen-Modell, Pkw-/Lkw-Plätze, Inseln, geparkte Fahrzeuge)
+- [x] Extra: Wände in langen Tunneln behoben (Horizont-Ring, Schürzen, Vegetation), Prüfwerkzeug erweitert
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -424,6 +425,30 @@ assets/
   Portaltiefe (12 m) als Tunnel, sonst endete die Röhre des einen Abschnitts mitten im Berg.
   Anschlussstellen nur, wo das Gelände ±340 m um den Stützpunkt höchstens 12 m von der
   Autobahn abweicht (keine Rampen an Tunneln oder hohen Brücken).
+- Lange Tunnel, „Wände zum Durchfahren“ (behoben, 9.11.): Ursache war der Horizont-Ring. Er sinkt
+  unter fertigen Kacheln nur 124 m ab, und die Schürze an seinem inneren Rand (400 m um die
+  Kamera) hängt bis −400 m. In jedem Tunnel, der länger als ~400 m ist, stand sie deshalb als
+  Wand ohne Kollision in der Röhre. Jetzt hat der Ring einen eigenen Shader
+  (`horizon.gdshader` = `terrain.gdshaderinc` mit `HORIZON_RING`) mit Tunnel-Maske
+  (`tunnel_mask.gd`, `TunnelMask`): Je 16-m-Feld steht dort die höchste Röhrendecke, und der Ring
+  verwirft alles darunter. Sie wird alle 2 s aus den geladenen Tunneln neu gezeichnet
+  (512 × 512 Felder um das Auto). `discard` steht nur im Ring-Shader, die Kacheln bleiben ohne
+  (das kostet auf dem Mac Leistung).
+- Außerdem (vom Prüfwerkzeug gefunden): Kachel-Schürzen (2 × Rasterweite + 3 m, in Stufe 3 bis
+  35 m) hingen in groben Detailstufen in die Röhre. Über Röhren reichen sie jetzt nur bis knapp über
+  die Decke (`RoadQuery.tube_top`, Abstand bis eine Rasterweite). Bäume, Büsche und Felsen
+  wachsen nicht mehr dort, wo ihr Fuß bis in die Röhre reicht (`_over_tube`).
+- `tools/tunnel_check.gd` prüft jetzt alles Sichtbare: Gelände aller Stufen, Schürzen, die echten
+  geladenen Kacheln, Horizont-Ring (Fläche und Schürze, abgesenkt 124 bzw. 4 m, mit der Maske wie
+  im Spiel; `--nomask` = alter Stand), Wasser, Bäume/Büsche/Felsen, nah am Auto die Kollision.
+  `--grid=5` prüft 25 Stellen auf 40 × 40 km und nennt die längsten Tunnel. Ergebnis: vorher
+  4.650 Stellen (zwei Prüfstellen, fast alles Ring-Schürze), nachher auf 40 × 40 km 0 Stellen
+  bei 140 Röhren / 125 km, Kollision 0. Längste: Landstraße 2.980 m bei (−4118, 4048) → (−4334,
+  5640), Autobahn 1.668 m bei (1600, 104) → (3200, −356).
+- Fotos alle 100 m (`--shotevery=100` mit `--bench`): durch den 2.980-m- und den 2.628-m-
+  Landstraßen-Tunnel und den 1.668-m-Autobahn-Tunnel, keine Wand. Achtung `--heading`: 0° = +Z
+  (Süden), 90° = +X (Osten); Start am besten 200 m in der Röhre, sonst biegt der Autopilot am
+  Portal ab. Beispiel: `--bench=130 --pos=-4145,4246 --heading=-8 --shotevery=100 --nohud`.
 - Prüfwerkzeug `tools/tunnel_check.gd` (Aufruf im Kopf der Datei): rechnet für jede Röhre
   in der Nähe von 6 Stellen alle Detailstufen wie im Spiel und prüft alle 4 m an 5 Querpunkten,
   ob Gelände zwischen Fahrbahn und Decke liegt, nah am Auto auch die Kollision per Strahl.
