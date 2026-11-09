@@ -51,6 +51,8 @@ extends Node3D
 ## mid_distance das vereinfachte, dahinter die gebaute Kiste
 @export var near_distance: float = 60.0
 @export var mid_distance: float = 220.0
+## Geparkte Fahrzeuge (Raststätten) sind nur bis hierher zu sehen
+@export var parked_distance: float = 400.0
 
 ## Spuren (Meter rechts der Mittellinie): Landstraße, Autobahn rechts/links, Zusatzfahrstreifen
 ## (Verzögerungs-/Beschleunigungsstreifen, dort beginnen bzw. enden die Rampen), Fahrgasse der
@@ -185,9 +187,13 @@ var _materials: Dictionary = {}
 ## Vorbereitete Modelle je Typ (null = keins da) und Blinker-Meshes je Modell und Seite
 var _models: Dictionary = {}
 var _lamp_meshes: Dictionary = {}
+## Geparkte Autos, deren Modell noch lädt: [Knoten, Typ, Lackfarbe]
+var _waiting_parked: Array = []
+var _parked_timer: float = 0.0
 
 
 func _ready() -> void:
+	add_to_group("traffic")
 	_rng.seed = 4711
 	# Benchmark: der Autopilot weicht nicht aus, deshalb ohne Kollision
 	_ghost = debug_tools != null and debug_tools.is_benchmark()
@@ -215,6 +221,7 @@ func car_count() -> int:
 
 
 func _physics_process(delta: float) -> void:
+	_upgrade_parked(delta)
 	if roads == null or roads.world_gen == null or car == null:
 		return
 	_blink_clock += delta
@@ -1162,6 +1169,13 @@ func _material(key: String) -> StandardMaterial3D:
 			material.albedo_color = Color(0.95, 0.95, 0.9)
 			material.emission_enabled = true
 			material.emission = Color(1.0, 0.96, 0.88)
+		"head_off":
+			material.albedo_color = Color(0.7, 0.72, 0.74)
+			material.roughness = 0.15
+			material.metallic = 0.4
+		"tail_off":
+			material.albedo_color = Color(0.32, 0.03, 0.03)
+			material.roughness = 0.2
 		"tail", "brake":
 			material.albedo_color = Color(0.5, 0.03, 0.03)
 			material.emission_enabled = true
@@ -1185,6 +1199,118 @@ func _paint_material(color: Color) -> StandardMaterial3D:
 		material.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_materials[key] = material
 	return _materials[key]
+
+
+# ---------------------------------------------------------------------------
+# Geparkte Fahrzeuge (Raststätten)
+# ---------------------------------------------------------------------------
+
+## Zufälliger Pkw-Typ (Anteile wie auf der Landstraße) aus einem eigenen Zufallsgenerator
+static func random_car_type(rng: RandomNumberGenerator) -> String:
+	var total := 0
+	for type: String in TYPES:
+		if type != "lkw":
+			total += TYPES[type]["road"] as int
+	var pick := rng.randi_range(0, total - 1)
+	for type: String in TYPES:
+		if type == "lkw":
+			continue
+		pick -= TYPES[type]["road"] as int
+		if pick < 0:
+			return type
+	return "s3"
+
+
+## Zufällige Lackfarbe nach den Gewichten in PAINTS aus einem eigenen Zufallsgenerator
+static func random_paint(rng: RandomNumberGenerator) -> Color:
+	var total := 0
+	for entry: Array in PAINTS:
+		total += entry[1] as int
+	var pick := rng.randi_range(0, total - 1)
+	for entry: Array in PAINTS:
+		pick -= entry[1] as int
+		if pick < 0:
+			return entry[0]
+	return PAINTS[0][0]
+
+
+## Stehendes Fahrzeug (Nase nach +Z, Boden = 0) mit denselben Stufen wie der Verkehr, fern nur
+## bis parked_distance. Lädt das Modell noch, kommt es nach (_upgrade_parked).
+func make_parked(type: String, paint: Color) -> Node3D:
+	var node := Node3D.new()
+	var far := MeshInstance3D.new()
+	far.mesh = _vehicle_mesh(type)
+	far.set_surface_override_material(_surface_index[type]["paint"], _paint_material(paint))
+	far.visibility_range_end = parked_distance
+	far.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if type == "lkw" \
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_lights_off(far)
+	node.add_child(far)
+	var model := _model(type)
+	if model:
+		_add_parked_model(node, far, model, paint)
+	elif use_models and TYPES[type].has("model"):
+		_waiting_parked.append([node, type, paint, far])
+	return node
+
+
+func _add_parked_model(node: Node3D, far: MeshInstance3D, model: PreparedModel, paint: Color) -> void:
+	far.visibility_range_begin = mid_distance
+	far.visibility_range_begin_margin = 5.0
+	var near := _lod_instance(model.near_mesh, 0.0, near_distance, paint)
+	var mid := _lod_instance(model.mid_mesh, near_distance, mid_distance, paint)
+	mid.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_lights_off(near)
+	_lights_off(mid)
+	node.add_child(near)
+	node.add_child(mid)
+	for i in model.wheel_meshes.size():
+		var wheel := MeshInstance3D.new()
+		wheel.mesh = model.wheel_meshes[i]
+		wheel.position = model.wheel_centers[i]
+		wheel.visibility_range_end = near_distance
+		wheel.visibility_range_end_margin = 5.0
+		node.add_child(wheel)
+
+
+## Geparkt: Scheinwerfer, Rücklichter und Blinker aus (nicht das leuchtende Material des Verkehrs)
+func _lights_off(instance: MeshInstance3D) -> void:
+	var mesh := instance.mesh as ArrayMesh
+	for i in mesh.get_surface_count():
+		match mesh.surface_get_name(i):
+			"head":
+				instance.set_surface_override_material(i, _material("head_off"))
+			"tail", "ind_l", "ind_r":
+				instance.set_surface_override_material(i, _material("tail_off"))
+	# Gebaute Kästen haben keine Flächennamen: über die gemerkten Nummern
+	for type: String in _surface_index:
+		if _meshes.get(type) == mesh:
+			var indices: Dictionary = _surface_index[type]
+			instance.set_surface_override_material(indices["head"], _material("head_off"))
+			instance.set_surface_override_material(indices["tail"], _material("tail_off"))
+			instance.set_surface_override_material(indices["ind_l"], _material("ind_off"))
+			instance.set_surface_override_material(indices["ind_r"], _material("ind_off"))
+
+
+## Geparkte Autos bekommen ihr Modell, sobald es geladen ist (alle 0,5 s nachsehen)
+func _upgrade_parked(delta: float) -> void:
+	if _waiting_parked.is_empty():
+		return
+	_parked_timer -= delta
+	if _parked_timer > 0.0:
+		return
+	_parked_timer = 0.5
+	var still: Array = []
+	for entry: Array in _waiting_parked:
+		var node: Node3D = entry[0]
+		if not is_instance_valid(node):
+			continue
+		var model := _model(entry[1])
+		if model:
+			_add_parked_model(node, entry[3], model, entry[2])
+		elif not _models.has(entry[1]):
+			still.append(entry)
+	_waiting_parked = still
 
 
 ## Zufällige Lackfarbe nach den Gewichten in PAINTS

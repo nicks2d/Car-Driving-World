@@ -135,6 +135,8 @@ var _running: int = 0
 var _update_timer: float = 0.0
 var _velocity := Vector2.ZERO
 var _rest_lights: Array[OmniLight3D] = []
+## Vorbereitetes Tankstellen-Modell (fehlt es, wird die Tankstelle aus Kästen gebaut)
+const STATION_MODEL := "res://assets/models/raststaette/small_red_gas_station/prepared/model.res"
 var _glow_timer: float = 0.0
 var _day_night: DayNight
 var _last_target := Vector2.ZERO
@@ -416,7 +418,7 @@ func _edge_area(key: Vector3i) -> Rect2:
 	if is_rest_key(key):
 		var rest := highways.rest_area_at(highway_axis(key), key.y, key.x, rest_dir(key))
 		var center: Vector3 = rest.get("center", Vector3.ZERO)
-		return Rect2(center.x, center.z, 0.0, 0.0).grow(HighwayLayout.REST_HALF_LENGTH + RAMP_LENGTH + 80.0)
+		return Rect2(center.x, center.z, 0.0, 0.0).grow(HighwayLayout.REST_HALF_LARGE + RAMP_LENGTH + 80.0)
 	if is_interchange_key(key):
 		var interchange := highways.interchange_at(highway_axis(key), key.y, key.x)
 		var place: Vector3 = interchange.get("place", Vector3.ZERO)
@@ -563,6 +565,12 @@ func nearest_road_transform(near: Vector3, preferred_forward: Vector3 = Vector3.
 	# Autobahn: auf den rechten Fahrstreifen, nicht auf den Mittelstreifen
 	if best_segment.kind == RoadSegment.Kind.HIGHWAY:
 		p += forward.cross(Vector3.UP).normalized() * HIGHWAY_LANE_OFFSET
+	# Raststätte: in die Fahrgasse an der Autobahnseite (auf der Mittellinie stehen Autos und
+	# die Tankstelle). Fahrtrichtung des Parkplatzes = Punktreihenfolge, die Autobahn liegt links.
+	if is_rest_key(best_segment.key) and rest_part(best_segment.key) == 0:
+		var lot_forward := best_segment.direction_at(best_index)
+		p += Vector3.UP.cross(lot_forward).normalized() * (HighwayLayout.REST_WIDTH * 0.5 - 4.5)
+		forward = lot_forward
 	var yaw := atan2(forward.x, forward.z)
 	return {"found": true, "transform": Transform3D(Basis(Vector3.UP, yaw), p + Vector3.UP * 1.0)}
 
@@ -1345,7 +1353,7 @@ func rest_ends(axis: int, line: int, k: int, dir: int, part: int) -> PackedVecto
 	var x := Vector2(point.x, point.z)
 	var travel: Vector2 = rest["travel"]
 	var side: Vector2 = rest["side"]
-	var half := HighwayLayout.REST_HALF_LENGTH
+	var half: float = rest["half_length"]
 	if part == 0:
 		return PackedVector2Array([x + side * HighwayLayout.REST_OFFSET - travel * half,
 			x + side * HighwayLayout.REST_OFFSET + travel * half])
@@ -1826,11 +1834,14 @@ func _island_sign(parent: Node3D, center: Vector3, travel: Vector3, lateral: flo
 	_sign_text(parent, "↗", panel - Vector3.UP * 0.3 - travel * 0.08, facing, 70, Color.WHITE)
 
 
-## Raststätte: Parkplatz, Tankstelle mit Dach (Unterseite leuchtet) und Zapfsäulen, Rasthof
-## mit Fenstern auf dem Vorplatz, Laternen, Bänke und Bäume. Nachts leuchten die Flächen, dazu
-## drei echte Lichter (nur nah am Auto). Lage wie im Straßen-Shader (Profil 3): „along“ in
-## Fahrtrichtung (0–220 m), „across“ vom autobahnseitigen Rand (0–46 m). Fahrgasse 0–9 m,
-## Stellplätze bei along 12–145, Tankstelle bei 155–205, Vorplatz ab across 34.
+## Raststätte, aufgebaut wie eine deutsche Rastanlage. Lage: „along“ in Fahrtrichtung (0 bis
+## Länge L, groß 280 m, klein 220 m), „across“ vom autobahnseitigen Rand (0–46 m).
+## Fahrgasse 0–8 m (auch der Verkehr), Pkw in Doppelreihen quer (2,5 × 5 m, across 8–18) kurz
+## vor der Tankstelle, zweite Fahrgasse 18–24 m, Lkw schräg (45°, 4 × 18 m, across 24–40) im
+## vorderen Teil, dahinter ein Grünstreifen mit Bäumen und Bänken. Die Tankstelle (Modell) steht
+## am Ende vor der Einfahrt, daneben ein Platz mit Gehweg zu den Pkw. Markierungen, Bordsteine
+## (14 cm), Inseln, Gehwege, Leitplanke zur Autobahn und Laternen sind ein Mesh mit einer
+## Fläche pro Material. 20–50 % der Plätze sind belegt (fest pro Raststätte, vom Verkehr gebaut).
 func _add_rest_props(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
 	var rest := highways.rest_area_at(highway_axis(key), key.y, key.x, rest_dir(key))
 	var travel2: Vector2 = rest["travel"]
@@ -1838,75 +1849,133 @@ func _add_rest_props(segment: RoadSegment, key: Vector3i, parent: Node3D) -> voi
 	var t := Vector3(travel2.x, 0.0, travel2.y)
 	var r := Vector3(side2.x, 0.0, side2.y)
 	var center: Vector3 = rest["center"]
-	var half_length := HighwayLayout.REST_HALF_LENGTH
-	var half_width := HighwayLayout.REST_WIDTH * 0.5
+	var half_length: float = rest["half_length"]
+	var length := half_length * 2.0
+	var large: bool = rest["large"]
+	var o := center - t * half_length - r * HighwayLayout.REST_WIDTH * 0.5 - segment.origin
 	var at := func(along: float, across: float, y: float) -> Vector3:
-		return center + t * (along - half_length) + r * (across - half_width) + Vector3.UP * y - segment.origin
+		return o + t * along + r * across + Vector3.UP * y
 	# Basis: x quer (weg von der Autobahn), y hoch, z gegen die Fahrtrichtung
 	var frame := Basis(r, Vector3.UP, -t)
-	# Tankstelle: Dach über den Spuren 9–27 m, drei Zapfsäulen-Inseln längs
-	_box(parent, at.call(180.0, 18.0, 5.6), Vector3(20.0, 0.7, 34.0), frame, "canopy")
-	_box(parent, at.call(180.0, 18.0, 5.23), Vector3(19.0, 0.06, 33.0), frame, "canopy_glow")
-	_box(parent, at.call(180.0, 18.0, 5.75), Vector3(20.1, 0.25, 34.1), frame, "red")
-	for across: float in [12.0, 18.0, 24.0]:
-		_box(parent, at.call(180.0, across, 0.1), Vector3(1.3, 0.2, 10.0), frame, "shop")
-		_box(parent, at.call(180.0, across, 2.8), Vector3(0.35, 5.4, 0.35), frame, "canopy")
-		for along: float in [176.5, 183.5]:
-			_box(parent, at.call(along, across, 0.95), Vector3(0.6, 1.7, 0.8), frame, "red")
-			_box(parent, at.call(along, across, 1.4), Vector3(0.66, 0.35, 0.5), frame, "screen_glow")
-	# Tankstellen-Kasse am Vorplatz neben dem Dach
-	_box(parent, at.call(180.0, 39.0, 1.8), Vector3(9.0, 3.6, 16.0), frame, "shop")
-	_box(parent, at.call(180.0, 39.0, 3.75), Vector3(9.6, 0.3, 16.6), frame, "red")
-	_box(parent, at.call(180.0, 34.47, 1.5), Vector3(0.05, 2.0, 12.0), frame, "window_glow")
-	# Mast mit Tankstellen-Schild zwischen Autobahn und Parkplatz (von der Autobahn zu sehen)
-	var pylon_basis := Basis.looking_at(t)
-	_box(parent, at.call(150.0, -6.0, 4.5), Vector3(0.4, 9.0, 0.4), frame, "steel")
-	_box(parent, at.call(150.0, -6.0, 8.2), Vector3(3.2, 2.0, 0.3), pylon_basis, "red")
-	_sign_text(parent, "Tankstelle", at.call(150.0, -6.0, 8.2) - t * 0.2, pylon_basis, 44, Color.WHITE)
-	# Rasthof auf dem Vorplatz, Fensterfront zum Parkplatz
-	_box(parent, at.call(60.0, 40.0, 2.5), Vector3(10.0, 5.0, 34.0), frame, "shop")
-	_box(parent, at.call(60.0, 40.0, 5.2), Vector3(11.2, 0.4, 35.2), frame, "roof")
-	_box(parent, at.call(60.0, 34.97, 1.7), Vector3(0.05, 2.4, 28.0), frame, "window_glow")
-	# Text zeigt nach +Z, also zum Parkplatz (-r)
-	var facade := Basis.looking_at(r)
-	_sign_text(parent, "Rasthof", at.call(60.0, 34.9, 4.1), facade, 80, Color("#C8252B"))
-	# Laternen zwischen Fahrgasse und Autobahn und an der Kante zum Vorplatz
-	for along in range(10, 211, 40):
-		for across: float in [-0.9, 33.8]:
-			if across > 30.0 and along > 150:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(key)
+	var lot := LotMesh.new(o, t, r)
+	var body := StaticBody3D.new()
+	parent.add_child(body)
+	# --- Pkw: Doppelreihen in Gruppen à 10 Plätze, dazwischen Inseln mit Baum ---
+	var groups := 3 if large else 2
+	var car_end := length - 72.0
+	var car_start := car_end - groups * 25.0 - (groups + 1) * 3.0
+	var car_spots: Array = []  # [along, across, Richtung quer (+1 = Nase weg von der Autobahn)]
+	for g in groups + 1:
+		var a := car_start + g * 28.0
+		lot.block(a + 1.5, 13.0, 3.0, 10.0, 0.0, 0.14, "grass", body)
+		_rest_tree(parent, at.call(a + 1.5, 13.0, 0.14), lot, 1.0)
+		if g == groups:
+			break
+		var a0 := a + 3.0
+		lot.rect(a0 + 12.5, 13.0, 25.0, 0.12, 0.0, 0.015)
+		# Reihe A (zur Fahrgasse): in der letzten Gruppe drei breitere Plätze (Familien)
+		var widths: Array[float] = []
+		for k in 10:
+			widths.append(2.5)
+		if g == groups - 1:
+			widths = [2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 10.0 / 3.0, 10.0 / 3.0, 10.0 / 3.0]
+		for row: int in [0, 1]:
+			var row_widths: Array[float] = widths if row == 0 else ([2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5] as Array[float])
+			var c_mid := 10.5 if row == 0 else 15.5
+			var edge := a0
+			lot.rect(edge, c_mid, 0.12, 5.0, 0.0, 0.015)
+			for w in row_widths:
+				car_spots.append([edge + w * 0.5, c_mid, -1.0 if row == 0 else 1.0])
+				edge += w
+				lot.rect(edge, c_mid, 0.12, 5.0, 0.0, 0.015)
+	# --- Lkw: schräge Plätze (45°), von der zweiten Fahrgasse aus ---
+	var trucks := 26 if large else 16
+	var truck_spots: Array = []
+	for i in trucks + 1:
+		var a := 26.0 + i * 5.66
+		lot.rect(a + 6.36, 30.36, 18.0, 0.15, PI * 0.25, 0.015)
+		if i < trucks:
+			truck_spots.append([a + 2.83 + 6.36, 30.36])
+	# --- Pfeile auf den Fahrgassen (Einbahn in Fahrtrichtung) ---
+	var arrow_at := 18.0
+	while arrow_at < length - 75.0:
+		lot.arrow(arrow_at, 4.0)
+		lot.arrow(arrow_at + 22.0, 21.0)
+		arrow_at += 50.0
+	# --- Grünstreifen hinten mit Bäumen, Büschen und Bänken ---
+	lot.block((14.0 + length - 70.0) * 0.5, 43.25, length - 84.0, 5.5, 0.0, 0.14, "grass", body)
+	var tree_at := 24.0
+	var bench_side := false
+	while tree_at < length - 76.0:
+		_rest_tree(parent, at.call(tree_at, 43.5, 0.14), lot, 1.0)
+		if bench_side:
+			_rest_bench(lot, tree_at + 2.6, 42.0)
+		else:
+			_rest_bush(parent, at.call(tree_at + 9.0, 44.0, 0.14))
+		bench_side = not bench_side
+		tree_at += 18.0
+	# --- Platz neben der Tankstelle, Gehweg zu den Pkw, Zebrastreifen über die Fahrgasse ---
+	var plaza_start := length - 68.0
+	lot.block((plaza_start + length - 14.0) * 0.5, 39.5, length - 14.0 - plaza_start, 13.0, 0.0, 0.14, "paving", body)
+	lot.block(car_end + 2.0, 13.0, 4.0, 10.0, 0.0, 0.14, "paving", body)
+	var zebra := 18.5
+	while zebra < 33.0:
+		lot.rect(car_end + 2.0, zebra, 4.0, 0.5, 0.0, 0.015)
+		zebra += 1.0
+	for bench_at: float in [plaza_start + 12.0, plaza_start + 26.0]:
+		_rest_bench(lot, bench_at, 44.6)
+	# --- Leitplanke zur Autobahn (zwischen Ausfahrt und Einfahrt) ---
+	lot.rail(16.0, length - 16.0, -0.6, body)
+	# --- Laternen an der Fahrgasse und im Grünstreifen ---
+	var lamp_at := 20.0
+	while lamp_at < length - 16.0:
+		lot.lantern(lamp_at, -1.5, 1.0)
+		if lamp_at < length - 76.0:
+			lot.lantern(lamp_at + 17.0, 41.2, -1.0)
+		lamp_at += 35.0
+	# --- Tankstelle am Ende (Modell; ohne Modell die gebaute Version) ---
+	var station_at: Vector3 = at.call(length - 47.0, 21.0, 0.0)
+	if not _add_station_model(parent, body, station_at, Basis(t, Vector3.UP, r)):
+		_add_built_station(parent, at, frame, length)
+	# --- Geparkte Fahrzeuge (fest pro Raststätte) ---
+	var traffic := get_tree().get_first_node_in_group("traffic") as Traffic
+	if traffic:
+		var car_rate := rng.randf_range(0.2, 0.5)
+		for spot: Array in car_spots:
+			if rng.randf() >= car_rate:
 				continue
-			_box(parent, at.call(float(along), across, 3.5), Vector3(0.16, 7.0, 0.16), frame, "steel")
-			var arm := 1.2 if across < 0.0 else -1.2
-			_box(parent, at.call(float(along), across + arm * 0.5, 6.95), Vector3(1.3, 0.1, 0.18), frame, "steel")
-			_box(parent, at.call(float(along), across + arm, 6.85), Vector3(0.9, 0.12, 0.35), frame, "lamp_glow")
-	# Bänke (Blick weg von der Autobahn, in die Landschaft) und Bäume auf dem Vorplatz
-	for along: float in [92.0, 112.0, 132.0]:
-		var seat: Vector3 = at.call(along, 41.0, 0.0)
-		_box(parent, seat + Vector3.UP * 0.45, Vector3(0.45, 0.08, 1.8), frame, "wood")
-		_box(parent, seat + Vector3.UP * 0.78 - r * 0.22, Vector3(0.06, 0.4, 1.8), frame, "wood")
-	# Mit Aussicht: braunes Schild „Seeblick“ bzw. „Bergblick“ am Rand des Vorplatzes
+			var type := Traffic.random_car_type(rng)
+			var vehicle := traffic.make_parked(type, Traffic.random_paint(rng))
+			# Mal vorwärts, mal rückwärts eingeparkt
+			var nose := r * float(spot[2]) * (1.0 if rng.randf() < 0.7 else -1.0)
+			vehicle.transform = Transform3D(Basis.looking_at(-nose), at.call(spot[0], spot[1], 0.0))
+			parent.add_child(vehicle)
+			_rest_collision(body, vehicle.transform, Vector3(Traffic.TYPES[type]["width"], Traffic.TYPES[type]["height"],
+				Traffic.TYPES[type]["length"]))
+		var truck_rate := rng.randf_range(0.25, 0.55)
+		var truck_nose := (t + r).normalized()
+		for spot: Array in truck_spots:
+			if rng.randf() >= truck_rate:
+				continue
+			var truck := traffic.make_parked("lkw", Traffic.random_paint(rng))
+			truck.transform = Transform3D(Basis.looking_at(-truck_nose), at.call(spot[0], spot[1], 0.0))
+			parent.add_child(truck)
+			_rest_collision(body, truck.transform, Vector3(2.5, 3.9, 12.7))
+	parent.add_child(lot.commit(self))
+	# Mit Aussicht: braunes Schild „Seeblick“ bzw. „Bergblick“ im Grünstreifen
 	if rest["view"] != "":
-		var sign_at: Vector3 = at.call(102.0, 44.5, 0.0)
+		var sign_at: Vector3 = at.call(length * 0.35, 44.5, 0.14)
 		for offset: float in [-0.9, 0.9]:
 			_box(parent, sign_at + t * offset + Vector3.UP * 1.1, Vector3(0.1, 2.2, 0.1), frame, "steel")
 		_box(parent, sign_at + Vector3.UP * 2.0 + r * 0.06, Vector3(0.08, 0.7, 2.4), frame, "brown")
-		_sign_text(parent, Viewpoints.REST_VIEW_NAMES[rest["view"]], sign_at + Vector3.UP * 2.0 - r * 0.0,
+		_sign_text(parent, Viewpoints.REST_VIEW_NAMES[rest["view"]], sign_at + Vector3.UP * 2.0,
 			Basis.looking_at(r), 40, Color.WHITE)
-	for spot: Vector2 in [Vector2(20.0, 41.0), Vector2(82.0, 43.0), Vector2(122.0, 44.0), Vector2(142.0, 41.0)]:
-		var foot: Vector3 = at.call(spot.x, spot.y, 0.0)
-		_box(parent, foot + Vector3.UP * 1.5, Vector3(0.3, 3.0, 0.3), frame, "wood")
-		var crown := MeshInstance3D.new()
-		var sphere := SphereMesh.new()
-		sphere.radius = 2.4
-		sphere.height = 4.2
-		sphere.radial_segments = 10
-		sphere.rings = 6
-		sphere.material = _sign_material("crown")
-		crown.mesh = sphere
-		crown.position = foot + Vector3.UP * 4.4
-		parent.add_child(crown)
 	# Echte Lichter (aus, bis _update_night_glow sie nachts in der Nähe einschaltet)
-	for spot: Array in [[180.0, 18.0, 4.8, 26.0], [80.0, 18.0, 7.0, 34.0], [60.0, 31.0, 3.5, 18.0]]:
+	var truck_middle := 26.0 + trucks * 2.83 + 6.0
+	for spot: Array in [[length - 40.0, 21.0, 4.4, 24.0], [(car_start + car_end) * 0.5, 13.0, 7.0, 34.0],
+			[truck_middle, 30.0, 7.0, 34.0]]:
 		var light := OmniLight3D.new()
 		light.light_color = Color(1.0, 0.88, 0.7)
 		light.omni_range = spot[3]
@@ -1916,6 +1985,116 @@ func _add_rest_props(segment: RoadSegment, key: Vector3i, parent: Node3D) -> voi
 		light.position = at.call(spot[0], spot[1], spot[2])
 		parent.add_child(light)
 		_rest_lights.append(light)
+
+
+## Kollision eines Kastens (Mitte am Boden unter transform, Größe size)
+func _rest_collision(body: StaticBody3D, transform: Transform3D, size: Vector3) -> void:
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	shape.shape = box
+	shape.transform = Transform3D(transform.basis, transform.origin + Vector3.UP * size.y * 0.5)
+	body.add_child(shape)
+
+
+## Baum (Stamm im Mesh der Raststätte, Krone als Kugel)
+func _rest_tree(parent: Node3D, foot: Vector3, lot: LotMesh, scale: float) -> void:
+	lot.post(foot, 0.3 * scale, 3.0 * scale, "wood")
+	var crown := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 2.4 * scale
+	sphere.height = 4.2 * scale
+	sphere.radial_segments = 10
+	sphere.rings = 6
+	sphere.material = _sign_material("crown")
+	crown.mesh = sphere
+	crown.position = foot + Vector3.UP * 4.4 * scale
+	parent.add_child(crown)
+
+
+func _rest_bush(parent: Node3D, foot: Vector3) -> void:
+	var bush := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 1.1
+	sphere.height = 1.4
+	sphere.radial_segments = 8
+	sphere.rings = 4
+	sphere.material = _sign_material("crown")
+	bush.mesh = sphere
+	bush.position = foot + Vector3.UP * 0.55
+	parent.add_child(bush)
+
+
+## Bank mit Lehne (Blick weg von der Autobahn), Sitzfläche längs
+func _rest_bench(lot: LotMesh, along: float, across: float) -> void:
+	lot.box(along, across, 1.8, 0.45, 0.0, 0.42, 0.5, "wood")
+	lot.box(along, across - 0.22, 1.8, 0.06, 0.0, 0.5, 0.9, "wood")
+	for leg: float in [-0.75, 0.75]:
+		lot.box(along + leg, across, 0.08, 0.4, 0.0, 0.14, 0.42, "steel")
+
+
+var _station_model: PreparedModel
+var _station_checked: bool = false
+var _station_glow: Array[BaseMaterial3D] = []
+
+
+## Tankstellen-Modell (tools/setup_traffic_models.gd): nah und mittel, Kollision aus seinen
+## Kästen, leuchtende Materialien für die Nacht merken. false = kein Modell da.
+func _add_station_model(parent: Node3D, body: StaticBody3D, at: Vector3, basis: Basis) -> bool:
+	if not _station_checked:
+		_station_checked = true
+		if ResourceLoader.exists(STATION_MODEL):
+			_station_model = load(STATION_MODEL) as PreparedModel
+		if _station_model:
+			var emissive: Array = _station_model.info.get("emissive", [])
+			for mesh: ArrayMesh in [_station_model.near_mesh, _station_model.mid_mesh]:
+				for i in mesh.get_surface_count():
+					var material := mesh.surface_get_material(i) as BaseMaterial3D
+					if material and material.resource_name in emissive and material not in _station_glow:
+						material.emission_enabled = true
+						if material.emission == Color.BLACK:
+							material.emission = Color(1.0, 0.95, 0.85)
+						_station_glow.append(material)
+	if _station_model == null:
+		return false
+	# Modell steht mittig auf dem Boden (Mitte der Bounding-Box auf at)
+	var box := _station_model.near_mesh.get_aabb()
+	var shift := Vector3(box.get_center().x, 0.0, box.get_center().z)
+	var origin := at - basis * shift
+	for pair: Array in [[_station_model.near_mesh, 0.0, 180.0], [_station_model.mid_mesh, 180.0, 0.0]]:
+		var instance := MeshInstance3D.new()
+		instance.mesh = pair[0]
+		instance.visibility_range_begin = pair[1]
+		instance.visibility_range_end = pair[2]
+		instance.visibility_range_begin_margin = 5.0 if pair[1] > 0.0 else 0.0
+		instance.visibility_range_end_margin = 5.0 if pair[2] > 0.0 else 0.0
+		instance.transform = Transform3D(basis, origin)
+		parent.add_child(instance)
+	for aabb in _station_model.collision_boxes:
+		var shape := CollisionShape3D.new()
+		var collision := BoxShape3D.new()
+		collision.size = aabb.size
+		shape.shape = collision
+		shape.transform = Transform3D(basis, origin + basis * aabb.get_center())
+		body.add_child(shape)
+	return true
+
+
+## Gebaute Tankstelle (ohne Modell): Dach mit leuchtender Unterseite, drei Zapfsäulen-Inseln, Kasse
+func _add_built_station(parent: Node3D, at: Callable, frame: Basis, length: float) -> void:
+	var a := length - 45.0
+	_box(parent, at.call(a, 18.0, 5.6), Vector3(20.0, 0.7, 34.0), frame, "canopy")
+	_box(parent, at.call(a, 18.0, 5.23), Vector3(19.0, 0.06, 33.0), frame, "canopy_glow")
+	_box(parent, at.call(a, 18.0, 5.75), Vector3(20.1, 0.25, 34.1), frame, "red")
+	for across: float in [12.0, 18.0, 24.0]:
+		_box(parent, at.call(a, across, 0.1), Vector3(1.3, 0.2, 10.0), frame, "shop")
+		_box(parent, at.call(a, across, 2.8), Vector3(0.35, 5.4, 0.35), frame, "canopy")
+		for along: float in [a - 3.5, a + 3.5]:
+			_box(parent, at.call(along, across, 0.95), Vector3(0.6, 1.7, 0.8), frame, "red")
+			_box(parent, at.call(along, across, 1.4), Vector3(0.66, 0.35, 0.5), frame, "screen_glow")
+	_box(parent, at.call(a, 39.0, 1.8), Vector3(9.0, 3.6, 16.0), frame, "shop")
+	_box(parent, at.call(a, 39.0, 3.75), Vector3(9.6, 0.3, 16.6), frame, "red")
+	_box(parent, at.call(a, 34.47, 1.5), Vector3(0.05, 2.0, 12.0), frame, "window_glow")
 
 
 ## Nachts leuchten Laternen, Tankstellendach und Fenster; echte Lichter nur nah am Auto
@@ -1929,6 +2108,9 @@ func _update_night_glow(delta: float) -> void:
 	var night := 1.0 - (_day_night.daylight if _day_night else 1.0)
 	for pair: Array in [["lamp_glow", 7.0], ["canopy_glow", 5.0], ["window_glow", 3.0], ["screen_glow", 2.5]]:
 		_sign_material(pair[0]).emission_energy_multiplier = lerpf(0.15, pair[1], night)
+	# Tankstellen-Modell: Dach-Unterseite und Leuchtkästen
+	for material in _station_glow:
+		material.emission_energy_multiplier = lerpf(0.3, 4.0, night)
 	# Erleuchtete Fenster in den Dörfern: tagsüber gar nicht
 	_sign_material("house_window_lit").emission_energy_multiplier = lerpf(0.0, 2.6, night)
 	var p := target.global_position if target else Vector3.ZERO
@@ -2007,6 +2189,19 @@ func _sign_material(name_key: String) -> StandardMaterial3D:
 				material.emission_energy_multiplier = 0.2
 			"wood":
 				material.albedo_color = Color("#7A5636")
+				material.roughness = 0.85
+			"line":
+				# Markierungen auf dem Parkplatz
+				material.albedo_color = Color(0.86, 0.86, 0.83)
+				material.roughness = 0.7
+			"curb":
+				material.albedo_color = Color(0.62, 0.62, 0.6)
+				material.roughness = 0.9
+			"grass":
+				material.albedo_color = Color(0.22, 0.36, 0.13)
+				material.roughness = 0.95
+			"paving":
+				material.albedo_color = Color(0.5, 0.48, 0.45)
 				material.roughness = 0.85
 			"lamp_glow", "canopy_glow", "window_glow", "screen_glow":
 				# Leuchten nachts (Stärke setzt _update_night_glow), tagsüber kaum

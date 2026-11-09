@@ -112,6 +112,7 @@ assets/
 - [x] Extra: Anschlussstellen an jedem Stützpunkt, Raststätten mit Tankstelle und Rasthof
 - [x] Extra: Drei neue Garage-Autos (M4 CSL, SL 65, C 63) mit Marken-Reitern
 - [x] Extra: Verkehr mit echten Modellen, Verzögerungs- und Beschleunigungsstreifen
+- [x] Extra: Raststätten neu (Tankstellen-Modell, Pkw-/Lkw-Plätze, Inseln, geparkte Fahrzeuge)
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -464,18 +465,35 @@ assets/
   etwa alle 17–20 km je Richtung, 11 mit Bergblick. Name „Rastanlage“ + Ortsname der Zelle.
   Schlüssel (k, Linie, 40 + 10·Achse + 0/5 je Richtung + Teil), Teil 0 = Parkplatz, 1 =
   Ausfahrt, 2 = Einfahrt (Art RAMP, Bezier, flach auf Stützpunkt-Höhe).
-- Parkplatz (`_make_rest_segment`, Shader-Profil 3): 220 × 46 m, 78 m neben der Autobahn-Mitte.
-  Quer vom autobahnseitigen Rand: Fahrgasse 0–9 m, drei Reihen Stellplätze (along 12–145),
-  dahinter die Tankstelle ohne Markierung, ab 34 m heller gepflasterter Vorplatz. Gerade
-  Enden (`RoadSegment.square_ends`, Kappe 2 in `road_query.gd`): sonst ebnen die Halbkreise der
-  Stücke einen 25-m-Erdfleck hinter das Parkplatzende.
-- Ausstattung (`RoadNetwork._add_rest_props`, Kästchen wie die Schilder): Tankstellendach
-  20 × 34 m mit leuchtender Unterseite, 3 Zapfsäulen-Inseln, Kasse, Mast „Tankstelle“, Rasthof
-  (10 × 34 m, Fensterfront), Laternen alle 40 m, Bänke, Bäume, bei Aussicht braunes Schild
-  „Seeblick“/„Bergblick“. Nachts: Leucht-Materialien heller (`_update_night_glow`, alle 0,25 s)
-  und 3 OmniLights ohne Schatten pro Raststätte, nur bis `rest_light_distance` (260 m) am Auto.
-  Schilder: blau 2000 m und 500 m vorher (Ort, „Rastanlage“, Zapfsäule und Tasse, Entfernung),
-  „Rastanlage“ am Beginn der Ausfahrt.
+- Parkplatz (`_make_rest_segment`, Shader-Profil 3 = nur Asphalt): 46 m breit, 78 m neben der
+  Autobahn-Mitte, groß 280 m lang (`REST_HALF_LARGE`, wenn das Gelände an 6 Prüfstellen passt),
+  sonst 220 m (`HighwayLayout.LOT_CHECKS_*`, `rest["large"]`, `rest["half_length"]`). Gerade
+  Enden (`RoadSegment.square_ends`, Kappe 2 in `road_query.gd`).
+- Aufbau (Teil 5, `RoadNetwork._add_rest_props`, wie eine deutsche Rastanlage; along in
+  Fahrtrichtung, across vom autobahnseitigen Rand): Fahrgasse 0–8 m (Verkehr bei 4,5 m), Pkw in
+  Doppelreihen quer (2,5 × 5 m, across 8–18) in Gruppen à 10 mit Inseln (Baum), kurz vor der
+  Tankstelle, in der letzten Gruppe drei breitere Plätze (3,33 m); zweite Fahrgasse 18–24 m;
+  Lkw schräg 45° (4 × 18 m, across 24–40) im vorderen Teil; Grünstreifen 40,5–46 m mit Bäumen,
+  Büschen, Bänken. Groß: 60 Pkw + 26 Lkw, klein: 40 Pkw + 16 Lkw. Tankstelle (Modell, 38 ×
+  22,9 m, Mitte bei along L−47, across 21) am Ende vor der Einfahrt, daneben ein gepflasterter
+  Platz mit Bänken, Gehweg-Block und Zebrastreifen zu den Pkw. Leitplanke zur Autobahn, Laternen
+  alle 35 m an der Fahrgasse und im Grünstreifen, Pfeile auf beiden Fahrgassen.
+- `lot_mesh.gd` (`LotMesh`): sammelt Markierungen (flache Rechtecke 1,5 cm über dem Asphalt, so
+  gehen auch die schrägen Lkw-Plätze), Inseln/Gehwege (14 cm hoch, Bordstein-Seiten), Leitplanke,
+  Laternen, Bänke und Baumstämme und baut ein Mesh mit einer Fläche pro Material (~8 Draw
+  Calls). Inseln, Gehwege und Leitplanke bekommen Kollision im StaticBody3D der Raststätte.
+- Geparkte Fahrzeuge: 20–50 % der Pkw- und 25–55 % der Lkw-Plätze, fest pro Raststätte
+  (Zufall aus dem Schlüssel), 70 % vorwärts eingeparkt. `Traffic.make_parked` baut sie mit denselben
+  Stufen wie der Verkehr (nah/mittel/fern, fern nur bis 400 m), lädt das Modell noch, kommt es
+  nach (`_upgrade_parked`). Je ein Kollisionskasten. Typ und Farbe: `Traffic.random_car_type`,
+  `random_paint` (gleiche Anteile wie im Verkehr).
+- Tankstellen-Modell (`STATION_MODEL`): nah bis 180 m, dann mittlere Stufe; 22 Kollisionskästen
+  aus dem Modell; die leuchtenden Materialien (Dach-Unterseite, Leuchtkästen) werden nachts heller
+  (`_station_glow` in `_update_night_glow`). Fehlt das Modell, steht die alte gebaute Tankstelle
+  (Dach, drei Zapfsäulen-Inseln, Kasse) dort. Rasthof, Mast und alle anderen alten Kästen sind weg.
+  Echte Lichter: 3 OmniLights pro Raststätte (Tankstelle, Pkw, Lkw), nur bis 260 m am Auto.
+- Schilder: blau 2000 m und 500 m vorher (Ort, „Rastanlage“, Zapfsäule und Tasse, Entfernung),
+  Ankündigungsbaken und „Rastanlage ↗“ auf der Insel (wie an Anschlussstellen).
 - Karte: Zapfsäule im Kreis an jeder Raststätte (bis 24 m/px, gesucht pro 4-km-Feld, höchstens
   zwei neue Felder pro Bild). Navi: Klick bis 150 m an eine Raststätte = Ziel; Route über den
   Stützpunkt davor, Ausfahrt, Parkplatz (Ansage „Zur Rastanlage“). Steht man schon davor oder

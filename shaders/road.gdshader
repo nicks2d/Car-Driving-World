@@ -101,13 +101,6 @@ void fragment() {
 	float junction = UV2.x;
 	// Kreuzungen haben keine Spuren, sind dafür insgesamt so dunkel wie eine Fahrbahn im Mittel
 	asphalt *= 1.0 - mix(wheel_tracks * 0.12, 0.04, junction);
-	if (lane_profile == 3) {
-		// Vorplatz der Raststätte: helles Pflaster mit Fugen (Platten 1,2 m)
-		vec2 slab = abs(fract(vec2(across, along) / 1.2) - 0.5) * 1.2;
-		float joint = 1.0 - smoothstep(0.02, 0.05, min(slab.x, slab.y));
-		vec3 paving = vec3(0.36, 0.35, 0.33) * mix(0.85, 1.0, noise) * (1.0 - joint * 0.25);
-		asphalt = mix(asphalt, paving, smoothstep(33.9, 34.1, across));
-	}
 
 	// --- Markierungen ---
 	float aa = fwidth(across) * 0.75;
@@ -140,21 +133,9 @@ void fragment() {
 	} else if (lane_profile == 2) {
 		center = 0.0;
 	} else if (lane_profile == 3) {
-		// Parkplatz (Lage wie in road_network.gd/_add_rest_props): Fahrgasse 0–9 m, bei
-		// along 12–145 drei Reihen Stellplätze quer (2,6 m breit) mit Linien vor jeder Reihe,
-		// dahinter (ab 155) die Tankstelle ohne Markierung, ab 34 m der Vorplatz
+		// Parkplatz: Markierungen, Inseln und Gehwege baut road_network.gd als Geometrie
 		center = 0.0;
-		float aa_along = fwidth(along) * 0.75;
-		float stall = abs(fract(along / 2.6 + 0.5) - 0.5) * 2.6;
-		float in_lot = step(12.0, along) * step(along, 145.0);
-		float in_row = step(9.0, across) * step(across, 14.5) + step(20.5, across) * step(across, 26.0)
-			+ step(27.5, across) * step(across, 33.0);
-		float divider = (1.0 - smoothstep(0.06 - aa_along, 0.06 + aa_along, stall)) * min(in_row, 1.0) * in_lot;
-		float row_line = (1.0 - smoothstep(0.06 - aa, 0.06 + aa,
-			min(min(abs(across - 9.0), abs(across - 26.0)), abs(across - 20.5)))) * in_lot;
-		float lane_line = (1.0 - smoothstep(0.075 - aa, 0.075 + aa, abs(across - 9.0)))
-			* (1.0 - in_lot) * step(along, 150.0);
-		edge = max(edge * step(across, 30.0), max(max(divider, row_line), lane_line * dash));
+		edge = 0.0;
 	}
 	// Etwas abgefahrene Farbe: nicht überall gleich deckend
 	float paint = max(center * dash, edge) * mix(0.75, 1.0, texture(variation_noise, vec2(across, along) / 4.0).r);

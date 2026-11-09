@@ -49,6 +49,8 @@ const REST_WINDOW: int = 5
 const REST_OFFSET: float = 78.0
 const REST_HALF_LENGTH: float = 110.0
 const REST_WIDTH: float = 46.0
+## Große Raststätte (mehr Stellplätze), wenn das Gelände auch für diese halbe Länge passt
+const REST_HALF_LARGE: float = 140.0
 ## So weit vom Parkplatz aus wird nach Seeblick bzw. Bergblick gesucht
 const REST_VIEW_DISTANCE: float = 3000.0
 ## So weit bleiben Orte von der Mittellinie weg
@@ -341,7 +343,6 @@ func _rest_fits(axis: int, line: int, k: int, dir: int) -> bool:
 	var point := control_point(axis, line, k)
 	var q := Vector2(point.x, point.z)
 	var travel := direction_at(axis, line, k) * float(dir)
-	var side := Vector2(-travel.y, travel.x)
 	var along_offset := -(RoadNetwork.RAMP_LENGTH + 60.0)
 	while along_offset <= RoadNetwork.RAMP_LENGTH + 60.0:
 		var p := q + travel * along_offset
@@ -350,15 +351,28 @@ func _rest_fits(axis: int, line: int, k: int, dir: int) -> bool:
 		var max_cut := INTERCHANGE_MAX_CUT if absf(along_offset) < 1.0 else INTERCHANGE_RAMP_CUT
 		if above > max_cut or above < -INTERCHANGE_MAX_FILL:
 			return false
-		# Parkplatz daneben: trocken und höchstens 12 m über oder unter der Fahrbahn
-		if absf(along_offset) <= REST_HALF_LENGTH + 30.0:
-			for lateral: float in [REST_OFFSET - REST_WIDTH * 0.5, REST_OFFSET, REST_OFFSET + REST_WIDTH * 0.5]:
-				var r := p + side * lateral
-				if world_gen.water_level_at(r.x, r.y, lakes) > WorldGen.NO_WATER:
-					return false
-				if absf(world_gen.terrain_height(r.x, r.y, lakes) - point.y) > 12.0:
-					return false
 		along_offset += 60.0
+	return _lot_fits(q, travel, point.y, LOT_CHECKS_SMALL)
+
+
+## Prüfstellen entlang des Parkplatzes (Meter vom Stützpunkt): kleine und große Anlage
+const LOT_CHECKS_SMALL: Array[float] = [-100.0, -40.0, 20.0, 80.0]
+const LOT_CHECKS_LARGE: Array[float] = [-160.0, -100.0, -40.0, 20.0, 80.0, 140.0]
+
+
+## Parkplatz neben dem Stützpunkt q: an allen Prüfstellen trocken und höchstens 12 m über oder
+## unter der Fahrbahn
+func _lot_fits(q: Vector2, travel: Vector2, height: float, offsets: Array[float]) -> bool:
+	var side := Vector2(-travel.y, travel.x)
+	for along_offset in offsets:
+		var p := q + travel * along_offset
+		var lakes: Array = world_gen.lakes_near(Rect2(p - Vector2(120, 120), Vector2(240, 240)))
+		for lateral: float in [REST_OFFSET - REST_WIDTH * 0.5, REST_OFFSET, REST_OFFSET + REST_WIDTH * 0.5]:
+			var r := p + side * lateral
+			if world_gen.water_level_at(r.x, r.y, lakes) > WorldGen.NO_WATER:
+				return false
+			if absf(world_gen.terrain_height(r.x, r.y, lakes) - height) > 12.0:
+				return false
 	return true
 
 
@@ -384,8 +398,11 @@ func _make_rest(axis: int, line: int, k: int, dir: int) -> Dictionary:
 			highest = maxf(highest, world_gen.terrain_height(p.x, p.y, []))
 	if view == "" and highest > point.y + 450.0:
 		view = "mountain"
+	# Große Anlage (mehr Stellplätze), wo das Gelände dafür passt, sonst kleine
+	var large := _lot_fits(q, travel, point.y, LOT_CHECKS_LARGE)
 	return {"id": Vector4i(axis, line, k, dir), "point": point, "travel": travel, "side": side,
-		"center": Vector3(center.x, point.y, center.y), "name": "Rastanlage " + place_name(cell), "view": view}
+		"center": Vector3(center.x, point.y, center.y), "name": "Rastanlage " + place_name(cell), "view": view,
+		"large": large, "half_length": REST_HALF_LARGE if large else REST_HALF_LENGTH}
 
 
 ## Alle Raststätten, deren Parkplatz-Mitte in diesem Bereich liegt (für Karte, Navi und
