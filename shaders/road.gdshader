@@ -8,6 +8,10 @@
 // Im Tunnel (UV2.y = überdacht, nur bei normaler Straße) bleibt die Fahrbahn trocken.
 // lane_profile: 0 = Landstraße (Mittellinie gestrichelt), 1 = Autobahn (je Richtung zwei
 // Fahrstreifen, Standstreifen, Mittelstreifen), 2 = Rampe (nur Randlinien).
+// Autobahn mit Zusatzfahrstreifen (Verzögerungs-/Beschleunigungsstreifen): Die Punktfarbe sagt,
+// wie viel breiter die Fahrbahn links/rechts ist (COLOR.r/g × 10 m, UV.x reicht dann über 0 bzw.
+// 1 hinaus) und welche Markierung dort gilt (COLOR.b/a × 3): 1 = Blockmarkierung zum
+// Zusatzstreifen, 2 = Sperrfläche, 3 = Verziehung (schraffiert, mit Blockmarkierung).
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
 
@@ -46,9 +50,13 @@ global uniform float snow_cover;
 #include "res://shaders/cloud_shadow.gdshaderinc"
 
 varying vec3 world_pos;
+// Zusatzbreite und Markierung je Seite (nur Autobahn, siehe oben)
+varying vec4 aux;
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// Andere Straßen haben keine Punktfarbe (dann wäre sie weiß)
+	aux = lane_profile == 1 ? COLOR : vec4(0.0);
 	// Weit entfernte Straßen etwas anheben: das grobe ferne Gelände würde sie sonst verschlucken
 	float distance = length(world_pos - CAMERA_POSITION_WORLD);
 	VERTEX.y += clamp((distance - 250.0) / 900.0, 0.0, 1.0) * 1.2;
@@ -70,8 +78,11 @@ void fragment() {
 	// Dunklere Fahrspuren, wo die Reifen rollen
 	float lane = fract(UV.x * 2.0);
 	float wheel_tracks = smoothstep(0.12, 0.0, abs(lane - 0.3)) + smoothstep(0.12, 0.0, abs(lane - 0.72));
-	// Abstand zum näheren Außenrand (Autobahn ist spiegelgleich)
+	// Abstand zum näheren Außenrand (Autobahn ist spiegelgleich); im Zusatzstreifen negativ
 	float side = min(across, road_width - across);
+	bool right_half = across > road_width * 0.5;
+	float extra = right_half ? aux.g * 10.0 : aux.r * 10.0;
+	float mark = floor((right_half ? aux.a : aux.b) * 3.0 + 0.5);
 	if (lane_profile == 1) {
 		float lane_1 = hw_shoulder + hw_lane * 0.5;
 		float lane_2 = hw_shoulder + hw_lane * 1.5;
@@ -110,6 +121,19 @@ void fragment() {
 		float edge_line = 1.0 - smoothstep(0.15 - aa, 0.15 + aa, abs(side - hw_shoulder));
 		float lane_line = 1.0 - smoothstep(0.075 - aa, 0.075 + aa, abs(side - hw_shoulder - hw_lane));
 		float inner_line = 1.0 - smoothstep(0.075 - aa, 0.075 + aa, abs(side - hw_shoulder - hw_lane * 2.0));
+		// Zusatzfahrstreifen: Blockmarkierung (Breitstrich 6 m, Lücke 6 m) statt der Randlinie,
+		// eigene Randlinie außen; Sperrfläche/Verziehung schräg schraffiert (Streifen 0,5 m)
+		float outside = 1.0 - step(hw_shoulder, side);
+		if (mark == 1.0 || mark == 3.0) {
+			edge_line *= step(fract(along / 12.0), 0.5);
+			if (mark == 1.0 && extra > 0.6) {
+				edge_line = max(edge_line, 1.0 - smoothstep(0.075 - aa, 0.075 + aa, abs(side + extra - 0.45)));
+			}
+		}
+		if (mark >= 2.0) {
+			float stripes = 1.0 - smoothstep(0.25 - aa, 0.25 + aa, abs(fract((along + side) / 4.0) - 0.5) * 4.0);
+			edge_line = max(edge_line, stripes * outside * step(-extra + 0.3, side) * step(side, hw_shoulder - 0.15));
+		}
 		center = 0.0;
 		edge = max(edge_line, inner_line);
 		center = lane_line;
@@ -139,7 +163,8 @@ void fragment() {
 	// --- Bankett (Schotter) außerhalb der Fahrbahn ---
 	vec3 gravel = texture(gravel_albedo, vec2(across, along) / gravel_scale).rgb;
 	gravel = mix(gravel, vec3(luminance(gravel)) * vec3(0.95, 0.93, 0.88) * 1.3, 0.85);
-	float shoulder = 1.0 - smoothstep(-0.05, 0.05, min(UV.x, 1.0 - UV.x) * road_width);
+	float shoulder = 1.0 - smoothstep(-0.05, 0.05, min(UV.x * road_width + aux.r * 10.0,
+		(1.0 - UV.x) * road_width + aux.g * 10.0));
 	shoulder = mix(shoulder, UV2.y, junction);
 	// Mittelstreifen der Autobahn: Schotter wie das Bankett
 	if (lane_profile == 1) {

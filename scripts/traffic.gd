@@ -52,12 +52,13 @@ extends Node3D
 @export var near_distance: float = 60.0
 @export var mid_distance: float = 220.0
 
-## Spuren (Meter rechts der Mittellinie): Landstraße, Autobahn rechts/links, Rampenanfang neben
-## der Autobahn, Fahrgasse der Raststätte
+## Spuren (Meter rechts der Mittellinie): Landstraße, Autobahn rechts/links, Zusatzfahrstreifen
+## (Verzögerungs-/Beschleunigungsstreifen, dort beginnen bzw. enden die Rampen), Fahrgasse der
+## Raststätte
 const ROAD_LANE: float = 2.25
 const HW_RIGHT: float = 8.375
 const HW_LEFT: float = 4.625
-const HW_RAMP: float = 15.55
+const HW_RAMP: float = 12.3
 const LOT_LANE: float = -18.5
 ## Tempo in Orten und Kurven
 const VILLAGE_SPEED: float = 50.0 / 3.6
@@ -157,6 +158,9 @@ class TrafficCar:
 	var stuck: bool = false
 	var decide_timer: float = 0.0
 	var right_free_time: float = 0.0
+	## Auf dem Beschleunigungsstreifen: bis hierher (Meter auf dem Stück) muss es eingefädelt
+	## haben (-1 = fährt nicht gerade auf)
+	var merge_end: float = -1.0
 	## Zuletzt gesetzte Materialien (nur bei Änderung neu setzen)
 	var shown_brake: bool = false
 	var shown_left: bool = false
@@ -590,10 +594,10 @@ func _enter(c: TrafficCar, leg: Leg, s: float) -> void:
 	if leg.kind == Kind.HIGHWAY:
 		# Einfädeln von der Rampe: von neben der Fahrbahn auf die rechte Spur
 		if previous.kind != Kind.HIGHWAY:
+			# Erst auf dem Beschleunigungsstreifen Tempo aufnehmen, dann in eine Lücke
 			c.lateral = leg.lateral
-			c.lane_target = HW_RIGHT
-			c.blink = 1
-			c.blink_timer = 1.0
+			c.lane_target = HW_RAMP
+			c.merge_end = s + RoadSegment.AUX_PARALLEL + RoadSegment.AUX_TAPER * 0.5
 		_plan_highway_exit(c)
 	elif previous.kind != Kind.HIGHWAY or leg.kind != Kind.HIGHWAY:
 		c.lateral = leg.lateral
@@ -838,6 +842,9 @@ func _desired_speed(c: TrafficCar) -> float:
 			target = minf(c.road_speed, 80.0 / 3.6)
 		Kind.LOT:
 			target = 25.0 / 3.6
+	# Auf dem Verzögerungsstreifen schon auf Rampentempo bremsen
+	if leg.kind == Kind.HIGHWAY and not c.plan.is_empty() and c.lane_target == HW_RAMP:
+		target = minf(target, 90.0 / 3.6)
 	if leg.kind == Kind.ROAD or leg.kind == Kind.CONNECTOR:
 		for cell: Vector2i in _cells_of(leg):
 			var node: Variant = roads.node_at(cell)
@@ -884,6 +891,10 @@ func _acceleration(c: TrafficCar) -> float:
 		var closing := c.speed - leader_speed
 		var wanted := MIN_GAP + c.speed * TIME_GAP + c.speed * closing / (2.0 * sqrt(c.accel * COMFORT_BRAKE))
 		interaction = pow(maxf(wanted, 0.0) / maxf(gap, 0.5), 2.0)
+	# Auf dem Beschleunigungsstreifen: dessen Ende ist wie ein stehendes Hindernis
+	if c.merge_end > 0.0 and c.lane_target == HW_RAMP:
+		var wanted_end := MIN_GAP + c.speed * TIME_GAP + c.speed * c.speed / (2.0 * sqrt(c.accel * COMFORT_BRAKE))
+		interaction = maxf(interaction, pow(wanted_end / maxf(c.merge_end + 20.0 - c.s, 0.5), 2.0))
 	var accel := c.accel * (free - interaction)
 	return clampf(accel, -9.0, c.accel)
 
@@ -946,14 +957,46 @@ func _lane_free(c: TrafficCar, offset: float, front: float, back: float) -> bool
 	return true
 
 
+## Fährt rechts neben bzw. kurz vor c jemand auf dem Beschleunigungsstreifen?
+func _merging_near(c: TrafficCar) -> bool:
+	var flat_forward := Vector3(c.forward.x, 0.0, c.forward.z).normalized()
+	var right := flat_forward.cross(Vector3.UP)
+	for other in _cars:
+		if other == c or other.merge_end <= 0.0 or other.lane_target != HW_RAMP:
+			continue
+		var rel := other.position - c.position
+		var ahead := rel.dot(flat_forward)
+		if ahead > -10.0 and ahead < 70.0 and absf(rel.dot(right) - (HW_RAMP - HW_RIGHT)) < 2.0:
+			return true
+	return false
+
+
 ## Autobahn: überholen und wieder rechts einordnen, vor einer Ausfahrt nach rechts
 func _decide_lane(c: TrafficCar, delta: float) -> void:
 	if c.leg.kind != Kind.HIGHWAY or c.next != null or c.crash_timer > 0.0:
 		return
-	# Vor der Ausfahrt rüber auf die Rampe (über die rechte Spur)
-	if not c.plan.is_empty() and c.leg.to - c.s < 260.0:
-		if c.lane_target != HW_RAMP and (c.lane_target == HW_RIGHT or _lane_free(c, HW_RIGHT - c.lateral, 40.0, 25.0)):
-			c.lane_target = HW_RIGHT if c.lane_target == HW_LEFT else HW_RAMP
+	# Auffahren: auf dem Beschleunigungsstreifen in eine Lücke der rechten Spur einfädeln
+	# (schnell genug oder der Streifen geht zu Ende)
+	if c.merge_end > 0.0:
+		if c.lane_target == HW_RAMP:
+			var ready := c.speed > minf(c.highway_speed, 100.0 / 3.6) * 0.85 or c.merge_end - c.s < 120.0
+			if ready and _lane_free(c, HW_RIGHT - c.lateral, 15.0 + c.speed * 0.6, 12.0):
+				c.lane_target = HW_RIGHT
+				c.blink = 1
+				c.blink_timer = 1.5
+		elif c.lateral == c.lane_target:
+			c.merge_end = -1.0
+		return
+	# Vor der Ausfahrt: rechts einordnen, am Beginn der Verziehung auf den Verzögerungsstreifen
+	var to_exit := c.leg.to - c.s
+	if not c.plan.is_empty() and to_exit < 600.0:
+		var aux_begins := to_exit < RoadSegment.AUX_PARALLEL + RoadSegment.AUX_TAPER + 12.0
+		if c.lane_target == HW_LEFT and _lane_free(c, HW_RIGHT - c.lateral, 40.0, 25.0):
+			c.lane_target = HW_RIGHT
+			c.blink = -1
+			c.blink_timer = 1.5
+		elif c.lane_target == HW_RIGHT and c.lateral == HW_RIGHT and (aux_begins or to_exit < 200.0):
+			c.lane_target = HW_RAMP
 			c.blink = -1
 			c.blink_timer = 1.5
 		return
@@ -966,6 +1009,12 @@ func _decide_lane(c: TrafficCar, delta: float) -> void:
 	var exiting_soon := not c.plan.is_empty() and c.leg.to - c.s < 900.0
 	if c.lane_target == HW_RIGHT:
 		if c.truck or exiting_soon:
+			return
+		# Platz machen für Auffahrende auf dem Beschleunigungsstreifen
+		if _merging_near(c) and _lane_free(c, HW_LEFT - HW_RIGHT, 60.0, 30.0):
+			c.lane_target = HW_LEFT
+			c.blink = 1
+			c.blink_timer = 1.5
 			return
 		var leader := _leader(c, 0.0, 130.0)
 		var slower: bool = not leader.is_empty() and (leader[1] as float) < c.highway_speed - 4.0

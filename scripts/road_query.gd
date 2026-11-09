@@ -49,7 +49,7 @@ func _init(segments: Array, pads: PackedVector4Array, area: Rect2) -> void:
 	var grown := area.grow(RoadSegment.MAX_BANK + 15.0)
 	for segment: RoadSegment in segments:
 		var core := segment.road_width * 0.5 + segment.shoulder_width + 0.5
-		reach = maxf(reach, core + RoadSegment.MAX_BANK)
+		reach = maxf(reach, core + RoadSegment.AUX_EXTRA + RoadSegment.MAX_BANK)
 		var portal_distance := _portal_distances(segment)
 		var portals := _portal_planes(segment)
 		# Punkte, an denen die Böschung aufhört (Brücke, Tunnel)
@@ -77,7 +77,11 @@ func _init(segments: Array, pads: PackedVector4Array, area: Rect2) -> void:
 			if segment.square_ends:
 				cap_a = 2
 				cap_b = 2
-			_add_piece(segment.points[i], segment.points[i + 1], core, piece_bank, carves, grown,
+			# Zusatzfahrstreifen der Autobahn: der flache Teil wird breiter (auf beiden Seiten,
+			# das schadet auf der anderen nicht)
+			var extra := maxf(maxf(segment.extra_at(i, 1.0), segment.extra_at(i, -1.0)),
+				maxf(segment.extra_at(i + 1, 1.0), segment.extra_at(i + 1, -1.0)))
+			_add_piece(segment.points[i], segment.points[i + 1], core + extra, piece_bank, carves, grown,
 				cap_a, cap_b, plane)
 	for pad in pads:
 		var center := Vector3(pad.x, pad.y, pad.z)

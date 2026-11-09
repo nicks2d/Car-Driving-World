@@ -27,7 +27,11 @@ extends Node
 ## --car=ID       mit diesem Auto starten (Profil cars/ID.tres, z. B. e30, e92, f90, g90)
 ## --bench=S      S Sekunden lang per Autopilot die Straße entlangfahren, dann FPS-Werte ausgeben
 ## --volfog       volumetrischen Nebel einschalten
-## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png)
+## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png),
+##                mehrere mit Komma (--benchshot=8,16,24)
+## --exitdrive    mit --bench --highway: Der Autopilot nimmt die nächste Ausfahrt (über den
+##                Verzögerungsstreifen), fährt über den Zubringer und auf der anderen Seite
+##                wieder auf (Beschleunigungsstreifen)
 ## --highway     auf der nächsten Autobahn starten (statt auf der nächsten Straße); mit --bench
 ##               fährt der Autopilot dort Vollgas (bis 360 km/h)
 ## --nohud       HUD ausblenden (z. B. um zu messen, was es kostet)
@@ -115,7 +119,10 @@ var _tunnel_driven: float = 0.0
 var _lowest_up: float = 1.0
 var _last_position: Vector3 = Vector3.ZERO
 var _log_timer: float = 0.0
-var _bench_shot_time: float = -1.0
+var _bench_shots := PackedFloat32Array()
+var _exit_drive: bool = false
+## Folgt der Autopilot gerade der Route über die Ausfahrt? (Kurven dann wie auf der Landstraße)
+var _on_exit_route: bool = false
 var _stuck_time: float = 0.0
 var _reverse_time: float = 0.0
 
@@ -183,7 +190,10 @@ func _ready() -> void:
 			"volfog":
 				volumetric_fog = true
 			"benchshot":
-				_bench_shot_time = float(value)
+				for part in value.split(","):
+					_bench_shots.append(float(part))
+			"exitdrive":
+				_exit_drive = true
 			"nowait":
 				_no_wait = true
 			"nohud":
@@ -332,8 +342,8 @@ func _process(delta: float) -> void:
 				+ Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
 			_process_times.append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
 			_physics_times.append(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
-			if _bench_shot_time > 0.0 and _timer >= _bench_shot_time:
-				_bench_shot_time = -1.0
+			if not _bench_shots.is_empty() and _timer >= _bench_shots[0]:
+				_bench_shots.remove_at(0)
 				_save_image("bench_%d" % int(_timer))
 			if _timer >= _bench_seconds:
 				_state = "done"
@@ -353,6 +363,16 @@ func _physics_process(_delta: float) -> void:
 
 func _extend_route() -> void:
 	var car: VehicleBody3D = _game.car
+	_on_exit_route = false
+	if _exit_drive:
+		# Einmal die Route über die Ausfahrt, danach normal weiter
+		_exit_drive = false
+		_route = _game.roads.exit_route(car.global_position, car.global_basis.z)
+		_route_index = 0
+		print("Autopilot: Route über die Ausfahrt, %d Punkte" % _route.size())
+		if _route.size() >= 10:
+			_on_exit_route = true
+			return
 	_route = _game.roads.route_from(car.global_position, car.global_basis.z, 2500.0)
 	_route_index = 0
 
@@ -421,7 +441,8 @@ func _drive_autopilot() -> void:
 	# (Querbeschleunigung max. 4 m/s²) und rechtzeitig bremsen (max. 4 m/s²).
 	# Auf der Autobahn: Vollgas, Kurven mit 9 m/s² und 700 m Vorausschau
 	var target_speed := 100.0 if on_highway else 26.0
-	var lateral := 9.0 if on_highway else 4.0
+	# Auf der Route über die Ausfahrt: Rampen und Zubringer haben enge Kurven
+	var lateral := 9.0 if on_highway and not _on_exit_route else 4.0
 	var horizon := 175 if on_highway else 30
 	for i in range(_route_index + 3, mini(_route_index + horizon, _route.size() - 3)):
 		var d1 := Vector2(_route[i].x - _route[i - 3].x, _route[i].z - _route[i - 3].z)

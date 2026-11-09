@@ -86,6 +86,15 @@ var _bound_high := PackedFloat32Array()
 var rail_gaps: PackedVector3Array
 ## Leitpfosten (nur Autobahn), in Weltkoordinaten
 var posts: Array[Transform3D] = []
+## Zusatzfahrstreifen der Autobahn (Verzögerungs- und Beschleunigungsstreifen), setzt RoadNetwork
+## vor dem Bauen: [Punkt x/z, an dem die Rampe die Fahrbahn verlässt bzw. erreicht,
+## Fahrtrichtung (+1 = in Punktreihenfolge), Seite (+1 = links), Ausfahrt?]
+var aux_lanes: Array = []
+## Daraus je Punkt: zusätzliche Breite links/rechts (Meter) und die Markierung daneben (Mark)
+var extra_left := PackedFloat32Array()
+var extra_right := PackedFloat32Array()
+var marks_left := PackedByteArray()
+var marks_right := PackedByteArray()
 
 # --- Ergebnisse ---
 ## Mittellinie, alle POINT_SPACING Meter ein Punkt, y = Höhe der Fahrbahn
@@ -155,6 +164,20 @@ const TUBE_CLEARANCE: float = 0.4
 ## Lampen an der Decke alle LAMP_EVERY Punkte, echte Lichter alle LIGHT_EVERY Punkte
 const LAMP_EVERY: int = 2
 const LIGHT_EVERY: int = 4
+## Zusatzfahrstreifen: So viel breiter wird die Fahrbahn (aus dem 2,5-m-Standstreifen wird ein
+## 3,5-m-Fahrstreifen mit Randlinie), Länge der Verziehung und des parallelen Teils. An der
+## Rampe bleibt die Breite noch AUX_GORE_HOLD m, verschwindet über AUX_GORE_TAPER m unter der
+## abschwenkenden Rampe, die Sperrfläche reicht AUX_GORE_TAIL m weiter.
+const AUX_EXTRA: float = 1.65
+const AUX_TAPER: float = 60.0
+const AUX_PARALLEL: float = 250.0
+const AUX_GORE_HOLD: float = 25.0
+const AUX_GORE_TAPER: float = 30.0
+const AUX_GORE_TAIL: float = 20.0
+## Markierung neben dem Fahrstreifen: normal (Randlinie), Blockmarkierung zum Zusatzstreifen,
+## Sperrfläche (schraffiert, durchgezogene Randlinie), Verziehung am Ende des
+## Beschleunigungsstreifens (schraffiert mit Blockmarkierung)
+enum Mark { NONE, BLOCK, GORE, TAPER }
 ## Längere Tunnel gibt es nicht (der Abschnitt fällt dann weg wie früher ohne Tunnel)
 const MAX_TUNNEL_LENGTH: float = 3000.0
 ## Tunnel-Variante der Wegsuche: Mehrkosten pro Meter Tunnel (1.0 = zählt doppelt) und pro Tunnel
@@ -226,6 +249,71 @@ func _build_fixed() -> void:
 		return
 	valid = true
 	fixed_path = PackedVector2Array()
+	_make_aux_lanes()
+
+
+## Zusatzfahrstreifen aus aux_lanes: Breite und Markierung an jedem Punkt
+func _make_aux_lanes() -> void:
+	var n := points.size()
+	extra_left = PackedFloat32Array()
+	extra_right = PackedFloat32Array()
+	marks_left = PackedByteArray()
+	marks_right = PackedByteArray()
+	extra_left.resize(n)
+	extra_right.resize(n)
+	marks_left.resize(n)
+	marks_right.resize(n)
+	for lane: Array in aux_lanes:
+		var at: Vector2 = lane[0]
+		var travel: int = lane[1]
+		var left: bool = lane[2] > 0
+		var exit: bool = lane[3]
+		# Punkt der Mittellinie neben der Stelle (sie liegt am Fahrbahnrand)
+		var g := 0
+		var best := INF
+		for i in n:
+			var d := Vector2(points[i].x - at.x, points[i].z - at.y).length_squared()
+			if d < best:
+				best = d
+				g = i
+		if best > 30.0 * 30.0:
+			continue
+		for i in n:
+			# Meter in Fahrtrichtung ab der Stelle (negativ = davor)
+			var d := (i - g) * POINT_SPACING * travel
+			# Die Einfahrt ist die gespiegelte Ausfahrt
+			var e := d if exit else -d
+			var extra := 0.0
+			var mark := Mark.NONE
+			if e >= -(AUX_PARALLEL + AUX_TAPER) and e < -AUX_PARALLEL:
+				extra = AUX_EXTRA * (e + AUX_PARALLEL + AUX_TAPER) / AUX_TAPER
+				mark = Mark.BLOCK if exit else Mark.TAPER
+			elif e >= -AUX_PARALLEL and e < 0.0:
+				extra = AUX_EXTRA
+				mark = Mark.BLOCK
+			elif e >= 0.0 and e < AUX_GORE_HOLD:
+				extra = AUX_EXTRA
+				mark = Mark.GORE
+			elif e >= AUX_GORE_HOLD and e < AUX_GORE_HOLD + AUX_GORE_TAPER:
+				extra = AUX_EXTRA * (1.0 - (e - AUX_GORE_HOLD) / AUX_GORE_TAPER)
+				mark = Mark.GORE
+			elif e >= AUX_GORE_HOLD + AUX_GORE_TAPER and e < AUX_GORE_HOLD + AUX_GORE_TAPER + AUX_GORE_TAIL:
+				mark = Mark.GORE
+			else:
+				continue
+			if left:
+				extra_left[i] = maxf(extra_left[i], extra)
+				marks_left[i] = maxi(marks_left[i], mark)
+			else:
+				extra_right[i] = maxf(extra_right[i], extra)
+				marks_right[i] = maxi(marks_right[i], mark)
+
+
+## Zusätzliche Breite an Punkt i auf einer Seite (side > 0 = links)
+func extra_at(i: int, side: float) -> float:
+	if extra_left.is_empty():
+		return 0.0
+	return extra_left[i] if side > 0.0 else extra_right[i]
 
 
 ## Eine Variante komplett berechnen (Weg, Kurven, Profil). Leer = kein vernünftiger Weg.
@@ -1083,6 +1171,8 @@ func build_mesh(first: int, last: int) -> void:
 	var tangents := PackedFloat32Array()
 	var uvs := PackedVector2Array()
 	var uv2s := PackedVector2Array()
+	# Punktfarbe für den Shader: Zusatzbreite links/rechts (/10 m) und Markierung (/3)
+	var colors := PackedColorArray()
 	var lefts := PackedVector3Array()
 	lefts.resize(n)
 	for i in n:
@@ -1102,12 +1192,16 @@ func build_mesh(first: int, last: int) -> void:
 		var up := (Vector3.UP + left * bank[i]).normalized()
 		if i > first:
 			distance += points[i].distance_to(points[i - 1])
+		var extra_l := extra_at(i, 1.0)
+		var extra_r := extra_at(i, -1.0)
+		var mark_l := marks_left[i] if not marks_left.is_empty() else 0
+		var mark_r := marks_right[i] if not marks_right.is_empty() else 0
 		for k in 6:
-			var offset: float = side[k]
+			var offset: float = side[k] + (extra_l if k <= 2 else -extra_r)
 			var height: float = drop[k]
 			# Auf Brücken gibt es kein schräges Bankett, dort ist die Fahrbahnplatte
 			if bridge[i] == 1 and (k == 0 or k == 5):
-				offset = outer if k == 0 else -outer
+				offset = (outer + extra_l) if k == 0 else -(outer + extra_r)
 				height = -0.06
 			# Im Tunnel reicht die Fahrbahn bis an die Wand
 			if tunnel[i] == 1 and (k == 0 or k == 5):
@@ -1123,9 +1217,10 @@ func build_mesh(first: int, last: int) -> void:
 			# Tangente zeigt nach rechts (Richtung wachsender u-Koordinate)
 			var right := -left
 			tangents.append_array([right.x, right.y, right.z, 1.0])
-			uvs.append(Vector2(u_coord[k], distance))
+			uvs.append(Vector2(u_coord[k] + ((-extra_l) if k <= 2 else extra_r) / road_width, distance))
 			# UV2.x = 0: normale Straße (Kreuzungsflächen haben hier 1), UV2.y = überdacht
 			uv2s.append(Vector2(0.0, covered[i]))
+			colors.append(Color(extra_l / 10.0, extra_r / 10.0, mark_l / 3.0, mark_r / 3.0))
 	var indices := PackedInt32Array()
 	collision_faces = PackedVector3Array()
 	for i in last - first:
@@ -1143,6 +1238,7 @@ func build_mesh(first: int, last: int) -> void:
 	mesh_arrays[Mesh.ARRAY_TANGENT] = tangents
 	mesh_arrays[Mesh.ARRAY_TEX_UV] = uvs
 	mesh_arrays[Mesh.ARRAY_TEX_UV2] = uv2s
+	mesh_arrays[Mesh.ARRAY_COLOR] = colors
 	mesh_arrays[Mesh.ARRAY_INDEX] = indices
 	_build_bridges(lefts)
 	bridge_arrays = _take_quads()
@@ -1254,10 +1350,12 @@ func _build_bridges(lefts: PackedVector3Array) -> void:
 		for k in range(maxi(i - 1, 0), mini(j, n - 1)):
 			for sgn: float in [1.0, -1.0]:
 				var normal := ((lefts[k] + lefts[k + 1]) * 0.5 * sgn).normalized()
-				var o0 := side_point(k, lefts[k], outer * sgn, 0.0) - origin
-				var o1 := side_point(k + 1, lefts[k + 1], outer * sgn, 0.0) - origin
-				var w0 := side_point(k, lefts[k], (outer - WALL_THICKNESS) * sgn, 0.0) - origin
-				var w1 := side_point(k + 1, lefts[k + 1], (outer - WALL_THICKNESS) * sgn, 0.0) - origin
+				var out0 := outer + extra_at(k, sgn)
+				var out1 := outer + extra_at(k + 1, sgn)
+				var o0 := side_point(k, lefts[k], out0 * sgn, 0.0) - origin
+				var o1 := side_point(k + 1, lefts[k + 1], out1 * sgn, 0.0) - origin
+				var w0 := side_point(k, lefts[k], (out0 - WALL_THICKNESS) * sgn, 0.0) - origin
+				var w1 := side_point(k + 1, lefts[k + 1], (out1 - WALL_THICKNESS) * sgn, 0.0) - origin
 				# Außenseite: Platte und Brüstung in einem Stück
 				_quad(o0 + down, o1 + down, o1 + wall, o0 + wall, normal)
 				# Oberkante und Innenseite der Brüstung
@@ -1267,10 +1365,10 @@ func _build_bridges(lefts: PackedVector3Array) -> void:
 				collision_faces.append_array([w0 + top + origin, w1 + top + origin, w1 + wall + origin,
 					w0 + top + origin, w1 + wall + origin, w0 + wall + origin])
 			# Unterseite der Platte
-			var a0 := side_point(k, lefts[k], outer, 0.0) - origin + down
-			var a1 := side_point(k + 1, lefts[k + 1], outer, 0.0) - origin + down
-			var b0 := side_point(k, lefts[k], -outer, 0.0) - origin + down
-			var b1 := side_point(k + 1, lefts[k + 1], -outer, 0.0) - origin + down
+			var a0 := side_point(k, lefts[k], outer + extra_at(k, 1.0), 0.0) - origin + down
+			var a1 := side_point(k + 1, lefts[k + 1], outer + extra_at(k + 1, 1.0), 0.0) - origin + down
+			var b0 := side_point(k, lefts[k], -outer - extra_at(k, -1.0), 0.0) - origin + down
+			var b1 := side_point(k + 1, lefts[k + 1], -outer - extra_at(k + 1, -1.0), 0.0) - origin + down
 			_quad(a0, a1, b1, b0, Vector3.DOWN)
 		# Pfeiler bis in den Boden (nicht auf einer Straße darunter)
 		for k in range(i + 2, j - 2, PILLAR_EVERY):
@@ -1343,20 +1441,23 @@ func _build_rails(first: int, last: int, lefts: PackedVector3Array) -> void:
 			if need[i] == 0:
 				continue
 			var run_end := _flag(need, i - 1) == 0 or _flag(need, i + 1) == 0
-			var post := side_point(i, lefts[i], side * (offset + 0.12), 0.0) - origin
+			# Neben einem Zusatzfahrstreifen steht sie entsprechend weiter außen
+			var off0 := offset + extra_at(i, side)
+			var off1 := offset + extra_at(mini(i + 1, n - 1), side)
+			var post := side_point(i, lefts[i], side * (off0 + 0.12), 0.0) - origin
 			_post(post, lefts[i] * side, RAIL_HEIGHT - 0.08)
 			if i == last or _flag(need, i + 1) == 0:
 				continue
 			var top0 := 0.3 if run_end else RAIL_HEIGHT
 			var top1 := 0.3 if _flag(need, i + 2) == 0 else RAIL_HEIGHT
-			var a0 := side_point(i, lefts[i], side * offset, maxf(top0 - RAIL_BAND, 0.05))
-			var a1 := side_point(i + 1, lefts[i + 1], side * offset, maxf(top1 - RAIL_BAND, 0.05))
-			var b0 := side_point(i, lefts[i], side * offset, top0)
-			var b1 := side_point(i + 1, lefts[i + 1], side * offset, top1)
+			var a0 := side_point(i, lefts[i], side * off0, maxf(top0 - RAIL_BAND, 0.05))
+			var a1 := side_point(i + 1, lefts[i + 1], side * off1, maxf(top1 - RAIL_BAND, 0.05))
+			var b0 := side_point(i, lefts[i], side * off0, top0)
+			var b1 := side_point(i + 1, lefts[i + 1], side * off1, top1)
 			_quad(a0 - origin, a1 - origin, b1 - origin, b0 - origin, -lefts[i] * side)
 			# Die Leitplanke hält das Auto auf der Straße (vom Boden bis zur Oberkante)
-			var g0 := side_point(i, lefts[i], side * offset, 0.0)
-			var g1 := side_point(i + 1, lefts[i + 1], side * offset, 0.0)
+			var g0 := side_point(i, lefts[i], side * off0, 0.0)
+			var g1 := side_point(i + 1, lefts[i + 1], side * off1, 0.0)
 			collision_faces.append_array([g0, g1, b1, g0, b1, b0])
 
 
@@ -1577,7 +1678,7 @@ func _place_posts(first: int, last: int, lefts: PackedVector3Array) -> void:
 			continue
 		var forward := direction_at(i)
 		for side: float in [1.0, -1.0]:
-			var base := side_point(i, lefts[i], side * offset, -0.1)
+			var base := side_point(i, lefts[i], side * (offset + extra_at(i, side)), -0.1)
 			posts.append(Transform3D(Basis.looking_at(forward), base))
 
 

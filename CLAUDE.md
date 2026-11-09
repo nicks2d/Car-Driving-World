@@ -111,6 +111,7 @@ assets/
 - [x] Extra: Tunnel-Bug behoben, mehr Grip (Grip-Stufen), Blinker/Warnblinker/Hupe
 - [x] Extra: Anschlussstellen an jedem Stützpunkt, Raststätten mit Tankstelle und Rasthof
 - [x] Extra: Drei neue Garage-Autos (M4 CSL, SL 65, C 63) mit Marken-Reitern
+- [x] Extra: Verkehr mit echten Modellen, Verzögerungs- und Beschleunigungsstreifen
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -648,6 +649,44 @@ assets/
 - Testen: `--car=m4csl|sl65|c63`, `--garage` macht das Foto mit offener Garage (mit `--car`
   ist dessen Marke gewählt), Fahrwerte `Godot --path . -s res://tools/drive_test.gd --
   --cars=m4csl,sl65,c63`.
+- Verzögerungs- und Beschleunigungsstreifen (Teil 4): Die Autobahn selbst wird breiter
+  (`RoadSegment.aux_lanes`, gesetzt von `RoadNetwork._aux_lanes_at` für jede Rampe der
+  Anschlussstellen und Raststätten). Je Punkt `extra_left/right` (Meter) und `marks_left/right`
+  (`RoadSegment.Mark`: Blockmarkierung, Sperrfläche, Verziehung). Aus dem 2,5-m-Standstreifen wird
+  mit 1,65 m mehr (`AUX_EXTRA`) ein 3,5-m-Fahrstreifen mit eigener Randlinie. Ausfahrt (in
+  Fahrtrichtung): 60 m Verziehung (`AUX_TAPER`), 250 m parallel (`AUX_PARALLEL`), Blockmarkierung
+  (Breitstrich 6 m/6 m), ab dem Rampenbeginn Sperrfläche (schräg schraffiert): Breite noch 25 m,
+  dann über 30 m weg (unter der abschwenkenden Rampe), Schraffur 20 m weiter. Einfahrt gespiegelt,
+  die Verziehung am Ende schraffiert mit Blockmarkierung. Der Shader (`road.gdshader`, Profil 1)
+  bekommt das als Punktfarbe (COLOR.r/g = Breite/10, b/a = Markierung/3; andere Straßen haben
+  keine Punktfarbe, dann wird sie ignoriert). Mesh, Kollision, Brücken, Leitplanken, Leitpfosten
+  und die Gelände-Anpassung (`road_query.gd`, flacher Teil breiter) rechnen die Zusatzbreite mit.
+- Rampen beginnen/enden jetzt im Zusatzstreifen (`RAMP_LATERAL` 12,45 m statt 15,55 m neben der
+  Mitte: ihre innere Randlinie liegt auf der Randlinie der Autobahn) und dort 4 cm höher
+  (`RAMP_LIFT`, sonst flimmern die übereinander liegenden Flächen).
+- Ausstattung (`_add_signs`): Ankündigungsbaken 300/200/100 m vor dem Rampenbeginn (weiße Tafel mit
+  3/2/1 roten Schrägstreifen), an der Spitze der Sperrfläche (`_gore_nose`: wo zwischen Fahrbahnrand
+  und Rampe 0,6 m Platz ist, rechnet die Bezier-Kurve der Rampe nach) ein gelber Anpralldämpfer,
+  Leitpfosten auf der Insel und das blaue Schild „Ausfahrt N“ bzw. „Rastanlage“ mit Pfeil ↗
+  (statt früher am Rampenbeginn). Die Insel ist Gelände mit Gras.
+- Verkehr: Abfahrer ordnen sich 600 m vorher rechts ein, wechseln am Beginn der Verziehung auf den
+  Verzögerungsstreifen (`HW_RAMP` 12,3 m) und bremsen dort auf 90 km/h. Auffahrer bleiben auf
+  dem Beschleunigungsstreifen (`merge_end` = Ende des parallelen Teils + halbe Verziehung, das
+  Ende wirkt im IDM wie ein stehendes Hindernis), fädeln ein, sobald sie schnell genug sind
+  (85 % von min(Wunschtempo, 100 km/h)) oder der Streifen ausgeht und rechts eine Lücke ist.
+  Autos auf der rechten Spur wechseln nach links, wenn rechts neben/vor ihnen jemand auffährt.
+- Testen: Raststätte Falkenweiler, Verzögerungsstreifen Richtung Osten `--pos=9250,-4032
+  --highway --heading=90 --fly=3.5 --pitch=-8`, Sperrfläche `--pos=9330,-4032 --highway
+  --heading=90 --fly=7 --pitch=-18`. Prüffahrt: `--bench=60 --highway --exitdrive
+  --benchshot=10,20,30` (Autopilot über Ausfahrt, Zubringer, Einfahrt auf der Gegenseite,
+  `RoadNetwork.exit_route`, auf dieser Route Kurven mit 4 m/s² wie auf der Landstraße).
+- Gemessen: Anschlussstelle bei (3200, −4060), 150 s mit hochgesetzten Ab-/Auffahr-Chancen
+  (`tools/_traffic_check.gd`, nicht im Repo): 8 Ausfahrten, 4 Auffahrten, alle 4 nach 99–236 m
+  auf dem Beschleunigungsstreifen eingefädelt, kein Auto fest, kleinster Abstand 30 m.
+  Prüffahrt M4 CSL: Autobahn 172 km/h → Verzögerungsstreifen → Ausfahrt (bremst auf ~60) →
+  Zubringer über die Brücke → Einfahrt → Gegenrichtung mit 147 km/h, 1,5 km. An der engen
+  Ecke Rampe/Zubringer schneidet der Test-Autopilot die Kurve (setzt einmal zurück), das ist
+  dessen Zielpunkt-Lenkung, nicht die Straße.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

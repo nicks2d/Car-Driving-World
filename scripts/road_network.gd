@@ -101,6 +101,11 @@ const RAMP_WIDTH: float = 5.0
 ## auf den Zubringer
 const RAMP_LENGTH: float = 280.0
 const RAMP_JOIN: float = 55.0
+## Rampen beginnen bzw. enden im Zusatzfahrstreifen (Verzögerungs-/Beschleunigungsstreifen):
+## Ihre innere Randlinie liegt dort auf der Randlinie der Autobahn (2,5 m Standstreifen).
+## Sie liegen RAMP_LIFT höher, damit sich die Flächen dort nicht flimmernd überdecken.
+const RAMP_LATERAL: float = HIGHWAY_WIDTH * 0.5 - 2.5 - 0.3 + RAMP_WIDTH * 0.5
+const RAMP_LIFT: float = 0.04
 ## Der Zubringer endet so weit hinter der Autobahn
 const CONNECTOR_BEYOND: float = 150.0
 ## Höhenunterschied, ab dem sich kreuzende Straßen nicht stören (Brücke darüber)
@@ -623,6 +628,114 @@ func route_from(near: Vector3, forward: Vector3, min_length: float) -> PackedVec
 	return route
 
 
+## Test (--exitdrive): Route über die nächste Ausfahrt einer Anschlussstelle in Fahrtrichtung
+## (rechte Spur, Verzögerungsstreifen, Ausfahrt, Zubringer über die Brücke, Einfahrt auf der
+## anderen Seite, Beschleunigungsstreifen, Autobahn zurück). Leer = keine passende Ausfahrt geladen.
+func exit_route(near: Vector3, forward: Vector3) -> PackedVector3Array:
+	var route := PackedVector3Array()
+	var best_key := Vector3i.ZERO
+	var best_index := -1
+	var best_distance := INF
+	for key: Vector3i in _entries.keys():
+		var entry: Entry = _entries[key]
+		if not is_highway_key(key) or entry.state < State.CHECKED:
+			continue
+		for i in entry.segment.points.size():
+			var d := entry.segment.points[i].distance_squared_to(near)
+			if d < best_distance:
+				best_distance = d
+				best_key = key
+				best_index = i
+	if best_index == -1:
+		return route
+	var axis := highway_axis(best_key)
+	var line := best_key.y
+	var going_forward := (_entries[best_key] as Entry).segment.direction_at(best_index).dot(forward) >= 0.0
+	var dir := 1 if going_forward else -1
+	# Nächste Anschlussstelle, deren Ausfahrt noch mindestens 400 m voraus beginnt
+	var key := best_key
+	var start := best_index
+	for step in 4:
+		var k := key.x + 1 if going_forward else key.x
+		var segment := (_entries[key] as Entry).segment
+		if not highways.interchange_at(axis, line, k).is_empty():
+			var exit_part := 3 if going_forward else 1
+			var entry_part := 2 if going_forward else 4
+			var exit_entry: Entry = _entries.get(interchange_key(axis, line, k, exit_part))
+			var entry_entry: Entry = _entries.get(interchange_key(axis, line, k, entry_part))
+			var connector: Entry = _entries.get(interchange_key(axis, line, k, 0))
+			var gore := ramp_ends(axis, line, k, exit_part)[0]
+			var gore_index := _nearest_index(segment, gore)
+			var ahead := (gore_index - start) * dir
+			if ahead * RoadSegment.POINT_SPACING > 400.0 and exit_entry and entry_entry and connector \
+					and exit_entry.state >= State.CHECKED and entry_entry.state >= State.CHECKED \
+					and connector.state >= State.CHECKED:
+				# 1. Autobahn bis zur Ausfahrt, am Ende der Verziehung auf den Verzögerungsstreifen
+				var i := start
+				while i != gore_index:
+					var to_gore := (gore_index - i) * dir * RoadSegment.POINT_SPACING
+					var blend := clampf((RoadSegment.AUX_PARALLEL + 40.0 - to_gore) / 100.0, 0.0, 1.0)
+					route.append(_lane_point(segment, i, dir, lerpf(HIGHWAY_LANE_OFFSET, RAMP_LATERAL - 0.2, blend)))
+					i += dir
+				# 2. Ausfahrt, Zubringer (über die Brücke), Einfahrt
+				var exit_points := exit_entry.segment.points
+				route.append_array(exit_points)
+				var c_points := connector.segment.points
+				var from := _nearest_index(connector.segment, Vector2(exit_points[exit_points.size() - 1].x,
+					exit_points[exit_points.size() - 1].z))
+				var entry_points := entry_entry.segment.points
+				var to := _nearest_index(connector.segment, Vector2(entry_points[0].x, entry_points[0].z))
+				var c_step := 1 if to > from else -1
+				for c in range(from, to + c_step, c_step):
+					route.append(c_points[c])
+				route.append_array(entry_points)
+				# 3. Autobahn in Gegenrichtung ab dem Ende der Einfahrt, vom Beschleunigungsstreifen
+				# nach 150 m auf die rechte Spur
+				var back_dir := -dir
+				var merge := ramp_ends(axis, line, k, entry_part)[1]
+				var back_key := Vector3i(k - 1, line, best_key.z) if going_forward else Vector3i(k, line, best_key.z)
+				var back_entry: Entry = _entries.get(back_key)
+				if back_entry == null or back_entry.state < State.CHECKED:
+					return route
+				var back := back_entry.segment
+				var m := _nearest_index(back, merge)
+				for n in 250:
+					var j := m + n * back_dir
+					if j < 0 or j >= back.points.size():
+						break
+					var blend := clampf((n * RoadSegment.POINT_SPACING - 120.0) / 80.0, 0.0, 1.0)
+					route.append(_lane_point(back, j, back_dir, lerpf(RAMP_LATERAL - 0.2, HIGHWAY_LANE_OFFSET, blend)))
+				return route
+		# Weiter zum nächsten Abschnitt (bis dahin rechte Spur)
+		var last := segment.points.size() - 1 if going_forward else 0
+		for i in range(start, last + dir, dir):
+			route.append(_lane_point(segment, i, dir, HIGHWAY_LANE_OFFSET))
+		var next_key := key + Vector3i(dir, 0, 0)
+		var next_entry: Entry = _entries.get(next_key)
+		if next_entry == null or next_entry.state < State.CHECKED:
+			return PackedVector3Array()
+		key = next_key
+		start = 0 if going_forward else next_entry.segment.points.size() - 1
+	return PackedVector3Array()
+
+
+func _nearest_index(segment: RoadSegment, p: Vector2) -> int:
+	var best := 0
+	var best_distance := INF
+	for i in segment.points.size():
+		var d := Vector2(segment.points[i].x - p.x, segment.points[i].z - p.y).length_squared()
+		if d < best_distance:
+			best_distance = d
+			best = i
+	return best
+
+
+## Punkt rechts neben der Mittellinie (in Fahrtrichtung dir)
+func _lane_point(segment: RoadSegment, i: int, dir: int, lateral: float) -> Vector3:
+	var travel := segment.direction_at(i) * float(dir)
+	return segment.points[i] + travel.cross(Vector3.UP).normalized() * lateral
+
+
 func _next_segment_at(cell: Vector2i, visited: Dictionary, arriving: Vector3) -> Dictionary:
 	# Straßen, die an diesem Ort beginnen (vorwärts) oder enden (rückwärts).
 	# Genommen wird die, bei der man am wenigsten abbiegen muss.
@@ -1070,6 +1183,9 @@ func _make_highway_segment(key: Vector3i) -> RoadSegment:
 			else:
 				segment.lead_end = RAMP_LENGTH + 30.0
 				segment.flat_end = 80
+	# Verzögerungs- und Beschleunigungsstreifen an allen Rampen (Anschlussstellen, Raststätten)
+	for at: int in [key.x, key.x + 1]:
+		segment.aux_lanes.append_array(_aux_lanes_at(axis, key.y, at))
 	# Liegen die Stützpunkte weit übereinander, reichen 4 % neben den flachen Stücken nicht:
 	# dann lieber etwas steiler als eine Lücke in der Autobahn
 	var length := 0.0
@@ -1080,6 +1196,31 @@ func _make_highway_segment(key: Vector3i) -> RoadSegment:
 	var climb := absf(segment.end.y - segment.start.y)
 	segment.max_grade = maxf(segment.max_grade, climb / maxf(length - flat - 150.0, 200.0))
 	return segment
+
+
+## Zusatzfahrstreifen an einem Stützpunkt, für RoadSegment.aux_lanes: [Punkt, an dem die Rampe
+## die Fahrbahn verlässt bzw. erreicht, Fahrtrichtung (+1 = Richtung wachsender Stützpunkte =
+## Punktreihenfolge), Seite (+1 = links), Ausfahrt?]
+func _aux_lanes_at(axis: int, line: int, at: int) -> Array:
+	var result: Array = []
+	var d := highways.direction_at(axis, line, at)
+	var left := Vector2(d.y, -d.x)
+	if not highways.interchange_at(axis, line, at).is_empty():
+		for part: int in [1, 2, 3, 4]:
+			var ends := ramp_ends(axis, line, at, part)
+			var exit := part == 1 or part == 3
+			# Links (Teil 1, 2) fährt man gegen d, rechts in Richtung d
+			var side := 1 if part <= 2 else -1
+			result.append([ends[0] if exit else ends[1], -side, side, exit])
+	for dir: int in [1, -1]:
+		var rest := highways.rest_area_at(axis, line, at, dir)
+		if rest.is_empty():
+			continue
+		var travel := 1 if (rest["travel"] as Vector2).dot(d) > 0.0 else -1
+		var side := 1 if (rest["side"] as Vector2).dot(left) > 0.0 else -1
+		result.append([rest_ends(axis, line, at, dir, 1)[0], travel, side, true])
+		result.append([rest_ends(axis, line, at, dir, 2)[1], travel, side, false])
+	return result
 
 
 ## Zubringer oder Rampe einer Anschlussstelle. Lage und Höhe der Autobahn dort stehen schon
@@ -1148,7 +1289,7 @@ func _make_interchange_segment(key: Vector3i) -> RoadSegment:
 	segment.flat_points = 3
 	segment.profile_window = 6
 	segment.fixed_path = path
-	var highway_height := point.y
+	var highway_height := point.y + RAMP_LIFT
 	segment.start = Vector3(a.x, highway_height if exit else connector_height, a.y)
 	segment.end = Vector3(b.x, connector_height if exit else highway_height, b.y)
 	if not connector.segment.valid:
@@ -1189,8 +1330,9 @@ func _make_rest_segment(key: Vector3i) -> RoadSegment:
 	segment.flat_points = 3
 	segment.profile_window = 6
 	segment.fixed_path = path
-	segment.start = Vector3(a.x, height, a.y)
-	segment.end = Vector3(b.x, height, b.y)
+	# Am Ende auf der Autobahn etwas höher (liegt im Zusatzfahrstreifen)
+	segment.start = Vector3(a.x, height + (RAMP_LIFT if part == 1 else 0.0), a.y)
+	segment.end = Vector3(b.x, height + (RAMP_LIFT if part == 2 else 0.0), b.y)
 	return segment
 
 
@@ -1207,7 +1349,7 @@ func rest_ends(axis: int, line: int, k: int, dir: int, part: int) -> PackedVecto
 	if part == 0:
 		return PackedVector2Array([x + side * HighwayLayout.REST_OFFSET - travel * half,
 			x + side * HighwayLayout.REST_OFFSET + travel * half])
-	var on_highway := x + side * (HIGHWAY_WIDTH * 0.5 + RAMP_WIDTH * 0.5 + 0.3)
+	var on_highway := x + side * RAMP_LATERAL
 	var lane := x + side * (HighwayLayout.REST_OFFSET - HighwayLayout.REST_WIDTH * 0.5 + 4.0)
 	if part == 1:
 		return PackedVector2Array([on_highway - travel * RAMP_LENGTH, lane - travel * half])
@@ -1229,7 +1371,7 @@ func ramp_ends(axis: int, line: int, k: int, part: int) -> PackedVector2Array:
 	var travel := d * -side
 	var join_dir := cross if cross.dot(left * side) > 0.0 else -cross
 	var join := x + join_dir * RAMP_JOIN
-	var on_highway := x + left * side * (HIGHWAY_WIDTH * 0.5 + RAMP_WIDTH * 0.5 + 0.3)
+	var on_highway := x + left * side * RAMP_LATERAL
 	if part == 1 or part == 3:
 		return PackedVector2Array([on_highway - travel * RAMP_LENGTH, join - travel * (road_width * 0.5 + 1.5)])
 	return PackedVector2Array([join + travel * (road_width * 0.5 + 1.5), on_highway + travel * RAMP_LENGTH])
@@ -1501,7 +1643,9 @@ func _update_visuals() -> void:
 # Autobahn-Schilder
 # ---------------------------------------------------------------------------
 
-## Schilderbrücken 2000 m und 500 m vor jeder Ausfahrt und das Ausfahrt-Schild an der Rampe.
+## Schilderbrücken 2000 m und 500 m vor jeder Ausfahrt, Ankündigungsbaken 300/200/100 m vor dem
+## Beginn der Rampe, an der Spitze der Sperrfläche Anpralldämpfer, Leitpfosten und das
+## Ausfahrt-Schild mit Pfeil auf der Insel.
 ## Die Entfernungen werden entlang der Autobahn gemessen; liegt die Ausfahrt im übernächsten
 ## Abschnitt und ist der nächste noch nicht berechnet, wird seine Länge geschätzt.
 func _add_signs(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
@@ -1526,7 +1670,13 @@ func _add_signs(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
 				extra = _section_length(Vector3i(key.x + 1, key.y, key.z))
 			elif exit_k == key.x - 1:
 				extra = _section_length(Vector3i(key.x - 1, key.y, key.z))
-			for sign_at: float in [2000.0, 500.0, 0.0]:
+			var nose := _gore_nose(axis, key.y, exit_k, forward)
+			# [Meter vor dem Beginn der Rampe (negativ = dahinter), was dort steht]
+			var places: Array = [[2000.0, "gantry"], [500.0, "gantry"], [300.0, "bake"], [200.0, "bake"],
+				[100.0, "bake"], [-nose.x, "cushion"], [-nose.x - 12.0, "post"], [-nose.x - 22.0, "exit"],
+				[-nose.x - 34.0, "post"]]
+			for place: Array in places:
+				var sign_at: float = place[0]
 				# Gesucht: Punkt i, von dem es sign_at Meter bis zum Beginn der Ausfahrt-Rampe sind
 				var to_ramp_end_of_section := extra - RAMP_LENGTH
 				var from_section_end := sign_at - to_ramp_end_of_section
@@ -1539,15 +1689,93 @@ func _add_signs(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
 					continue
 				var travel := segment.direction_at(i) * (1.0 if forward else -1.0)
 				var at := segment.points[i] - segment.origin
-				if not rest.is_empty():
-					if sign_at > 0.0:
-						_rest_sign(parent, at, travel, rest, "%d m" % roundi(sign_at))
-					else:
-						_rest_exit_sign(parent, at, travel)
-				elif sign_at > 0.0:
-					_gantry(parent, at, travel, interchange, "%d m" % roundi(sign_at))
-				else:
-					_exit_sign(parent, at, travel, interchange)
+				match place[1]:
+					"gantry":
+						if not rest.is_empty():
+							_rest_sign(parent, at, travel, rest, "%d m" % roundi(sign_at))
+						else:
+							_gantry(parent, at, travel, interchange, "%d m" % roundi(sign_at))
+					"bake":
+						_countdown_bake(parent, at, travel, roundi(sign_at / 100.0))
+					"cushion":
+						_crash_cushion(parent, at, travel)
+					"post":
+						_island_post(parent, at, travel, nose.y)
+					"exit":
+						if not rest.is_empty():
+							_rest_exit_sign(parent, at, travel, nose.y)
+						else:
+							_exit_sign(parent, at, travel, interchange, nose.y)
+
+
+## Spitze der Sperrfläche einer Ausfahrt (die Rampe ist dort weit genug von der Fahrbahn weg für
+## die Insel): [Meter hinter dem Beginn der Rampe, seitlicher Abstand der Inselmitte ~20 m weiter]
+func _gore_nose(axis: int, line: int, k: int, forward: bool) -> Vector2:
+	var dir := 1 if forward else -1
+	var rest := highways.rest_area_at(axis, line, k, dir)
+	var ends: PackedVector2Array
+	var handle := RAMP_LENGTH * 0.45
+	var point: Vector3
+	if not rest.is_empty():
+		ends = rest_ends(axis, line, k, dir, 1)
+		handle = ends[0].distance_to(ends[1]) * 0.45
+		point = rest["point"]
+	else:
+		ends = ramp_ends(axis, line, k, 3 if forward else 1)
+		point = highways.interchange_at(axis, line, k)["point"]
+	var x := Vector2(point.x, point.z)
+	var d := highways.direction_at(axis, line, k)
+	var travel := d * float(dir)
+	var left := Vector2(d.y, -d.x)
+	var a := ends[0]
+	var b := ends[1]
+	var result := Vector2(-1.0, HIGHWAY_WIDTH * 0.5 + 2.0)
+	for i in 101:
+		var p := _bezier(a, a + travel * handle, b - travel * handle, b, i / 100.0)
+		var along := (p - a).dot(travel)
+		# Platz zwischen Fahrbahnrand der Autobahn und Innenrand der Rampe
+		var gap := absf((p - x).dot(left)) - RAMP_WIDTH * 0.5 - HIGHWAY_WIDTH * 0.5
+		if result.x < 0.0 and gap > 0.6:
+			result.x = along
+		if result.x >= 0.0 and along >= result.x + 20.0:
+			result.y = HIGHWAY_WIDTH * 0.5 + gap * 0.5
+			break
+	if result.x < 0.0:
+		result.x = 70.0
+	return result
+
+
+## Ankündigungsbake (300/200/100 m vor der Ausfahrt): weiße Tafel mit 3/2/1 roten Schrägstreifen
+## rechts neben dem Verzögerungsstreifen
+func _countdown_bake(parent: Node3D, center: Vector3, travel: Vector3, stripes: int) -> void:
+	var right := travel.cross(Vector3.UP).normalized()
+	var facing := Basis.looking_at(travel)
+	var foot := center + right * (HIGHWAY_WIDTH * 0.5 + RoadSegment.AUX_EXTRA + 1.2)
+	_box(parent, foot + Vector3.UP * 1.15, Vector3(0.5, 1.5, 0.06), facing, "white")
+	_box(parent, foot + Vector3.UP * 0.2, Vector3(0.08, 0.4, 0.08), Basis(), "steel")
+	var tilt := facing * Basis(Vector3.BACK, deg_to_rad(-35.0))
+	for k in stripes:
+		var y := 1.15 + (k - (stripes - 1) * 0.5) * 0.42
+		_box(parent, foot + Vector3.UP * y - travel * 0.035, Vector3(0.58, 0.13, 0.02), tilt, "red")
+
+
+## Anpralldämpfer an der Spitze der Sperrfläche: gelbes Kissen mit schwarzen Streifen vorne
+func _crash_cushion(parent: Node3D, center: Vector3, travel: Vector3) -> void:
+	var right := travel.cross(Vector3.UP).normalized()
+	var facing := Basis.looking_at(travel)
+	var front := center + right * (HIGHWAY_WIDTH * 0.5 + 0.6)
+	_box(parent, front + travel * 2.0 + Vector3.UP * 0.45, Vector3(0.8, 0.9, 4.0), facing, "yellow")
+	var tilt := facing * Basis(Vector3.BACK, deg_to_rad(45.0))
+	for k in 3:
+		_box(parent, front + Vector3.UP * (0.18 + k * 0.28) - travel * 0.02, Vector3(0.82, 0.08, 0.02), tilt, "dark")
+
+
+## Leitpfosten auf der Insel zwischen Autobahn und Rampe
+func _island_post(parent: Node3D, center: Vector3, travel: Vector3, lateral: float) -> void:
+	var right := travel.cross(Vector3.UP).normalized()
+	var foot := center + right * lateral
+	_box(parent, foot + Vector3.UP * 0.5, Vector3(0.12, 1.0, 0.12), Basis(), "white")
+	_box(parent, foot + Vector3.UP * 0.82, Vector3(0.13, 0.2, 0.13), Basis(), "dark")
 
 
 ## Vorankündigung einer Raststätte: blaues Schild rechts neben der Fahrbahn mit Name,
@@ -1582,14 +1810,20 @@ func _rest_sign(parent: Node3D, center: Vector3, travel: Vector3, rest: Dictiona
 
 
 ## Am Beginn der Ausfahrt zur Raststätte
-func _rest_exit_sign(parent: Node3D, center: Vector3, travel: Vector3) -> void:
+func _rest_exit_sign(parent: Node3D, center: Vector3, travel: Vector3, lateral: float) -> void:
+	_island_sign(parent, center, travel, lateral, "Rastanlage")
+
+
+## Schild auf der Insel an der Ausfahrt: blau mit Text und Pfeil nach rechts oben
+func _island_sign(parent: Node3D, center: Vector3, travel: Vector3, lateral: float, text: String) -> void:
 	var right := travel.cross(Vector3.UP).normalized()
 	var facing := Basis.looking_at(travel)
-	var foot := center + right * (HIGHWAY_WIDTH * 0.5 + RAMP_WIDTH + 2.5)
-	_box(parent, foot + Vector3.UP * 1.6, Vector3(0.15, 3.2, 0.15), Basis(), "steel")
-	var panel := foot + Vector3.UP * 3.2
-	_box(parent, panel, Vector3(3.0, 1.2, 0.1), facing, "blue")
-	_sign_text(parent, "Rastanlage", panel - travel * 0.08, facing, 50, Color.WHITE)
+	var foot := center + right * lateral
+	_box(parent, foot + Vector3.UP * 1.1, Vector3(0.12, 2.2, 0.12), Basis(), "steel")
+	var panel := foot + Vector3.UP * 2.4
+	_box(parent, panel, Vector3(2.4, 1.5, 0.1), facing, "blue")
+	_sign_text(parent, text, panel + Vector3.UP * 0.35 - travel * 0.08, facing, 40, Color.WHITE)
+	_sign_text(parent, "↗", panel - Vector3.UP * 0.3 - travel * 0.08, facing, 70, Color.WHITE)
 
 
 ## Raststätte: Parkplatz, Tankstelle mit Dach (Unterseite leuchtet) und Zapfsäulen, Rasthof
@@ -1876,14 +2110,8 @@ func _gantry(parent: Node3D, center: Vector3, travel: Vector3, interchange: Dict
 
 
 ## Ausfahrt-Schild am Beginn der Rampe: „Ausfahrt 14“
-func _exit_sign(parent: Node3D, center: Vector3, travel: Vector3, interchange: Dictionary) -> void:
-	var right := travel.cross(Vector3.UP).normalized()
-	var facing := Basis.looking_at(travel)
-	var foot := center + right * (HIGHWAY_WIDTH * 0.5 + RAMP_WIDTH + 2.5)
-	_box(parent, foot + Vector3.UP * 1.6, Vector3(0.15, 3.2, 0.15), Basis(), "steel")
-	var panel := foot + Vector3.UP * 3.2
-	_box(parent, panel, Vector3(3.2, 1.3, 0.1), facing, "blue")
-	_sign_text(parent, "Ausfahrt %d" % interchange["number"], panel - travel * 0.08, facing, 50, Color.WHITE)
+func _exit_sign(parent: Node3D, center: Vector3, travel: Vector3, interchange: Dictionary, lateral: float) -> void:
+	_island_sign(parent, center, travel, lateral, "Ausfahrt %d" % interchange["number"])
 
 
 ## Leitpfosten als MultiMesh: weißer Pfosten mit schwarzem Band und Rückstrahler
