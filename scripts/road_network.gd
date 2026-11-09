@@ -662,7 +662,7 @@ func exit_route(near: Vector3, forward: Vector3) -> PackedVector3Array:
 	var dir := 1 if going_forward else -1
 	# Nächste Anschlussstelle, deren Ausfahrt noch mindestens 400 m voraus beginnt
 	var key := best_key
-	var start := best_index
+	var from_index := best_index
 	for step in 4:
 		var k := key.x + 1 if going_forward else key.x
 		var segment := (_entries[key] as Entry).segment
@@ -674,12 +674,12 @@ func exit_route(near: Vector3, forward: Vector3) -> PackedVector3Array:
 			var connector: Entry = _entries.get(interchange_key(axis, line, k, 0))
 			var gore := ramp_ends(axis, line, k, exit_part)[0]
 			var gore_index := _nearest_index(segment, gore)
-			var ahead := (gore_index - start) * dir
+			var ahead := (gore_index - from_index) * dir
 			if ahead * RoadSegment.POINT_SPACING > 400.0 and exit_entry and entry_entry and connector \
 					and exit_entry.state >= State.CHECKED and entry_entry.state >= State.CHECKED \
 					and connector.state >= State.CHECKED:
 				# 1. Autobahn bis zur Ausfahrt, am Ende der Verziehung auf den Verzögerungsstreifen
-				var i := start
+				var i := from_index
 				while i != gore_index:
 					var to_gore := (gore_index - i) * dir * RoadSegment.POINT_SPACING
 					var blend := clampf((RoadSegment.AUX_PARALLEL + 40.0 - to_gore) / 100.0, 0.0, 1.0)
@@ -716,14 +716,14 @@ func exit_route(near: Vector3, forward: Vector3) -> PackedVector3Array:
 				return route
 		# Weiter zum nächsten Abschnitt (bis dahin rechte Spur)
 		var last := segment.points.size() - 1 if going_forward else 0
-		for i in range(start, last + dir, dir):
+		for i in range(from_index, last + dir, dir):
 			route.append(_lane_point(segment, i, dir, HIGHWAY_LANE_OFFSET))
 		var next_key := key + Vector3i(dir, 0, 0)
 		var next_entry: Entry = _entries.get(next_key)
 		if next_entry == null or next_entry.state < State.CHECKED:
 			return PackedVector3Array()
 		key = next_key
-		start = 0 if going_forward else next_entry.segment.points.size() - 1
+		from_index = 0 if going_forward else next_entry.segment.points.size() - 1
 	return PackedVector3Array()
 
 
@@ -1988,27 +1988,27 @@ func _add_rest_props(segment: RoadSegment, key: Vector3i, parent: Node3D) -> voi
 
 
 ## Kollision eines Kastens (Mitte am Boden unter transform, Größe size)
-func _rest_collision(body: StaticBody3D, transform: Transform3D, size: Vector3) -> void:
+func _rest_collision(body: StaticBody3D, placement: Transform3D, size: Vector3) -> void:
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = size
 	shape.shape = box
-	shape.transform = Transform3D(transform.basis, transform.origin + Vector3.UP * size.y * 0.5)
+	shape.transform = Transform3D(placement.basis, placement.origin + Vector3.UP * size.y * 0.5)
 	body.add_child(shape)
 
 
 ## Baum (Stamm im Mesh der Raststätte, Krone als Kugel)
-func _rest_tree(parent: Node3D, foot: Vector3, lot: LotMesh, scale: float) -> void:
-	lot.post(foot, 0.3 * scale, 3.0 * scale, "wood")
+func _rest_tree(parent: Node3D, foot: Vector3, lot: LotMesh, size: float) -> void:
+	lot.post(foot, 0.3 * size, 3.0 * size, "wood")
 	var crown := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
-	sphere.radius = 2.4 * scale
-	sphere.height = 4.2 * scale
+	sphere.radius = 2.4 * size
+	sphere.height = 4.2 * size
 	sphere.radial_segments = 10
 	sphere.rings = 6
 	sphere.material = _sign_material("crown")
 	crown.mesh = sphere
-	crown.position = foot + Vector3.UP * 4.4 * scale
+	crown.position = foot + Vector3.UP * 4.4 * size
 	parent.add_child(crown)
 
 
@@ -2040,7 +2040,7 @@ var _station_glow: Array[BaseMaterial3D] = []
 
 ## Tankstellen-Modell (tools/setup_traffic_models.gd): nah und mittel, Kollision aus seinen
 ## Kästen, leuchtende Materialien für die Nacht merken. false = kein Modell da.
-func _add_station_model(parent: Node3D, body: StaticBody3D, at: Vector3, basis: Basis) -> bool:
+func _add_station_model(parent: Node3D, body: StaticBody3D, at: Vector3, facing: Basis) -> bool:
 	if not _station_checked:
 		_station_checked = true
 		if ResourceLoader.exists(STATION_MODEL):
@@ -2060,7 +2060,7 @@ func _add_station_model(parent: Node3D, body: StaticBody3D, at: Vector3, basis: 
 	# Modell steht mittig auf dem Boden (Mitte der Bounding-Box auf at)
 	var box := _station_model.near_mesh.get_aabb()
 	var shift := Vector3(box.get_center().x, 0.0, box.get_center().z)
-	var origin := at - basis * shift
+	var origin := at - facing * shift
 	for pair: Array in [[_station_model.near_mesh, 0.0, 180.0], [_station_model.mid_mesh, 180.0, 0.0]]:
 		var instance := MeshInstance3D.new()
 		instance.mesh = pair[0]
@@ -2068,14 +2068,14 @@ func _add_station_model(parent: Node3D, body: StaticBody3D, at: Vector3, basis: 
 		instance.visibility_range_end = pair[2]
 		instance.visibility_range_begin_margin = 5.0 if pair[1] > 0.0 else 0.0
 		instance.visibility_range_end_margin = 5.0 if pair[2] > 0.0 else 0.0
-		instance.transform = Transform3D(basis, origin)
+		instance.transform = Transform3D(facing, origin)
 		parent.add_child(instance)
 	for aabb in _station_model.collision_boxes:
 		var shape := CollisionShape3D.new()
 		var collision := BoxShape3D.new()
 		collision.size = aabb.size
 		shape.shape = collision
-		shape.transform = Transform3D(basis, origin + basis * aabb.get_center())
+		shape.transform = Transform3D(facing, origin + facing * aabb.get_center())
 		body.add_child(shape)
 	return true
 

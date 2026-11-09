@@ -430,12 +430,12 @@ func spawn_lineup(start: float) -> void:
 		var key: Vector3i = pair[0]
 		if not RoadNetwork.is_road_key(key) and not RoadNetwork.is_highway_key(key):
 			continue
-		var segment: RoadSegment = pair[1]
-		for i in segment.points.size():
-			var d := Vector2(segment.points[i].x - p.x, segment.points[i].z - p.z).length()
+		var candidate: RoadSegment = pair[1]
+		for i in candidate.points.size():
+			var d := Vector2(candidate.points[i].x - p.x, candidate.points[i].z - p.z).length()
 			if d < best_distance:
 				best_distance = d
-				best = [key, segment, i]
+				best = [key, candidate, i]
 	if best.is_empty():
 		return
 	var segment: RoadSegment = best[1]
@@ -986,8 +986,8 @@ func _decide_lane(c: TrafficCar, delta: float) -> void:
 	# (schnell genug oder der Streifen geht zu Ende)
 	if c.merge_end > 0.0:
 		if c.lane_target == HW_RAMP:
-			var ready := c.speed > minf(c.highway_speed, 100.0 / 3.6) * 0.85 or c.merge_end - c.s < 120.0
-			if ready and _lane_free(c, HW_RIGHT - c.lateral, 15.0 + c.speed * 0.6, 12.0):
+			var fast_enough := c.speed > minf(c.highway_speed, 100.0 / 3.6) * 0.85 or c.merge_end - c.s < 120.0
+			if fast_enough and _lane_free(c, HW_RIGHT - c.lateral, 15.0 + c.speed * 0.6, 12.0):
 				c.lane_target = HW_RIGHT
 				c.blink = 1
 				c.blink_timer = 1.5
