@@ -276,7 +276,11 @@ func _current_ratio() -> float:
 
 ## Drehmoment des Motors (Nm) bei Vollgas und einer bestimmten Drehzahl
 func _torque_at(rpm: float) -> float:
-	var p := profile
+	return torque_curve(profile, rpm)
+
+
+## Motormodell: Drehmoment (Nm) bei Volllast und dieser Drehzahl (auch für den Prüfstand)
+static func torque_curve(p: CarProfile, rpm: float) -> float:
 	if rpm < p.torque_plateau_start_rpm:
 		# Unten herum: vom Leerlauf bis zum vollen Drehmoment ansteigend (Turbo baut Druck auf)
 		return lerpf(p.max_torque_nm * p.low_end_torque, p.max_torque_nm,

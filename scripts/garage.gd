@@ -20,6 +20,8 @@ signal closed
 @export var weather: Weather
 ## Für die Sammlung (entdeckte Aussichtspunkte mit Fotos)
 @export var viewpoints: Viewpoints
+## Leistungsprüfstand (Knopf „Prüfstand“)
+@export var dyno: Dyno
 
 @export_group("Kamera")
 ## Abstand der Kamera vom Auto (mal Radstand) und Höhe über dem Auto
@@ -295,6 +297,9 @@ func _apply_paint_to_car() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	# Etwas anderes (z. B. die große Karte) hat das Spiel angehalten: dann nicht stören
 	if not is_open and get_tree().paused:
+		return
+	# Auf dem Prüfstand bedient der sich selbst
+	if dyno and dyno.is_open:
 		return
 	if event.is_action_pressed("open_garage"):
 		if is_open:
@@ -770,6 +775,7 @@ func _build_panel() -> void:
 	bottom.add_child(_outline_button("Credits", func() -> void: _credits.visible = true))
 	bottom.add_child(_outline_button("Sammlung", _show_collection))
 	bottom.add_child(_outline_button("Rennen", _show_races))
+	bottom.add_child(_outline_button("Prüfstand", open_dyno))
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom.add_child(gap)
@@ -926,6 +932,17 @@ func _spacer(parent: Control, height: float) -> void:
 	spacer.custom_minimum_size = Vector2(0.0, height)
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(spacer)
+
+
+## Prüfstand öffnen: die Garage blendet sich aus und kommt nach „Zurück“ wieder
+func open_dyno() -> void:
+	if dyno == null or dyno.is_open:
+		return
+	visible = false
+	dyno.open()
+	await dyno.closed
+	visible = true
+	_refresh_all()
 
 
 ## Statistik der Lichthupe-Rennen (Race)

@@ -23,9 +23,11 @@ extends Node
 ## --flames       vor dem Foto knallt es ständig im Auspuff (Flammen an den Endrohren prüfen)
 ## --rainbow      Regenbogen zeigen (tiefe Sonne, z. B. --time=18 --heading=90)
 ## --flash        Lichthupe fürs Foto an (Fernlicht hell aufgeblendet)
+## --dyno=ID,…    mit --shot: Garage > Prüfstand öffnen und diese Autos nacheinander messen
+##                (z. B. --dyno=sl65,m4csl), Foto NAME_lauf.png im ersten Lauf, NAME.png am Ende
 ## --splash       Pfützen-Fontäne an den Vorderrädern kurz vor dem Foto
 ## --windows=S    Fenster öffnen: beim Foto sofort, beim Benchmark nach S Sekunden
-## --record=PFAD  mit --bench: den ganzen Ton (Master) als WAV speichern (z. B. zum Vergleich
+## --record=PFAD  mit --bench oder --dyno: den ganzen Ton (Master) als WAV speichern (z. B. zum Vergleich
 ##                Fenster zu/offen, Ausgabe der Lautstärke pro Sekunde mit einem Python-Skript)
 ## --signal=left|right|hazard  Blinker bzw. Warnblinker fürs Foto an (leuchtend)
 ## --aurora       Polarlicht zeigen (Winternacht, z. B. --season=winter --time=23 --heading=180)
@@ -97,6 +99,10 @@ var _steer: String = ""
 var _photo: bool = false
 var _open_map: bool = false
 var _open_garage: bool = false
+## Prüfstand-Test (--dyno=ID,ID,…): diese Autos nacheinander messen, Fotos während des ersten
+## Laufs und am Ende mit dem Vergleich
+var _dyno_cars: Array[String] = []
+var _dyno_shot_taken: bool = false
 var _pause_page: int = -1
 var _full: bool = false
 var _flames: bool = false
@@ -224,6 +230,10 @@ func _ready() -> void:
 				_flash = true
 			"splash":
 				_splash = true
+			"dyno":
+				for id in value.split(","):
+					_dyno_cars.append(id)
+				_open_garage = true
 			"windows":
 				_windows_at = float(value) if value != "" else 0.0
 			"record":
@@ -420,6 +430,21 @@ func _process(delta: float) -> void:
 			if _timer <= 0.0:
 				_state = "done"
 				_take_screenshot()
+		"dyno":
+			# Prüfstand: ein Foto mitten im ersten Lauf, eins am Ende mit allen Kurven
+			var dyno := _game.get_node("Dyno") as Dyno
+			if not _dyno_shot_taken and dyno.run_time > 5.0:
+				_dyno_shot_taken = true
+				_save_image("%s_lauf" % _shot_name)
+			if dyno.series_done:
+				_timer += delta
+				if _timer > 1.0:
+					_state = "done"
+					if _recorder:
+						_recorder.set_recording_active(false)
+						_recorder.get_recording().save_to_wav(_record_path)
+						print("Aufnahme gespeichert: ", _record_path)
+					_take_screenshot()
 		"wait_full":
 			# Fenster schon bildschirmgroß?
 			_timer += delta
@@ -722,6 +747,16 @@ func _prepare_shot() -> void:
 		process_mode = Node.PROCESS_MODE_ALWAYS
 	if _open_garage:
 		(_game.get_node("Garage") as Garage).open()
+	if not _dyno_cars.is_empty():
+		var garage := _game.get_node("Garage") as Garage
+		garage.open_dyno()
+		(_game.get_node("Dyno") as Dyno).run_series(_dyno_cars)
+		_state = "dyno"
+		_timer = 0.0
+		if _record_path != "":
+			_recorder = AudioEffectRecord.new()
+			AudioServer.add_bus_effect(AudioServer.get_bus_index("Master"), _recorder)
+			_recorder.set_recording_active(true)
 	if _pause_page >= 0:
 		var menu := _game.get_node("PauseMenu") as PauseMenu
 		menu.open()

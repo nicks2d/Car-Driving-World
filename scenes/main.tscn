@@ -17,6 +17,7 @@
 [ext_resource type="Script" path="res://scripts/open_windows.gd" id="87_windows"]
 [ext_resource type="Script" path="res://scripts/puddles.gd" id="88_puddles"]
 [ext_resource type="Script" path="res://scripts/autumn_leaves.gd" id="89_leaves"]
+[ext_resource type="Script" path="res://scripts/dyno.gd" id="90_dyno"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
@@ -477,9 +478,10 @@ vertical_alignment = 1
 script = ExtResource("9_debug")
 camera = NodePath("../Camera")
 
-[node name="Garage" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "hud", "day_night", "weather", "viewpoints")]
+[node name="Garage" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "hud", "day_night", "weather", "viewpoints", "dyno")]
 script = ExtResource("51_garage")
 car = NodePath("../Car")
+dyno = NodePath("../Dyno")
 hud = NodePath("../HUD")
 day_night = NodePath("../DayNight")
 weather = NodePath("../Weather")
@@ -614,3 +616,9 @@ script = ExtResource("89_leaves")
 car = NodePath("../Car")
 weather = NodePath("../Weather")
 world_gen = SubResource("WorldGen_main")
+
+[node name="Dyno" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "debug_tools")]
+script = ExtResource("90_dyno")
+car = NodePath("../Car")
+cars = Array[ExtResource("57_profile")]([ExtResource("52_m2"), ExtResource("53_e30"), ExtResource("54_e92"), ExtResource("55_f90"), ExtResource("56_g90"), ExtResource("79_m4csl"), ExtResource("80_sl65"), ExtResource("81_c63")])
+debug_tools = NodePath("../DebugTools")

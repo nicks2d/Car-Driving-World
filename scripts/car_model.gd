@@ -216,6 +216,11 @@ func _wheels() -> Array[VehicleWheel3D]:
 	return result
 
 
+## Die vier Radknoten (in der Vorschau: zum Drehen auf dem Prüfstand)
+func wheel_anchors() -> Array[Node3D]:
+	return _anchors
+
+
 ## Vorschau ohne Physik: vier Knoten dort, wo die Radmitten stehen würden
 func _make_preview_anchors() -> void:
 	_anchors.clear()

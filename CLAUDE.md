@@ -118,6 +118,7 @@ assets/
 - [x] Extra: Tempomat mit Abstandsregelung (ACC, 4 Stufen, Warnung, Limits übernehmen)
 - [x] Extra: Lichthupe und spontane Rennen gegen KI-Autos, Vorbeifahrt-Geräusche
 - [x] Extra: Fenster runter, Wunschkennzeichen, Pfützen mit Fontäne, Herbstlaub
+- [x] Extra: Werkstatt mit Leistungsprüfstand (Messlauf, PS-/Nm-Diagramm, Vergleich von 3 Autos)
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -799,12 +800,25 @@ assets/
   die Bäume) × Tempo, starten mit 40–75 % des Tempos (Sog), werden schnell langsamer (Dämpfung 7–13)
   und taumeln zu Boden. Blattform als Ellipse, näher als 1,5–4 m an der Kamera ausgeblendet (sonst
   große Flächen im Bild).
+- Prüfstand (`dyno.gd`, `Dyno`, Garage > Prüfstand): eigene 3D-Welt (SubViewport), im Code gebaut:
+  Sichtbeton, Glasfront, LED-Bänder (leuchtend, Glow), glänzender Boden (SSR), Grube mit je zwei
+  Rollen unter den angetriebenen Rädern (Allrad vorne und hinten), Gebläse, Absaugschlauch,
+  Bildschirm mit Drehzahl/PS. Messlauf: Vollgas im 4. Gang von 2000/min bis zum Begrenzer,
+  Drehzahlanstieg = Drehmoment × 0,85 × Übersetzung² / (Radradius² × Masse) (wie eine Rolle mit der
+  Masse des Autos), dann Gas weg (Pops, Flammen an den Endrohren). Der echte Motorsound läuft dabei
+  (`EngineSound` mit `PROCESS_MODE_ALWAYS`, Drehzahl/Gas vom Prüfstand). Diagramm: PS (durchgezogen)
+  und Nm (gestrichelt) aus `Car.torque_curve`, die letzten drei gemessenen Autos übereinander mit
+  Legende. Gespeichert pro Auto in `[pruefstand]`, Testläufe nur im Speicher.
+- Gemessen (Prüfstand): SL 65 670 PS bei 5400 / 1000 Nm ab 2200 (Lauf 14,3 s), M4 CSL 551 PS bei
+  6200 / 650 Nm (7,5 s), C 63 517 PS bei 6800 / 620 Nm bei 5200 (14,1 s), M2 411 PS / 550 Nm (12,3 s).
 - Testen (neu): `--signshot=curve|limit|end_limit|end_all|wet|tunnel` Foto 9 m vor dem nächsten
   Schild dieser Art, `--cruise=KMH,D,V` (mit `--bench`: echter Tempomat, Lkw D m voraus mit V km/h,
   `--gap=0..3`), `--acc[=KMH]` Autopilot mit Abstand und Überholen, `--race`, `--flash`,
-  `--windows[=S]`, `--record=PFAD.wav` (mit `--bench`), `--splash`, `--shotevery=M`. Beispiele:
+  `--windows[=S]`, `--record=PFAD.wav` (mit `--bench`/`--dyno`), `--splash`, `--shotevery=M`,
+  `--dyno=sl65,m4csl,c63` (mit `--shot`, Foto im ersten Lauf und am Ende). Beispiele:
   `--shot=s --pos=300,286 --heading=60 --signshot=curve`, `--bench=75 --highway --pos=6500,-3950
-  --heading=90 --cruise=130,300,80 --traffic=0.01` (Verkehr 0 räumt auch Test-Autos weg).
+  --heading=90 --cruise=130,300,80 --traffic=0.01` (Verkehr 0 räumt auch Test-Autos weg),
+  `--shot=dyno --car=sl65 --dyno=sl65,m4csl,c63`.
 - Bekannt: Landstraße bei (510, 330) ragt am Brückenanfang ein Erdbuckel auf die rechte Spur (war schon
   vorher so), der Test-Autopilot fährt dort mit 90 dagegen.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
