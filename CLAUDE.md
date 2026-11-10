@@ -819,8 +819,14 @@ assets/
   `--shot=s --pos=300,286 --heading=60 --signshot=curve`, `--bench=75 --highway --pos=6500,-3950
   --heading=90 --cruise=130,300,80 --traffic=0.01` (Verkehr 0 räumt auch Test-Autos weg),
   `--shot=dyno --car=sl65 --dyno=sl65,m4csl,c63`.
-- Bekannt: Landstraße bei (510, 330) ragt am Brückenanfang ein Erdbuckel auf die rechte Spur (war schon
-  vorher so), der Test-Autopilot fährt dort mit 90 dagegen.
+- Erdbuckel am Brückenanfang (behoben, z. B. Landstraße bei (510, 330), Fluss): Stücke ganz auf einer
+  Brücke verändern das Gelände nicht (darunter bleibt Tal/Fluss), hatten aber auch keine Obergrenze.
+  Lag das Ufer höher als die Fahrbahn, ragte es durch. Jetzt gilt dort eine Obergrenze
+  (`RoadQuery._bridge_ceiling`): Plattenunterseite (1,4 m) − 0,3 m, seitlich mit der Böschungsneigung
+  ansteigend, nur entlang der Brücke (± 2 m über die Stückenden), nicht über ihre Enden hinaus
+  (sonst würde sie am Tunnelportal in den Berg schneiden). Tunnel-Prüfwerkzeug danach: 0 Stellen.
+  Der Test-Autopilot fährt dort jetzt mit 89 km/h durch. An der Kreuzung Mühlingen (945, 600)
+  schneidet er die Kurve und bleibt manchmal hängen (Autopilot, keine Straßen-Sache).
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

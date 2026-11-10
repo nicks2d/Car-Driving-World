@@ -13,6 +13,8 @@ const PORTAL_HOLE: float = 4.0
 const PORTAL_KEEPOUT: float = 20.0
 ## Steigung der Felswand hinter dem Portal (Meter Höhe pro Meter in den Berg hinein)
 const PORTAL_FACE_SLOPE: float = 3.0
+## Unter Brücken bleibt das Gelände mindestens so weit unter der Plattenunterseite (Meter)
+const BRIDGE_CLEARANCE: float = 0.3
 
 ## So weit reicht der Einfluss einer Straße seitlich höchstens
 var reach: float
@@ -22,7 +24,8 @@ var _b := PackedVector3Array()
 var _core := PackedFloat32Array()
 ## Querneigung pro Stück (positiv = linke Seite tiefer)
 var _bank := PackedFloat32Array()
-## 1 = das Stück passt das Gelände an, 0 = nur Sperrzone (Brücken: darunter bleibt das Tal)
+## 1 = das Stück passt das Gelände an, 0 = Brücke: darunter bleibt das Tal, nur durch die Platte
+## darf das Gelände nicht ragen (Obergrenze, z. B. ein Ufer am Brückenanfang)
 var _carves := PackedByteArray()
 ## 1 = an diesem Ende gilt auch der Halbkreis davor (an Portalen nicht: dort beginnt der Berg)
 var _cap_a := PackedByteArray()
@@ -206,6 +209,11 @@ func carve(x: float, z: float, natural: float) -> Vector2:
 	var constrained := false
 	for index: int in pieces:
 		if _carves[index] == 0:
+			# Brücke: nur eine Obergrenze unter der Platte, daneben steigt sie wie eine Böschung an
+			var ceiling := _bridge_ceiling(index, x, z)
+			if ceiling < INF:
+				highest = minf(highest, ceiling)
+				constrained = true
 			continue
 		# Wie weit liegt der Punkt hinter der Portal-Ebene (im Berg)?
 		var behind := 0.0
@@ -272,6 +280,32 @@ func carve(x: float, z: float, natural: float) -> Vector2:
 		# Zwei Straßen wollen Unvereinbares (zu nah übereinander): Mitte nehmen
 		return Vector2((lowest + highest) * 0.5, proximity)
 	return Vector2(clampf(natural, lowest, highest), proximity)
+
+
+## Höchste erlaubte Geländehöhe unter einem Brückenstück (INF = keine): unter der Fahrbahn die
+## Plattenunterseite minus BRIDGE_CLEARANCE, seitlich mit BANK_SLOPE ansteigend. Nur neben dem
+## Stück selbst (plus 2 m), nicht weiter über seine Enden hinaus: dort gilt die Straße davor bzw.
+## der Berg über einem Portal, wenn die Brücke direkt in einen Tunnel führt.
+func _bridge_ceiling(index: int, x: float, z: float) -> float:
+	var a := _a[index]
+	var b := _b[index]
+	var abx := b.x - a.x
+	var abz := b.z - a.z
+	var len_sq := abx * abx + abz * abz
+	if len_sq < 0.0001:
+		return INF
+	# Ein halbes Stück Überlappung (2 m), sonst bleiben in Kurven Keile ohne Grenze
+	var t := ((x - a.x) * abx + (z - a.z) * abz) / len_sq
+	if t < -0.5 or t > 1.5:
+		return INF
+	t = clampf(t, 0.0, 1.0)
+	var dx := x - a.x - abx * t
+	var dz := z - a.z - abz * t
+	var over := sqrt(dx * dx + dz * dz) - _core[index]
+	if over > RoadSegment.MAX_BANK:
+		return INF
+	var underside := lerpf(a.y, b.y, t) - RoadSegment.DECK_THICKNESS - BRIDGE_CLEARANCE
+	return underside + maxf(over, 0.0) * RoadSegment.BANK_SLOPE
 
 
 ## Liegt hier Straße (inklusive kleinem Rand)? Für Bäume und Felsen.
