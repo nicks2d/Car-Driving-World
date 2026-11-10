@@ -11,6 +11,7 @@ extends CanvasLayer
 @export var messages: CanvasLayer
 @export var day_night: DayNight
 @export var viewpoints: Viewpoints
+@export var exploration: Exploration
 ## Höchstens so weit darf die Kamera vom Auto weg (Meter)
 @export var max_distance: float = 30.0
 ## Tempo der Kamera (m/s) und Mausempfindlichkeit
@@ -245,6 +246,8 @@ func _take_photo() -> void:
 	_photo_msec = Time.get_ticks_msec()
 	if viewpoints:
 		viewpoints.photo_saved(path, car.global_position)
+	if exploration:
+		exploration.photo_saved(path, car.global_position)
 	Toasts.post(get_tree(), "camera", "Foto gespeichert", path.get_file(), "O", "Ordner öffnen")
 
 

@@ -20,6 +20,9 @@ extends Node
 ## --photo        Foto im Fotomodus machen (mit Bedienfeld), --filter=N wählt den Filter (0–3)
 ## --map          Foto mit geöffneter großer Karte
 ## --garage       Foto mit geöffneter Garage (mit --car=ID ist dieses Auto und seine Marke gewählt)
+## --collection=N Garage mit offener Sammlung (0 = Orte, 1 = Aussichtspunkte)
+##                Mit --bench öffnen --map und --garage/--collection erst nach der Fahrt
+##                (Foto NAME_ende.png bzw. bench_ende.png), z. B. Karte mit Nebel nach der Fahrt.
 ## --flames       vor dem Foto knallt es ständig im Auspuff (Flammen an den Endrohren prüfen)
 ## --rainbow      Regenbogen zeigen (tiefe Sonne, z. B. --time=18 --heading=90)
 ## --cam=X,Z,H    freie Kamera fürs Foto: H Meter über dem Gelände bei X,Z, Blick auf --lookat=X,Z[,H]
@@ -108,6 +111,8 @@ var _steer: String = ""
 var _photo: bool = false
 var _open_map: bool = false
 var _open_garage: bool = false
+## Garage mit offener Sammlung (0 = Orte, 1 = Aussichtspunkte), -1 = nicht
+var _collection_page: int = -1
 ## Prüfstand-Test (--dyno=ID,ID,…): diese Autos nacheinander messen, Fotos während des ersten
 ## Laufs und am Ende mit dem Vergleich
 var _dyno_cars: Array[String] = []
@@ -238,6 +243,9 @@ func _ready() -> void:
 			"map":
 				_open_map = true
 			"garage":
+				_open_garage = true
+			"collection":
+				_collection_page = int(value)
 				_open_garage = true
 			"pause":
 				_pause_page = int(value)
@@ -464,6 +472,14 @@ func _process(delta: float) -> void:
 			if _timer <= 0.0:
 				_state = "done"
 				_take_screenshot()
+		"bench_end":
+			_timer += delta
+			if _timer > 1.5:
+				_state = "done"
+				_save_image("%s_ende" % (_shot_name if _shot_name != "" else "bench"))
+				_print_bench()
+				await get_tree().create_timer(0.5, true).timeout
+				get_tree().quit()
 		"dyno":
 			# Prüfstand: ein Foto mitten im ersten Lauf, eins am Ende mit allen Kurven
 			var dyno := _game.get_node("Dyno") as Dyno
@@ -508,7 +524,16 @@ func _process(delta: float) -> void:
 				_windows_at = -1.0
 				(_game.get_node("OpenWindows") as OpenWindows).open = true
 				print("Fenster auf bei %.1f s" % _timer)
-			if _timer >= _bench_seconds:
+			if _timer >= _bench_seconds and (_open_map or _open_garage):
+				# Nach der Fahrt: große Karte bzw. Garage öffnen, kurz warten, Foto
+				_state = "bench_end"
+				_timer = 0.0
+				process_mode = Node.PROCESS_MODE_ALWAYS
+				if _open_map:
+					(_game.get_node("BigMap") as BigMap).open()
+				else:
+					_open_garage_now()
+			elif _timer >= _bench_seconds:
 				_state = "done"
 				if _recorder:
 					_recorder.set_recording_active(false)
@@ -779,8 +804,9 @@ func _prepare_shot() -> void:
 	# Fotomodus und große Karte halten das Spiel an, das Foto muss trotzdem ausgelöst werden
 	if _photo or _open_map or _open_garage or _pause_page >= 0:
 		process_mode = Node.PROCESS_MODE_ALWAYS
-	if _open_garage:
-		(_game.get_node("Garage") as Garage).open()
+	# Mit Benchmark erst am Ende (Karte mit Nebel nach der Fahrt, Orte-Sammlung)
+	if _open_garage and _bench_seconds <= 0.0:
+		_open_garage_now()
 	if not _dyno_cars.is_empty():
 		var garage := _game.get_node("Garage") as Garage
 		garage.open_dyno()
@@ -796,7 +822,7 @@ func _prepare_shot() -> void:
 		menu.open()
 		if _pause_page > 0:
 			menu.show_settings_tab(_pause_page - 1)
-	if _open_map:
+	if _open_map and _bench_seconds <= 0.0:
 		(_game.get_node("BigMap") as BigMap).open()
 	if _photo:
 		var photo := _game.get_node("PhotoMode") as PhotoMode
@@ -848,6 +874,13 @@ func _place_car_view_camera() -> void:
 func _take_screenshot() -> void:
 	await _save_image(_shot_name)
 	get_tree().quit()
+
+
+func _open_garage_now() -> void:
+	var garage := _game.get_node("Garage") as Garage
+	garage.open()
+	if _collection_page >= 0:
+		garage.call("_show_collection", _collection_page)
 
 
 func _save_image(file_name: String) -> void:

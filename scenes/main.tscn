@@ -20,6 +20,7 @@
 [ext_resource type="Script" path="res://scripts/dyno.gd" id="90_dyno"]
 [ext_resource type="Script" path="res://scripts/waterfalls.gd" id="91_waterfalls"]
 [ext_resource type="Script" path="res://scripts/lake_life.gd" id="92_lakelife"]
+[ext_resource type="Script" path="res://scripts/exploration.gd" id="93_explore"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
@@ -364,7 +365,7 @@ car = NodePath("../../Car")
 limits = NodePath("../../SpeedLimits")
 cruise = NodePath("../../CruiseControl")
 
-[node name="Minimap" type="Control" parent="HUD" node_paths=PackedStringArray("car", "roads", "navigation", "tiles", "viewpoints")]
+[node name="Minimap" type="Control" parent="HUD" node_paths=PackedStringArray("car", "roads", "navigation", "tiles", "viewpoints", "exploration")]
 layout_mode = 3
 anchors_preset = 2
 anchor_top = 1.0
@@ -376,6 +377,7 @@ offset_bottom = -40.0
 grow_vertical = 0
 mouse_filter = 2
 script = ExtResource("62_minimap")
+exploration = NodePath("../../Exploration")
 car = NodePath("../../Car")
 roads = NodePath("../../Roads")
 navigation = NodePath("../../Navigation")
@@ -481,8 +483,9 @@ vertical_alignment = 1
 script = ExtResource("9_debug")
 camera = NodePath("../Camera")
 
-[node name="Garage" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "hud", "day_night", "weather", "viewpoints", "dyno")]
+[node name="Garage" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "hud", "day_night", "weather", "viewpoints", "dyno", "exploration")]
 script = ExtResource("51_garage")
+exploration = NodePath("../Exploration")
 car = NodePath("../Car")
 dyno = NodePath("../Dyno")
 hud = NodePath("../HUD")
@@ -500,21 +503,24 @@ script = ExtResource("61_nav")
 roads = NodePath("../Roads")
 car = NodePath("../Car")
 
-[node name="BigMap" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "roads", "navigation", "tiles", "viewpoints")]
+[node name="BigMap" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "roads", "navigation", "tiles", "viewpoints", "exploration")]
 script = ExtResource("64_bigmap")
+exploration = NodePath("../Exploration")
 car = NodePath("../Car")
 roads = NodePath("../Roads")
 navigation = NodePath("../Navigation")
 tiles = NodePath("../MapTiles")
 viewpoints = NodePath("../Viewpoints")
 
-[node name="Viewpoints" type="Node" parent="." node_paths=PackedStringArray("roads", "car")]
+[node name="Viewpoints" type="Node" parent="." node_paths=PackedStringArray("roads", "car", "exploration")]
 script = ExtResource("74_viewpoints")
+exploration = NodePath("../Exploration")
 roads = NodePath("../Roads")
 car = NodePath("../Car")
 
-[node name="PhotoMode" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "hud", "messages", "day_night", "viewpoints")]
+[node name="PhotoMode" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "hud", "messages", "day_night", "viewpoints", "exploration")]
 script = ExtResource("75_photo")
+exploration = NodePath("../Exploration")
 car = NodePath("../Car")
 hud = NodePath("../HUD")
 messages = NodePath("../Messages")
@@ -555,8 +561,9 @@ camera = NodePath("../Camera")
 day_night = NodePath("../DayNight")
 debug_tools = NodePath("../DebugTools")
 
-[node name="Settings" type="Node" parent="." node_paths=PackedStringArray("cruise", "world_environment", "sun", "day_night", "weather", "terrain", "grass", "roads", "traffic", "car", "garage", "speedometer", "fps_label", "debug_tools")]
+[node name="Settings" type="Node" parent="." node_paths=PackedStringArray("cruise", "world_environment", "sun", "day_night", "weather", "terrain", "grass", "roads", "traffic", "car", "garage", "speedometer", "fps_label", "debug_tools", "exploration")]
 script = ExtResource("77_settings")
+exploration = NodePath("../Exploration")
 cruise = NodePath("../CruiseControl")
 world_environment = NodePath("../WorldEnvironment")
 sun = NodePath("../Sun")
@@ -637,3 +644,9 @@ car = NodePath("../Car")
 world_gen = SubResource("WorldGen_main")
 roads = NodePath("../Roads")
 weather = NodePath("../Weather")
+
+[node name="Exploration" type="Node" parent="." node_paths=PackedStringArray("car", "roads", "debug_tools")]
+script = ExtResource("93_explore")
+car = NodePath("../Car")
+roads = NodePath("../Roads")
+debug_tools = NodePath("../DebugTools")

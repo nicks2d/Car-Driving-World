@@ -22,6 +22,7 @@ signal changed
 @export var fps_label: Label
 @export var debug_tools: DebugTools
 @export var cruise: CruiseControl
+@export var exploration: Exploration
 ## Schwere Einstellungen (Sichtweite, Vegetation, Gras) erst so lange nach dem letzten
 ## Ändern anwenden (beim Ziehen am Regler nicht bei jedem Schritt alles neu bauen)
 @export var heavy_delay: float = 0.35
@@ -45,7 +46,7 @@ const DEFAULTS := {
 	"anzeige": {"vollbild": false, "aufloesung": "1280x720", "vsync": true, "fps_limit": 0, "fps_anzeige": false},
 	"steuerung": {"grip": "sport", "lenkung": 1.0, "tempolimit": true},
 	"audio": {"gesamt": 1.0, "motor": 1.0, "umgebung": 1.0, "musik": 0.8},
-	"spiel": {"einheit": "kmh", "tageslaenge": 10.0},
+	"spiel": {"einheit": "kmh", "tageslaenge": 10.0, "entdecker": true},
 }
 ## Einstellungen, die etwas neu bauen (verzögert anwenden)
 const HEAVY: Array[String] = ["sichtweite", "vegetation", "gras"]
@@ -232,6 +233,9 @@ func _apply(section: String, key: String) -> void:
 		"einheit":
 			if speedometer:
 				speedometer.set("use_mph", value == "mph")
+		"entdecker":
+			if exploration:
+				exploration.enabled = value
 		"tageslaenge":
 			if day_night:
 				day_night.day_length_minutes = value

@@ -351,6 +351,7 @@ func _fill_game() -> void:
 	weather_row.add_child(auto)
 	_slider_row("Tageslänge", "Echtzeit für 24 Stunden im Spiel", "spiel", "tageslaenge", 4.0, 60.0, 1.0,
 		func(v: float) -> String: return "%d min" % roundi(v))
+	_toggle_row("Entdecker-Karte", "Karte zeigt nur, wo du schon warst; der Rest liegt im Nebel", "spiel", "entdecker")
 
 
 # ---------------------------------------------------------------------------

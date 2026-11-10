@@ -9,6 +9,7 @@ extends Control
 @export var navigation: Navigation
 @export var tiles: MapTiles
 @export var viewpoints: Viewpoints
+@export var exploration: Exploration
 ## Maßstab im Stand und bei hohem Tempo (Meter pro Pixel)
 @export var slow_meters_per_pixel: float = 1.6
 @export var fast_meters_per_pixel: float = 5.0
@@ -48,6 +49,7 @@ func _ready() -> void:
 	_map.roads = roads
 	_map.tiles = tiles
 	_map.viewpoints = viewpoints
+	_map.exploration = exploration
 	if navigation:
 		_map.set_navigation(navigation)
 	mask.add_child(_map)

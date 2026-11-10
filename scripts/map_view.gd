@@ -11,6 +11,8 @@ var navigation: Navigation
 var car: Car
 ## Aussichtspunkte (entdeckte mit Kamera, auf der großen Karte auch die übrigen mit „?“)
 var viewpoints: Viewpoints
+## Entdecker-Karte: Nebel über allem, was man noch nicht gesehen hat (null oder aus = kein Nebel)
+var exploration: Exploration
 ## Mitte der Ansicht (Welt x/z), Meter pro Pixel, Drehung der Karte (Bogenmaß)
 var center: Vector2 = Vector2.ZERO
 var meters_per_pixel: float = 2.0
@@ -83,6 +85,8 @@ func _draw() -> void:
 	if show_unknown:
 		_draw_places(view_rect)
 	_draw_roads(view_rect)
+	if _fog_on():
+		_draw_fog(view_rect)
 	_draw_route()
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 	_draw_markers()
@@ -108,6 +112,27 @@ func _draw_tiles(view_rect: Rect2) -> void:
 				continue
 			if texture:
 				draw_texture_rect(texture, rect, false)
+
+
+func _fog_on() -> bool:
+	return exploration != null and exploration.enabled
+
+
+## Ist diese Stelle unter dem Nebel? (Symbole dort weglassen)
+func _hidden(p: Vector2) -> bool:
+	return _fog_on() and exploration.known_at(p) < 0.4
+
+
+## Nebel über Gelände und Straßen: je Entdecker-Kachel eine Textur (wo noch nichts gesehen
+## wurde, dieselbe gemeinsame Textur, das zeichnet Godot in einem Rutsch)
+func _draw_fog(view_rect: Rect2) -> void:
+	var tile := Exploration.TILE_METERS
+	var color := Color(exploration.fog_color, exploration.fog_alpha)
+	for tz in range(floori(view_rect.position.y / tile), floori(view_rect.end.y / tile) + 1):
+		for tx in range(floori(view_rect.position.x / tile), floori(view_rect.end.x / tile) + 1):
+			# Ein kleiner Überstand verhindert feine Fugen zwischen den Kacheln
+			var rect := Rect2(tx * tile, tz * tile, tile, tile).grow(meters_per_pixel * 0.5)
+			draw_texture_rect(exploration.fog_texture(Vector2i(tx, tz)), rect, false, color)
 
 
 func _draw_roads(view_rect: Rect2) -> void:
@@ -265,7 +290,7 @@ func _draw_landmarks() -> void:
 	var visible_rect := Rect2(Vector2.ZERO, size).grow(60.0)
 	for lake: WorldGen.Lake in roads.world_gen.cached_reservoirs_near(_view_rect):
 		var p := world_to_screen(lake.center)
-		if not visible_rect.has_point(p):
+		if not visible_rect.has_point(p) or _hidden(lake.center):
 			continue
 		var text := "Talsperre %s" % roads.highways.place_name(lake.name_cell)
 		UiStyle.draw_text(self, text, p + Vector2(1.5, 1.5), 14, "semibold", Color(0.0, 0.05, 0.12, 0.8), 0.5)
@@ -273,7 +298,7 @@ func _draw_landmarks() -> void:
 	# Landmarken-Brücken (Bogen, Hängebrücke)
 	for bridge: Dictionary in roads.landmark_bridges(_view_rect):
 		var p := world_to_screen(bridge["position"])
-		if not visible_rect.has_point(p):
+		if not visible_rect.has_point(p) or _hidden(bridge["position"]):
 			continue
 		draw_circle(p, 4.0, Color(0.95, 0.85, 0.6))
 		UiStyle.draw_text(self, bridge["name"], p + Vector2(1.5, -6.5), 13, "semibold", Color(0.05, 0.04, 0.02, 0.8), 0.5)
@@ -298,7 +323,7 @@ func _draw_rest_areas() -> void:
 			for rest: Dictionary in _rest_cells[cell]:
 				var c: Vector3 = rest["center"]
 				var p := world_to_screen(Vector2(c.x, c.z))
-				if not visible_rect.has_point(p):
+				if not visible_rect.has_point(p) or _hidden(Vector2(c.x, c.z)):
 					continue
 				draw_circle(p, 11.0, Color(0.06, 0.08, 0.12, 0.9))
 				draw_arc(p, 11.0, 0.0, TAU, 24, Color(HIGHWAY_COLOR, 0.95), 1.5, true)

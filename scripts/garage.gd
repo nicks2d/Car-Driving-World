@@ -22,6 +22,8 @@ signal closed
 @export var viewpoints: Viewpoints
 ## Leistungsprüfstand (Knopf „Prüfstand“)
 @export var dyno: Dyno
+## Orte-Sammlung (Entdecker-Karte)
+@export var exploration: Exploration
 
 @export_group("Kamera")
 ## Abstand der Kamera vom Auto (mal Radstand) und Höhe über dem Auto
@@ -85,6 +87,9 @@ var _credits: Control
 var _collection: Control
 ## Liste in der Sammlung (füllt fill_collection)
 var collection_list: VBoxContainer
+## Reiter der Sammlung: 0 = Orte, 1 = Aussichtspunkte
+var _collection_page: int = 0
+var _collection_tabs: Array[Button] = []
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +664,13 @@ func _build_ui() -> void:
 	text.text = credits
 	_credits.get_meta("content").add_child(text)
 	_collection = _build_overlay("Sammlung")
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 8)
+	_collection.get_meta("content").add_child(tabs)
+	for i in 2:
+		var tab := _outline_button(["Orte", "Aussichtspunkte"][i], _show_collection.bind(i))
+		tabs.add_child(tab)
+		_collection_tabs.append(tab)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -971,8 +983,14 @@ func _show_races() -> void:
 		("%d abgebrochen · zuletzt %s" % [stats[2], stats[3]]) if stats[3] != "" else "Noch kein Rennen gefahren")
 
 
-func _show_collection() -> void:
-	if viewpoints:
+func _show_collection(page: int = -1) -> void:
+	if page >= 0:
+		_collection_page = page
+	for i in _collection_tabs.size():
+		_collection_tabs[i].modulate = Color.WHITE if i == _collection_page else Color(1, 1, 1, 0.5)
+	if _collection_page == 0 and exploration:
+		exploration.fill_places(collection_list)
+	elif viewpoints:
 		viewpoints.fill_collection(collection_list)
 	_collection.visible = true
 

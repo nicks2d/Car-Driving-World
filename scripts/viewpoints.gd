@@ -10,6 +10,8 @@ extends Node
 
 @export var roads: RoadNetwork
 @export var car: Car
+## Entdecker-Karte (Blick vom Aussichtspunkt aufdecken)
+@export var exploration: Exploration
 ## So nah an der Parkbucht (Meter) und so langsam (km/h) gilt ein Aussichtspunkt als entdeckt
 @export var discover_radius: float = 25.0
 @export var discover_speed_kmh: float = 5.0
@@ -38,6 +40,8 @@ const END_MARGIN: int = 35
 var map_spots: Array = []
 
 var _found: Dictionary = {}  # id -> {"name", "kind", "x", "z", "time", "photo"}
+var _revealed: Dictionary = {}  # schon aufgedeckt (Entdecker-Karte) in diesem Spiel
+static var _thumbnails: Dictionary = {}  # Pfad -> Vorschaubild
 var _timer: float = 0.0
 var _map_timer: float = 0.0
 
@@ -284,19 +288,34 @@ func _check_discovery() -> void:
 	for pair: Array in roads.loaded_segments(Rect2(p.x - 60.0, p.z - 60.0, 120.0, 120.0)):
 		var key: Vector3i = pair[0]
 		var segment: RoadSegment = pair[1]
-		if segment.viewpoint.is_empty() or _found.has(spot_id(key)):
+		if segment.viewpoint.is_empty():
 			continue
 		var center: Vector3 = segment.viewpoint["center"]
-		if Vector2(center.x - p.x, center.z - p.z).length() < discover_radius:
+		if Vector2(center.x - p.x, center.z - p.z).length() >= discover_radius:
+			continue
+		if not _found.has(spot_id(key)):
 			_discover(key, segment)
+		_reveal(spot_id(key), center, segment.viewpoint["look"])
 	var reach := REST_DISCOVER_RADIUS
 	for rest in _scenic_rests(Rect2(p.x - reach, p.z - reach, reach * 2.0, reach * 2.0)):
 		var center: Vector3 = rest["center"]
 		var id := rest_spot_id(rest["id"])
-		if not _found.has(id) and Vector2(center.x - p.x, center.z - p.z).length() < reach:
+		if Vector2(center.x - p.x, center.z - p.z).length() >= reach:
+			continue
+		if not _found.has(id):
 			_found[id] = {"name": rest_spot_name(rest), "kind": "rest", "x": center.x, "z": center.z,
 				"time": Time.get_unix_time_from_system(), "photo": ""}
 			_announce(Vector2i(floori(center.x / roads.cell_size), floori(center.z / roads.cell_size)))
+		var point: Vector3 = rest["point"]
+		_reveal(id, center, center - point)
+
+
+## Entdecker-Karte: vom Aussichtspunkt aus sichtbares Land aufdecken (einmal pro Spielstart)
+func _reveal(id: String, center: Vector3, look: Vector3) -> void:
+	if exploration == null or _revealed.has(id):
+		return
+	_revealed[id] = true
+	exploration.reveal_view(center, Vector2(look.x, look.z))
 
 
 func _discover(key: Vector3i, segment: RoadSegment) -> void:
@@ -375,48 +394,58 @@ func fill_collection(list: VBoxContainer) -> void:
 	ids.sort_custom(func(a: String, b: String) -> bool: return _found[a]["time"] > _found[b]["time"])
 	for id: String in ids:
 		var spot: Dictionary = _found[id]
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 16)
-		var frame := Panel.new()
-		frame.custom_minimum_size = Vector2(192.0, 108.0)
-		var style := StyleBoxFlat.new()
-		style.bg_color = Color(1, 1, 1, 0.06)
-		style.set_corner_radius_all(10)
-		frame.add_theme_stylebox_override("panel", style)
-		var texture := _thumbnail(spot["photo"])
-		if texture:
-			var picture := TextureRect.new()
-			picture.texture = texture
-			picture.set_anchors_preset(Control.PRESET_FULL_RECT)
-			picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-			frame.add_child(picture)
-		else:
-			var empty := UiStyle.label("Kein Foto", 13, "medium", UiStyle.TEXT_FAINT)
-			empty.set_anchors_preset(Control.PRESET_FULL_RECT)
-			empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			frame.add_child(empty)
-		row.add_child(frame)
-		var texts := VBoxContainer.new()
-		texts.alignment = BoxContainer.ALIGNMENT_CENTER
-		texts.add_child(UiStyle.label(spot["name"], 18, "semibold", UiStyle.TEXT))
 		var date := Time.get_datetime_dict_from_unix_time(int(spot["time"]))
+		var texture := thumbnail(spot["photo"])
 		var photo_text := "Foto gemacht" if texture else "Noch kein Foto (P drücken)"
-		texts.add_child(UiStyle.label("Entdeckt am %d.%d.%d · %s" % [date.day, date.month, date.year, photo_text],
-			14, "regular", UiStyle.TEXT_DIM))
-		row.add_child(texts)
-		list.add_child(row)
+		list.add_child(collection_row(spot["name"], "Entdeckt am %d.%d.%d · %s" % [date.day, date.month, date.year,
+			photo_text], texture))
 
 
-func _thumbnail(path: String) -> Texture2D:
+## Eine Zeile der Sammlung: Vorschaubild (oder „Kein Foto“), Name und Unterzeile.
+## Auch für die Orte-Sammlung (Exploration).
+static func collection_row(title: String, subtitle: String, texture: Texture2D) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	var frame := Panel.new()
+	frame.custom_minimum_size = Vector2(192.0, 108.0)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(1, 1, 1, 0.06)
+	style.set_corner_radius_all(10)
+	frame.add_theme_stylebox_override("panel", style)
+	if texture:
+		var picture := TextureRect.new()
+		picture.texture = texture
+		picture.set_anchors_preset(Control.PRESET_FULL_RECT)
+		picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		frame.add_child(picture)
+	else:
+		var empty := UiStyle.label("Kein Foto", 13, "medium", UiStyle.TEXT_FAINT)
+		empty.set_anchors_preset(Control.PRESET_FULL_RECT)
+		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		frame.add_child(empty)
+	row.add_child(frame)
+	var texts := VBoxContainer.new()
+	texts.alignment = BoxContainer.ALIGNMENT_CENTER
+	texts.add_child(UiStyle.label(title, 18, "semibold", UiStyle.TEXT))
+	texts.add_child(UiStyle.label(subtitle, 14, "regular", UiStyle.TEXT_DIM))
+	row.add_child(texts)
+	return row
+
+
+## Vorschaubild eines Fotos (gemerkt, ein Foto in voller Größe zu laden dauert ~0,1 s)
+static func thumbnail(path: String) -> Texture2D:
+	if _thumbnails.has(path):
+		return _thumbnails[path]
 	if path == "" or not FileAccess.file_exists(path):
 		return null
 	var image := Image.load_from_file(path)
 	if image == null or image.is_empty():
 		return null
 	image.resize(384, roundi(384.0 * image.get_height() / image.get_width()))
-	return ImageTexture.create_from_image(image)
+	_thumbnails[path] = ImageTexture.create_from_image(image)
+	return _thumbnails[path]
 
 
 func _load() -> void:

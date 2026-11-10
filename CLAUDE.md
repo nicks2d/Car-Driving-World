@@ -122,6 +122,7 @@ assets/
 - [x] Extra: Talsperren mit Staumauer und Stausee, Wasserfälle mit Becken, Gischt und Rauschen
 - [x] Extra: Bogen- und Hängebrücken als Landmarke, Badestellen, Campingplätze und Boote an Seen
 - [x] Extra: Mondphasen, Sternschnuppen, Lichtverschmutzung (dunkle Nächte fern von Orten)
+- [x] Extra: Entdecker-Karte mit Nebel (Sichtlinien von Aussichtspunkten), Orte-Sammlung in der Garage
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -910,6 +911,28 @@ assets/
   die Kamera (`RoadNetwork.light_sources`), alle 2 s, weich übergeblendet; weniger und
   schwächere Sterne (Schwelle 0,9945 → 0,9988) und warmer Schein am Horizont zu den Lichtern.
   Testen: `--moon=0.5 --lookmoon --cam=X,Z,H --time=23.5`, `--meteors`.
+- Entdecker-Karte (`exploration.gd`, `Exploration`, Knoten „Exploration“): Gesehenes in Kacheln à
+  2048 m (256 × 256 Pixel, 8 m pro Pixel, LA8: Helligkeit = Wolkenmuster, Deckkraft = Nebel),
+  gespeichert als PNG in `user://karte/X_Z.png` (alle 20 s und beim Beenden). Aufgedeckt: 300 m um
+  das Auto (alle 0,5 s, wenn > 20 m weiter), weich auslaufend; an Aussichtspunkten und Raststätten
+  mit Aussicht (einmal pro Spielstart, auch schon entdeckte) ein Fächer ±55° bis 2,5 km in
+  Blickrichtung, aber nur, was man sieht: 111 Sichtstrahlen (1°) mit Prüfpunkten alle 20 m übers
+  Gelände (steilster Winkel bisher, knapp darunter halb), dazwischen bilinear überblendet. Alles im
+  WorkerThreadPool, ein Auftrag nach dem anderen (der Hauptthread liest nur, `_mutex`).
+- Karte (`map_view.gd`, `_draw_fog`): Nebel nach den Straßen, vor Route, Ziel und Symbolen
+  (Farbe `fog_color`, Deckkraft 0,985, Wolkenmuster aus nahtlosem FastNoiseLite, für jede Kachel
+  gleich). Unbekannte Kacheln teilen sich eine Textur. Raststätten, Talsperren- und Brückennamen
+  unter dem Nebel werden nicht gezeichnet, die „?“ der Aussichtspunkte schon (als Anreiz).
+  Navi und Route gehen wie vorher. Einstellungen > Spiel „Entdecker-Karte“ (`[spiel] entdecker`).
+- Orte-Sammlung: näher als 170 m an einem Ort (`RoadNetwork.node_at`, 3 × 3 Zellen um das Auto)
+  = besucht, beim ersten Mal Meldung „Neuer Ort: …, N Orte besucht“. `user://orte.cfg` (Name, Zeit,
+  Lage, Foto). Ein Foto im Fotomodus bekommt der nächste besuchte Ort bis 300 m. Garage >
+  Sammlung hat jetzt zwei Reiter: Orte und Aussichtspunkte (`Viewpoints.collection_row`,
+  Vorschaubilder gemerkt in `Viewpoints.thumbnail`). Testläufe laden und speichern nichts.
+- Testen: `--bench=60 --map` (Karte mit Nebel nach der Fahrt, Foto `bench_ende.png`),
+  `--bench=4 --map --pos=433,-861 --heading=57` (Blick vom Aussichtspunkt), `--bench=90
+  --collection=0 --pos=-660,459 --heading=103` (Orte-Sammlung nach der Fahrt durch Buchhof und
+  Mühlingen), `--collection=1` = Reiter Aussichtspunkte.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in
