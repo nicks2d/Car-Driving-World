@@ -25,6 +25,8 @@ extends Node3D
 @export var road_material: Material
 ## Material für Brücken (Beton)
 @export var bridge_material: Material
+## Landmarken-Brücken (Bogen, Hängebrücke) sind bis hierher zu sehen (Meter)
+@export var landmark_distance: float = 6000.0
 ## Material für Leitplanken (Metall)
 @export var rail_material: Material
 @export_group("Dörfer")
@@ -156,6 +158,8 @@ class Entry:
 	var has_neighbors: bool = false
 	var check: OverlapCheck
 	var mesh_instance: MeshInstance3D
+	## Bogen bzw. Pylone und Seile einer Landmarken-Brücke (von weitem sichtbar)
+	var landmark_instance: Node3D
 	var body: StaticBody3D
 
 
@@ -1581,6 +1585,7 @@ func _update_visuals() -> void:
 			_free_visuals(entry)
 			_entries.erase(key)
 			continue
+		_update_landmark(entry, p)
 		if entry.state != State.READY:
 			continue
 		var segment := entry.segment
@@ -1763,6 +1768,7 @@ func _add_signs(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
 
 
 var _limit_sign_material: ShaderMaterial
+var _landmark_lamp: StandardMaterial3D
 
 
 ## Tempolimit- und Warnschilder eines Abschnitts: ein Mesh (Punktfarben, reflektiert nachts)
@@ -1789,6 +1795,63 @@ func _add_limit_signs(segment: RoadSegment, parent: Node3D) -> void:
 		text.double_sided = false
 		text.transform = Transform3D(label[2], label[1])
 		parent.add_child(text)
+
+
+## Landmarken-Brücke (Bogen, Pylone, Seile) zeigen, solange sie in landmark_distance liegt, auch
+## wenn die Fahrbahn noch nicht gebaut ist
+func _update_landmark(entry: Entry, p: Vector2) -> void:
+	if entry.segment == null or entry.state < State.CHECKED or not entry.kept or entry.segment.landmark.is_empty():
+		return
+	var info := entry.segment.landmark
+	var center: Vector3 = info["center"]
+	var distance := Vector2(center.x, center.z).distance_to(p)
+	if distance > landmark_distance + 300.0:
+		if entry.landmark_instance:
+			entry.landmark_instance.queue_free()
+			entry.landmark_instance = null
+		return
+	if entry.landmark_instance or distance > landmark_distance:
+		return
+	if _landmark_lamp == null:
+		_landmark_lamp = StandardMaterial3D.new()
+		_landmark_lamp.albedo_color = Color(0.6, 0.05, 0.03)
+		_landmark_lamp.emission_enabled = true
+		_landmark_lamp.emission = Color(1.0, 0.12, 0.05)
+		_landmark_lamp.emission_energy_multiplier = 0.4
+	var node := Node3D.new()
+	add_child(node)
+	node.position = center
+	for pair: Array in [["concrete", bridge_material], ["steel", rail_material], ["lamps", _landmark_lamp]]:
+		var arrays: Array = info[pair[0]]
+		if arrays.is_empty():
+			continue
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		var instance := MeshInstance3D.new()
+		instance.mesh = mesh
+		instance.material_override = pair[1]
+		instance.visibility_range_end = landmark_distance + 500.0
+		if pair[0] != "concrete":
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.add_child(instance)
+	entry.landmark_instance = node
+
+
+## Landmarken-Brücken in der Nähe für die Karte: [{"name", "position" (x/z), "kind"}]
+func landmark_bridges(rect: Rect2) -> Array:
+	var result: Array = []
+	for key: Vector3i in _entries:
+		var entry: Entry = _entries[key]
+		if entry.segment == null or not entry.kept or entry.segment.landmark.is_empty():
+			continue
+		var center: Vector3 = entry.segment.landmark["center"]
+		if not rect.has_point(Vector2(center.x, center.z)):
+			continue
+		var cell := Vector2i(floori(center.x / cell_size), floori(center.z / cell_size))
+		var kind: String = entry.segment.landmark["kind"]
+		result.append({"name": "%s %s" % ["Hängebrücke" if kind == "suspension" else "Talbrücke", highways.place_name(cell)],
+			"position": Vector2(center.x, center.z), "kind": kind})
+	return result
 
 
 ## Spitze der Sperrfläche einer Ausfahrt (die Rampe ist dort weit genug von der Fahrbahn weg für
@@ -2186,6 +2249,9 @@ func _update_night_glow(delta: float) -> void:
 	# Tankstellen-Modell: Dach-Unterseite und Leuchtkästen
 	for material in _station_glow:
 		material.emission_energy_multiplier = lerpf(0.3, 4.0, night)
+	# Lampen auf Landmarken-Brücken: rot, nachts hell
+	if _landmark_lamp:
+		_landmark_lamp.emission_energy_multiplier = lerpf(0.4, 9.0, night)
 	# Erleuchtete Fenster in den Dörfern: tagsüber gar nicht
 	_sign_material("house_window_lit").emission_energy_multiplier = lerpf(0.0, 2.6, night)
 	var p := target.global_position if target else Vector3.ZERO
@@ -2456,6 +2522,9 @@ func _free_visuals(entry: Entry) -> void:
 	if entry.mesh_instance:
 		entry.mesh_instance.queue_free()
 		entry.mesh_instance = null
+	if entry.landmark_instance:
+		entry.landmark_instance.queue_free()
+		entry.landmark_instance = null
 	if entry.body:
 		entry.body.queue_free()
 		entry.body = null

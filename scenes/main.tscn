@@ -19,6 +19,7 @@
 [ext_resource type="Script" path="res://scripts/autumn_leaves.gd" id="89_leaves"]
 [ext_resource type="Script" path="res://scripts/dyno.gd" id="90_dyno"]
 [ext_resource type="Script" path="res://scripts/waterfalls.gd" id="91_waterfalls"]
+[ext_resource type="Script" path="res://scripts/lake_life.gd" id="92_lakelife"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
@@ -628,3 +629,10 @@ debug_tools = NodePath("../DebugTools")
 script = ExtResource("91_waterfalls")
 car = NodePath("../Car")
 world_gen = SubResource("WorldGen_main")
+
+[node name="LakeLife" type="Node3D" parent="." node_paths=PackedStringArray("car", "roads", "weather")]
+script = ExtResource("92_lakelife")
+car = NodePath("../Car")
+world_gen = SubResource("WorldGen_main")
+roads = NodePath("../Roads")
+weather = NodePath("../Weather")

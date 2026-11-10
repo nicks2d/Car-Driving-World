@@ -270,6 +270,14 @@ func _draw_landmarks() -> void:
 		var text := "Talsperre %s" % roads.highways.place_name(lake.name_cell)
 		UiStyle.draw_text(self, text, p + Vector2(1.5, 1.5), 14, "semibold", Color(0.0, 0.05, 0.12, 0.8), 0.5)
 		UiStyle.draw_text(self, text, p, 14, "semibold", Color(0.78, 0.9, 1.0), 0.5)
+	# Landmarken-Brücken (Bogen, Hängebrücke)
+	for bridge: Dictionary in roads.landmark_bridges(_view_rect):
+		var p := world_to_screen(bridge["position"])
+		if not visible_rect.has_point(p):
+			continue
+		draw_circle(p, 4.0, Color(0.95, 0.85, 0.6))
+		UiStyle.draw_text(self, bridge["name"], p + Vector2(1.5, -6.5), 13, "semibold", Color(0.05, 0.04, 0.02, 0.8), 0.5)
+		UiStyle.draw_text(self, bridge["name"], p + Vector2(0.0, -8.0), 13, "semibold", Color(1.0, 0.92, 0.72), 0.5)
 
 
 ## Raststätten: Zapfsäule im dunklen Kreis (an der Parkplatz-Mitte)

@@ -120,6 +120,7 @@ assets/
 - [x] Extra: Fenster runter, Wunschkennzeichen, Pfützen mit Fontäne, Herbstlaub
 - [x] Extra: Werkstatt mit Leistungsprüfstand (Messlauf, PS-/Nm-Diagramm, Vergleich von 3 Autos)
 - [x] Extra: Talsperren mit Staumauer und Stausee, Wasserfälle mit Becken, Gischt und Rauschen
+- [x] Extra: Bogen- und Hängebrücken als Landmarke, Badestellen, Campingplätze und Boote an Seen
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -877,6 +878,27 @@ assets/
   --lookat=1190,4074,10`, Karte `--pos=2700,4300 --map`. Achtung: Ist das Spielfenster ganz
   verdeckt, zeichnet macOS es nicht und das Foto hängt (Hauptthread in nanosleep); Testläufe mit
   `--always-on-top` starten.
+- Landmarken-Brücken (`landmark_bridge.gd`, `LandmarkBridge`, nach dem Berechnen im Hintergrund,
+  `RoadSegment.landmark`): Brücke ab 250 m Länge und 50 m (Landstraße 35 m, die darf höchstens
+  50 m über dem Gelände liegen) über dem Tal. Bogen: Rippe 2,6 m dick von Hang zu Hang (wo das Tal
+  tiefer als 45 % der Höhe ist), Stützen alle 12 m, dort keine Pfeiler. Hängebrücke ab 450 m und
+  45 m: Pylone bei 22/78 % (Höhe 22 % des Hauptfelds, 40–110 m), Tragseile mit Durchhang bis 3 m über
+  die Fahrbahn, an den Enden zur Fahrbahn verankert, Hänger alle 8 m. Rote Lampen auf Pylonen bzw.
+  am Bogenscheitel, nachts hell. RoadNetwork zeigt sie bis `landmark_distance` (6 km), auch ohne
+  Fahrbahn-Mesh; Karte: „Talbrücke …“ / „Hängebrücke …“. Gefunden z. B. Bogen (Autobahn) bei
+  (5160, −892), 312 m / 57 m; Hängebrücke bei (−10183, −9442), 1084 m / 45 m.
+- `mesh_builder.gd` (`MeshBuilder`): Vierecke, Dreiecke, Kästen, Balken mit Punktfarben, Grundlage
+  für Staumauer, Landmarken-Brücken und Seeleben.
+- Leben an den Seen (`lake_life.gd`, `LakeLife`): runde Seen bis 1,4 km um die Kamera. Je See
+  (Seed) 40 % Badestelle, 35 % Campingplatz, sonst nichts; die Stelle am Ufer in Richtung der
+  nächsten Landstraße (40–380 m), ±35° dort, wo am wenigsten Wald steht. Schotterparkplatz an der
+  Straße und Weg zum Ufer. Badestelle: Liegewiese, Holzsteg 26 m mit Plattform, Kiosk, Schirme.
+  Campingplatz: 3–5 Wohnwagen, 4–6 Zelte, 4 Laternen (nachts hell), Feuerstelle; nachts bis 160 m
+  Flammen (Partikel) und flackerndes Licht. 2–5 Boote je See (55 % Segelboote, Segel quer zum Wind),
+  treiben auf Kreisen und schaukeln, im Winter keine. Gelände wird nicht eingeebnet (einzelne
+  Bäume können auf der Wiese stehen). Testen: Badestelle `--pos=-1367,-1497 --cam=-1320,-1440,40
+  --lookat=-1367,-1497,0`, Campingplatz nachts `--pos=3272,-6100 --cam=3120,-6425,10
+  --lookat=3055,-6440,1 --time=22.5`.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

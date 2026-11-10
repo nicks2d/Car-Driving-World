@@ -1,5 +1,5 @@
 class_name Dam
-extends RefCounted
+extends MeshBuilder
 ## Staumauer einer Talsperre (WorldGen.Lake mit reservoir), entlang der Kronenlinie (dam_a–dam_b),
 ## gebaut vom WaterManager. Führt die Landstraße darüber (RoadSegment.on_dam), liegt ihre
 ## Fahrbahn genau auf der Krone; sonst ist dort eine Betonplatte.
@@ -30,11 +30,6 @@ const END_REACH: float = 14.0
 const BAY_CENTER: float = 34.0
 const BAY_LENGTH: float = 64.0
 const BAY_EXTRA: float = 7.5
-
-var _verts := PackedVector3Array()
-var _normals := PackedVector3Array()
-var _uvs := PackedVector2Array()
-var _indices := PackedInt32Array()
 
 
 ## Mesh-Daten (relativ zu anchor()): {"concrete", "metal", "lamps", "water", "gates"} als
@@ -207,38 +202,3 @@ static func bay_widening(lake: WorldGen.Lake, p: Vector2) -> float:
 ## Bezugspunkt der Mesh-Koordinaten: Mitte der Krone
 static func anchor(lake: WorldGen.Lake) -> Vector3:
 	return Vector3(lake.dam_center.x, lake.crest, lake.dam_center.y)
-
-
-## Viereck a-b-c-d (Weltkoordinaten), relativ zu origin. Die Materialien sind beidseitig.
-func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, origin: Vector3, uv0: Vector2, uv_size: Vector2) -> void:
-	var normal := (b - a).cross(d - a).normalized()
-	var base := _verts.size()
-	for p: Vector3 in [a, b, c, d]:
-		_verts.append(p - origin)
-		_normals.append(normal)
-	_uvs.append_array([uv0, uv0 + Vector2(uv_size.x, 0.0), uv0 + uv_size, uv0 + Vector2(0.0, uv_size.y)])
-	_indices.append_array([base, base + 2, base + 1, base, base + 3, base + 2])
-
-
-## Kasten um center (Größe size: x quer, y hoch, z entlang forward)
-func box(center: Vector3, size: Vector3, forward: Vector3, origin: Vector3) -> void:
-	var f := forward.normalized() * size.z * 0.5
-	var r := Vector3.UP.cross(forward).normalized() * size.x * 0.5
-	var u := Vector3.UP * size.y * 0.5
-	var corners: Array[Vector3] = []
-	for k in 8:
-		corners.append(center + (r if k & 1 else -r) + (u if k & 2 else -u) + (f if k & 4 else -f))
-	for face: Array in [[0, 4, 6, 2], [1, 3, 7, 5], [2, 6, 7, 3], [0, 1, 5, 4], [4, 5, 7, 6], [0, 2, 3, 1]]:
-		quad(corners[face[0]], corners[face[1]], corners[face[2]], corners[face[3]], origin, Vector2.ZERO, Vector2.ONE)
-
-
-func arrays() -> Array:
-	if _indices.is_empty():
-		return []
-	var result: Array = []
-	result.resize(Mesh.ARRAY_MAX)
-	result[Mesh.ARRAY_VERTEX] = _verts
-	result[Mesh.ARRAY_NORMAL] = _normals
-	result[Mesh.ARRAY_TEX_UV] = _uvs
-	result[Mesh.ARRAY_INDEX] = _indices
-	return result

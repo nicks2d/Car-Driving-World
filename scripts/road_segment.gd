@@ -124,6 +124,8 @@ var bridge: PackedByteArray
 ## erster und letzter Punkt auf der Mauer (-1 = keine)
 var on_dam := PackedByteArray()
 var dam_range := Vector2i(-1, -1)
+## Landmarken-Brücke (LandmarkBridge.find + build), leer = keine
+var landmark: Dictionary = {}
 ## Krümmung an jedem Punkt (1 / Radius): positiv = Linkskurve, 0 = Gerade
 var curvature: PackedFloat32Array
 ## Querneigung an jedem Punkt: positiv = linke Seite tiefer (in Linkskurven), 0.05 = 5 %
@@ -254,6 +256,7 @@ func build() -> void:
 	# Manche Landstraßen bekommen einen Aussichtspunkt: beste Stelle für die Parkbucht suchen
 	if dam_range.x >= 0 or Viewpoints.has_spot(world_gen, key):
 		viewpoint = Viewpoints.find_spot(self)
+	_make_landmark()
 
 
 ## Fester Weg (Autobahn, Zubringer, Rampen): keine Wegsuche, nur gleichmäßig abtasten und Profil
@@ -277,6 +280,7 @@ func _build_fixed() -> void:
 	fixed_path = PackedVector2Array()
 	_make_aux_lanes()
 	SpeedLimits.compute(self)
+	_make_landmark()
 
 
 ## Zusatzfahrstreifen aus aux_lanes: Breite und Markierung an jedem Punkt
@@ -1102,6 +1106,13 @@ func _simplified(path: PackedVector2Array) -> PackedVector2Array:
 	return PackedVector2Array([path[0]]) + _simplify(path.slice(1, last), simplify_tolerance) + PackedVector2Array([path[last]])
 
 
+## Lange, hohe Brücke: Bogen oder Hängebrücke (im Hintergrund, nach dem Berechnen)
+func _make_landmark() -> void:
+	landmark = LandmarkBridge.find(self)
+	if not landmark.is_empty():
+		landmark.merge(LandmarkBridge.build(self, landmark))
+
+
 ## Abstand zur Kronenlinie der Talsperre (über die Enden hinaus 8 m mitgezählt)
 func _dam_distance(p: Vector2) -> float:
 	var along := dam.dam_b - dam.dam_a
@@ -1527,8 +1538,13 @@ func _build_bridges(lefts: PackedVector3Array) -> void:
 			var b0 := side_point(k, lefts[k], -outer - extra_at(k, -1.0), 0.0) - origin + down
 			var b1 := side_point(k + 1, lefts[k + 1], -outer - extra_at(k + 1, -1.0), 0.0) - origin + down
 			_quad(a0, a1, b1, b0, Vector3.DOWN)
-		# Pfeiler bis in den Boden (nicht auf einer Straße darunter)
+		# Pfeiler bis in den Boden (nicht auf einer Straße darunter, nicht unter Bogen/Hauptfeld)
+		var zone := Vector2i(-1, -1)
+		if not landmark.is_empty() and (landmark["range"] as Vector2i).x >= i - 1 and (landmark["range"] as Vector2i).x <= j:
+			zone = landmark["zone"]
 		for k in range(i + 2, j - 2, PILLAR_EVERY):
+			if k >= zone.x - 1 and k <= zone.y + 1:
+				continue
 			var bottom := ground[k] - 3.0
 			if points[k].y - DECK_THICKNESS - bottom > 1.5 and not _in_zone(points[k], no_pillars):
 				_pillar(points[k] - origin, bottom - origin.y)
