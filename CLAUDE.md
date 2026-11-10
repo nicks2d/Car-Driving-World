@@ -114,6 +114,10 @@ assets/
 - [x] Extra: Verkehr mit echten Modellen, Verzögerungs- und Beschleunigungsstreifen
 - [x] Extra: Raststätten neu (Tankstellen-Modell, Pkw-/Lkw-Plätze, Inseln, geparkte Fahrzeuge)
 - [x] Extra: Wände in langen Tunneln behoben (Horizont-Ring, Schürzen, Vegetation), Prüfwerkzeug erweitert
+- [x] Extra: Tempolimits mit Verkehrszeichen und Schilder-Erkennung im HUD, KI und Navi halten sich daran
+- [x] Extra: Tempomat mit Abstandsregelung (ACC, 4 Stufen, Warnung, Limits übernehmen)
+- [x] Extra: Lichthupe und spontane Rennen gegen KI-Autos, Vorbeifahrt-Geräusche
+- [x] Extra: Fenster runter, Wunschkennzeichen, Pfützen mit Fontäne, Herbstlaub
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -216,8 +220,9 @@ assets/
   Regen → Gewitter → Nebel → Schnee), J Jahreszeit, P Fotomodus (Maus ziehen schwenkt,
   W A S D / R F bewegen, Mausrad Zoom, 1–4 Filter, ↑ ↓ Belichtung, ← → Tageszeit,
   G Schärfe aufs Auto, Leertaste Foto, O Foto-Ordner, P/Esc zurück), Q Blinker links,
-  E Blinker rechts (noch mal = aus), X Warnblinker, H Hupe, Esc Pausemenü (dort Einstellungen;
-  alle Tasten außer Esc lassen sich unter Steuerung neu belegen).
+  E Blinker rechts (noch mal = aus), X Warnblinker, H Hupe, F Lichthupe, N Tempomat an/aus,
+  + / − Wunschtempo (gedrückt halten: 10er-Schritte), B Abstandsstufe, V Fenster auf/zu,
+  Esc Pausemenü (dort Einstellungen; alle Tasten außer Esc lassen sich unter Steuerung neu belegen).
 - Karte und Navi: `map_tiles.gd` rechnet das Kartenbild (Höhenfarbe, Schattierung, Wald,
   Wasser) in Kacheln à 128 px im Hintergrund (Stufen 4/16/64 m pro Pixel, max. 400 gemerkt).
   `map_view.gd` zeichnet darüber Straßen, Route, Ziel, Auto in Weltkoordinaten (eine
@@ -730,6 +735,78 @@ assets/
   Zubringer über die Brücke → Einfahrt → Gegenrichtung mit 147 km/h, 1,5 km. An der engen
   Ecke Rampe/Zubringer schneidet der Test-Autopilot die Kurve (setzt einmal zurück), das ist
   dessen Zielpunkt-Lenkung, nicht die Straße.
+- Tempolimits (`speed_limits.gd`, `SpeedLimits`, Knoten „SpeedLimits“): `SpeedLimits.compute` läuft beim
+  Berechnen jedes Abschnitts mit (Hintergrund) und füllt je Fahrtrichtung `limits_forward/backward`
+  (Tempo/5 je Punkt), `wet_*` (nur bei Nässe) und `limit_signs` [Punkt, Richtung, Art, Wert, nass?].
+  Landstraße 100, Tunnel 80 (60 m davor), Kurven unter 120 m Radius 70, unter 60 m 50, mit
+  Warnschild (Kurve links/rechts, Doppelkurve) 60 m vorher. Autobahn frei; Tunnel 100, Kurven
+  unter 1900 m 120, unter 1300 m 100 (35 % davon „bei Nässe“), Gefälle > 3 % über 1 km 120, und je
+  Abschnitt und Richtung 14 % ganz 120 und 12 % „100 bei Nässe“. Orte 50 vom Ortsschild bis Ortsende
+  (`Village.sign_reach`, beim Nachschauen). Schilder stehen dort, wo sich das Limit ändert
+  (überlappende Zonen gehen nicht verloren), kurze Lücken unter 100 m (Autobahn 200 m) werden
+  aufgefüllt, nicht in Tunneln/auf Brücken (dann davor). Ende: Aufhebung (Zeichen 278) bzw. „Ende
+  aller Streckenverbote“ (282). Gemessen um den Start (5 × 5 km): 100 × „70“, 29 × „50“, 41
+  Doppelkurven; vorher fehlten Tunnel-80 und Autobahn-Limits fast ganz (Kurven dort meist > 2 km).
+- Schilder (`traffic_signs.gd`, Shader `sign.gdshader`): ein Mesh mit Punktfarben je Abschnitt plus
+  Label3D für Zahlen (dreistellig kleiner). Landstraße rechts (Radius 0,32 m, 2 m hoch), Autobahn
+  beidseitig (0,42 m, 2,3 m). Warndreieck 8 cm über dem runden Schild. Shader: matt, statt des blauen
+  Himmelslichts ein neutrales Grundlicht aus Sonnen-/Mondfarbe (sonst waren weiße Schilder im Schatten
+  knallblau), Scheinwerferlicht kommt wie bei Leitpfosten hell zurück.
+- HUD: rundes Schild oben im Tacho-Panel (unbegrenzt = Zeichen 282), blinkt rot ab 10 km/h zu schnell,
+  „bei Nässe“ zählt nur bei nasser Straße (`effective_limit`). KI: `limit_factor` 0,95–1,1 je Auto,
+  schaut 60 m voraus. Navi: Fahrzeit aus den Limits (`nav_seconds_*`).
+- Tempomat (`cruise_control.gd`, `CruiseControl`): N ab 30 km/h (übernimmt das Tempo), + / − 1 km/h,
+  gedrückt nächster Zehner alle 0,4 s, Bremse aus, Gas überstimmt. Abstand nach dem IDM wie die KI
+  (`Traffic.leader_ahead`), Stufen 1,0/1,4/1,8/2,4 s (B), selbst höchstens 2 m/s² beschleunigen und
+  3,5 m/s² bremsen, sonst Warnton + rotes Symbol. Der Vordermann wird mit Kursvorhersage aus der
+  Drehrate gesucht (wie ein Radar) und mit Höhentoleranz 4 m + 6 % des Abstands (sonst verlor er ihn
+  am Hang und in Kurven: erst bei 101 statt 210 m erkannt). Erkannte Limits werden übernommen
+  (Einstellungen > Steuerung „Tempolimits übernehmen“), unbegrenzt = selbst gewähltes Tempo.
+  `Car.assist_throttle/assist_brake` (−1 = aus) gehen vor die Tasten.
+- Gemessen (`--cruise`, Autobahn, Lkw 300 m voraus mit 80 km/h, M2): bei 130 erkannt in 210 m, bremst
+  sanft (höchstens 1,1 m/s² über eine Sekunde), hält dann 47–48 m = 2,15 s (Stufe 2) bzw. 29 m = 1,29 s
+  (Stufe 0), Tempo 79–80. Notfall 170 → Lkw mit 50: Warnung, 3,9 m/s², hält dann 29 m bei 50 km/h.
+  Landstraße: Wunsch 85 → 70 (Kurvenschild) → 100 (Aufhebung) → 50 (Ort).
+- Lichthupe (F, `car_signals.gd`): Fernlicht 0,35 s (gedrückt halten länger), 2,5-fach heller, 1,6-fach
+  weiter und waagerecht statt 3° nach unten. Rennen (`race.gd`, `Race`): Lichthupe auf ein KI-Auto bis
+  40 m vor oder neben einem → Zusage mit Lichthupe zurück (LC 500 und „Schnelle“ 80 %, Audi S3 50 %,
+  sonst 12 %). Ziel: nächstes
+  Ortsschild bzw. nächste Kreuzung (Landstraße, mindestens 400 m), Autobahn: nächste Ausfahrt (bis 4
+  Stützpunkte voraus). HUD-Zeile unter dem Navi, Ziel als Navi-Ziel (danach das alte zurück). Ende:
+  Ziel (Vorsprung in s), 600 m Abstand oder Unfall (> 7 m/s Tempoverlust in 0,2 s; einzelne
+  Physikschritte springen, deshalb nicht pro Schritt). Statistik in `[rennen]`, Garage > Rennen.
+  Test Autobahn: `--bench=70 --race --acc --highway --pos=1200,-4000 --heading=90` → „Verloren gegen
+  Lexus LC 500 (2,4 s Vorsprung)“ (Ziel Ausfahrt 86).
+- Vorbeifahrt-Geräusche (`passby_sound.gd`): die 6 nächsten KI-Autos bis 220 m bekommen je einen
+  AudioStreamPlayer3D (Motor, Reifen, Wind; Lkw tiefer und lauter), Doppler, Bus „Umgebung“.
+- Fenster (V, `open_windows.gd`, `car_glass.gdshader`): Seitenscheiben fahren in 1,6 s weg (Shader
+  verwirft Glas mit Normale quer zum Auto über der Gürtellinie). Lauter: Motor-Bus +6 dB, Umgebung
+  +7 dB, Tunnel-Hall +0,25, Fahrtwind. Aufnahme Autobahn 130 km/h: zu −22,3 dBFS, offen −10,8 (mit
+  Wind −13 dB jetzt etwas weniger). SL 65: kein Dach zum Abnehmen, das Carbon-Dach gehört im Modell
+  zur Karosserie (kein eigenes Teil), deshalb wie alle nur Fenster.
+- Kennzeichen (`license_plate.gd`, `LicensePlate`): eigene Strich-Schrift (4 × 8-Raster, an die
+  FE-Schrift angelehnt, keine Schriftdatei), EU-Feld mit Sternen und „D“, Format 1–3 Buchstaben, 1–2
+  Buchstaben, 1–4 Ziffern (`normalize`). Garage: Eingabefeld, pro Auto gespeichert (`[kennzeichen]`).
+  Lage: Modelle mit eigenem Kennzeichenfeld (Material „manufacturerplate“: M2, M5 G90, SL 65, C 63)
+  bekommen das Schild genau dorthin, das Original wird unsichtbar; sonst gemessen (Stoßstange vorne
+  0,40 m, hinten 0,55 m über dem Boden). KI: zufällige Kennzeichen mit erfundenen Kürzeln aus den
+  Ortsnamen, nur am nahen Modell.
+- Pfützen (`puddles.gd`, `road.gdshader`): `RoadSegment.sag` = Senke im Höhenprofil (nur Landstraße,
+  nicht auf Brücken/in Tunneln) als Punktfarbe → Shader zeigt dort nach Regen Pfützen, die mit der
+  Straße trocknen. Ab Nässe 0,4, 25 km/h und Senke 0,45: Fontäne an den Vorderrädern (300 weiche
+  Tropfen, seitlich/nach hinten), Platschen, kurzer Ruck am Lenkrad. Regenfahrt 1 km: 4 Fontänen.
+- Herbstlaub (`autumn_leaves.gd`): Partikel hinter dem Auto nach Herbst-Gewicht × Laubwald (Formel wie
+  die Bäume) × Tempo, starten mit 40–75 % des Tempos (Sog), werden schnell langsamer (Dämpfung 7–13)
+  und taumeln zu Boden. Blattform als Ellipse, näher als 1,5–4 m an der Kamera ausgeblendet (sonst
+  große Flächen im Bild).
+- Testen (neu): `--signshot=curve|limit|end_limit|end_all|wet|tunnel` Foto 9 m vor dem nächsten
+  Schild dieser Art, `--cruise=KMH,D,V` (mit `--bench`: echter Tempomat, Lkw D m voraus mit V km/h,
+  `--gap=0..3`), `--acc[=KMH]` Autopilot mit Abstand und Überholen, `--race`, `--flash`,
+  `--windows[=S]`, `--record=PFAD.wav` (mit `--bench`), `--splash`, `--shotevery=M`. Beispiele:
+  `--shot=s --pos=300,286 --heading=60 --signshot=curve`, `--bench=75 --highway --pos=6500,-3950
+  --heading=90 --cruise=130,300,80 --traffic=0.01` (Verkehr 0 räumt auch Test-Autos weg).
+- Bekannt: Landstraße bei (510, 330) ragt am Brückenanfang ein Erdbuckel auf die rechte Spur (war schon
+  vorher so), der Test-Autopilot fährt dort mit 90 dagegen.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

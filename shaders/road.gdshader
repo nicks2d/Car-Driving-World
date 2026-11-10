@@ -52,11 +52,15 @@ global uniform float snow_cover;
 varying vec3 world_pos;
 // Zusatzbreite und Markierung je Seite (nur Autobahn, siehe oben)
 varying vec4 aux;
+// Landstraße: Senke im Höhenprofil (Punktfarbe Rot, 0–1): dort stehen mehr Pfützen
+varying float sag;
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	// Andere Straßen haben keine Punktfarbe (dann wäre sie weiß)
 	aux = lane_profile == 1 ? COLOR : vec4(0.0);
+	// Kreuzungen und Parkbuchten (UV2.x = 1) haben keine Punktfarbe (dort wäre sie weiß)
+	sag = lane_profile == 0 ? COLOR.r * (1.0 - UV2.x) : 0.0;
 	// Weit entfernte Straßen etwas anheben: das grobe ferne Gelände würde sie sonst verschlucken
 	float distance = length(world_pos - CAMERA_POSITION_WORLD);
 	VERTEX.y += clamp((distance - 250.0) / 900.0, 0.0, 1.0) * 1.2;
@@ -164,7 +168,9 @@ void fragment() {
 	float snow_side = snow_cover * open_sky;
 	float puddle_noise = texture(variation_noise, world_pos.xz / 9.0).r * 0.75
 		+ texture(variation_noise, world_pos.xz / 2.3).r * 0.25 + wheel_tracks * 0.06 * (1.0 - junction);
-	float puddle = smoothstep(1.0 - puddle_amount - 0.04, 1.0 - puddle_amount + 0.04, puddle_noise)
+	// Auf Landstraßen vor allem in Senken (wenige auf geraden Stücken)
+	float amount = lane_profile == 0 ? puddle_amount * 0.4 + sag * 0.5 : puddle_amount;
+	float puddle = smoothstep(1.0 - amount - 0.04, 1.0 - amount + 0.04, puddle_noise)
 		* smoothstep(0.35, 0.9, wet) * (1.0 - shoulder);
 	albedo *= 1.0 - wet * mix(0.45, 0.3, shoulder);
 	roughness = mix(roughness, mix(0.22, 0.6, shoulder), wet);

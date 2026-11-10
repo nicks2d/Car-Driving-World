@@ -349,6 +349,17 @@ func _add_lanterns(a: int) -> void:
 		lanterns.append(head + Vector3.DOWN * 0.2)
 
 
+## Wie weit (Meter ab der Ortsmitte entlang dieses Abschnitts) steht das Ortsschild?
+## -1 = an diesem Abschnitt keins (keine Häuser an dieser Straße)
+func sign_reach(segment: RoadSegment) -> float:
+	if task_id != -1:
+		return -1.0
+	for a in arms.size():
+		if arms[a][0] == segment and a < reach_per_arm.size() and reach_per_arm[a] > 0.0:
+			return minf(reach_per_arm[a] + 18.0, segment.total_length() * 0.5 - 10.0)
+	return -1.0
+
+
 ## Ortsschild am Ortseingang, rechts für den Verkehr, der in den Ort hineinfährt
 func _add_sign(a: int) -> void:
 	var arm: Array = arms[a]

@@ -295,6 +295,7 @@ func _fill_controls() -> void:
 		["Komfort", "Sport", "Drift"], ["komfort", "sport", "drift"])
 	_slider_row("Lenkempfindlichkeit", "Wie schnell die Lenkung einschlägt", "steuerung", "lenkung",
 		0.5, 1.5, 0.05, func(v: float) -> String: return "%d %%" % roundi(v * 100.0))
+	_toggle_row("Tempolimits übernehmen", "Der Tempomat stellt sich auf erkannte Schilder ein", "steuerung", "tempolimit")
 	_spacer(_content, 6)
 	_content.add_child(UiStyle.label("TASTEN", 13, "semibold", UiStyle.TEXT_DIM, 2))
 	_content.add_child(UiStyle.label("Klicken, dann die neue Taste drücken (Esc bricht ab).", 14, "regular",

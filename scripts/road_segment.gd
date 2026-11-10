@@ -95,6 +95,19 @@ var extra_left := PackedFloat32Array()
 var extra_right := PackedFloat32Array()
 var marks_left := PackedByteArray()
 var marks_right := PackedByteArray()
+## Tempolimits je Punkt und Fahrtrichtung (Tempo/5, 0 = keins; SpeedLimits.compute), ob sie nur bei
+## Nässe gelten, und die Schilder dazu [Punkt, Richtung, Art, Wert, bei Nässe?]
+var limits_forward := PackedByteArray()
+var limits_backward := PackedByteArray()
+var wet_forward := PackedByteArray()
+var wet_backward := PackedByteArray()
+var limit_signs: Array = []
+## Fahrzeit für das Navi in beide Richtungen (Sekunden, aus den Limits; 0 = nicht berechnet)
+var nav_seconds_forward: float = 0.0
+## Senken im Höhenprofil (0–1, nur Landstraßen): dort stehen nach Regen Pfützen (Shader und
+## Puddles für die Fontäne)
+var sag := PackedFloat32Array()
+var nav_seconds_backward: float = 0.0
 
 # --- Ergebnisse ---
 ## Mittellinie, alle POINT_SPACING Meter ein Punkt, y = Höhe der Fahrbahn
@@ -225,6 +238,8 @@ func build() -> void:
 	tunnel_ranges = best["tunnel_ranges"]
 	bounds = best["bounds"]
 	valid = true
+	SpeedLimits.compute(self)
+	_make_sag()
 	# Manche Landstraßen bekommen einen Aussichtspunkt: beste Stelle für die Parkbucht suchen
 	if Viewpoints.has_spot(world_gen, key):
 		viewpoint = Viewpoints.find_spot(self)
@@ -250,6 +265,7 @@ func _build_fixed() -> void:
 	valid = true
 	fixed_path = PackedVector2Array()
 	_make_aux_lanes()
+	SpeedLimits.compute(self)
 
 
 ## Zusatzfahrstreifen aus aux_lanes: Breite und Markierung an jedem Punkt
@@ -307,6 +323,19 @@ func _make_aux_lanes() -> void:
 			else:
 				extra_right[i] = maxf(extra_right[i], extra)
 				marks_right[i] = maxi(marks_right[i], mark)
+
+
+## Senken: wie weit liegt ein Punkt unter dem Mittel 24 m davor und dahinter (ab 0,06 m zählt
+## es, ab 0,3 m ganz). Nicht auf Brücken und in Tunneln.
+func _make_sag() -> void:
+	var n := points.size()
+	sag = PackedFloat32Array()
+	sag.resize(n)
+	for i in range(6, n - 6):
+		if bridge[i] == 1 or tunnel[i] == 1:
+			continue
+		var around := (points[i - 6].y + points[i + 6].y) * 0.5
+		sag[i] = clampf((around - points[i].y - 0.06) / 0.24, 0.0, 1.0)
 
 
 ## Zusätzliche Breite an Punkt i auf einer Seite (side > 0 = links)
@@ -1220,7 +1249,11 @@ func build_mesh(first: int, last: int) -> void:
 			uvs.append(Vector2(u_coord[k] + ((-extra_l) if k <= 2 else extra_r) / road_width, distance))
 			# UV2.x = 0: normale Straße (Kreuzungsflächen haben hier 1), UV2.y = überdacht
 			uv2s.append(Vector2(0.0, covered[i]))
-			colors.append(Color(extra_l / 10.0, extra_r / 10.0, mark_l / 3.0, mark_r / 3.0))
+			# Landstraße: Rot = Senke (Pfützen); Autobahn: Zusatzbreite und Markierungen
+			if kind == Kind.ROAD:
+				colors.append(Color(sag[i] if not sag.is_empty() else 0.0, 0.0, 0.0, 0.0))
+			else:
+				colors.append(Color(extra_l / 10.0, extra_r / 10.0, mark_l / 3.0, mark_r / 3.0))
 	var indices := PackedInt32Array()
 	collision_faces = PackedVector3Array()
 	for i in last - first:

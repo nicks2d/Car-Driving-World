@@ -125,6 +125,7 @@ func _build(profile: CarProfile) -> void:
 func _process(delta: float) -> void:
 	if _car == null or _car.profile == null:
 		return
+	_car.flash_time = maxf(_car.flash_time - delta, 0.0)
 	_handle_input()
 	_update_auto_hazard()
 	_update_auto_cancel()
@@ -166,6 +167,12 @@ func _handle_input() -> void:
 	if Input.is_action_just_pressed("hazard"):
 		_car.hazard = not _car.hazard
 		_auto_hazard = false
+	# Lichthupe: mindestens kurz aufblenden, solange gedrückt länger
+	if Input.is_action_just_pressed("flash_lights"):
+		_car.flash_time = 0.35
+		_car.flashed.emit()
+	elif Input.is_action_pressed("flash_lights"):
+		_car.flash_time = maxf(_car.flash_time, 0.1)
 
 
 func _set_turn(direction: int) -> void:

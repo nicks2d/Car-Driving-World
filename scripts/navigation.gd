@@ -453,6 +453,15 @@ func _position(node: Variant) -> Vector3:
 
 
 ## Länge eines Abschnitts: berechnet oder geschätzt (Luftlinie mal unknown_length_factor)
+## Fahrzeit über einen ganzen Abschnitt: mit den Tempolimits (SpeedLimits), wenn er schon
+## berechnet ist, sonst Länge / default_kmh
+func _seconds(key: Vector3i, forward: bool, default_kmh: float) -> float:
+	var segment := roads.edge_segment(key)
+	if segment and segment.nav_seconds_forward > 0.0:
+		return segment.nav_seconds_forward if forward else segment.nav_seconds_backward
+	return _length(key) / (default_kmh / 3.6)
+
+
 func _length(key: Vector3i) -> float:
 	var segment := roads.edge_segment(key)
 	if segment:
@@ -539,7 +548,7 @@ func _links(node: Variant) -> Array:
 		# Weiter auf der Autobahn bis zum nächsten Stützpunkt
 		var pair := _highway_step_key(h.x, h.y, h.z, h.w)
 		if roads.edge_status(pair[0]) != 2:
-			result.append([Vector4i(h.x, h.y, h.z + h.w, h.w), _length(pair[0]) / (highway_speed_kmh / 3.6),
+			result.append([Vector4i(h.x, h.y, h.z + h.w, h.w), _seconds(pair[0], pair[1], highway_speed_kmh),
 				[[pair[0], pair[1], -1, -1]]])
 		# Ausfahrt an diesem Stützpunkt
 		if not roads.highways.interchange_at(h.x, h.y, h.z).is_empty():
@@ -553,7 +562,7 @@ func _links(node: Variant) -> Array:
 		if roads.edge_status(key) == 2:
 			continue
 		var other := roads.edge_end_cell(key) if option[1] else Vector2i(key.x, key.y)
-		result.append([other, _length(key) / (average_speed_kmh / 3.6), [[key, option[1], -1, -1]]])
+		result.append([other, _seconds(key, option[1], average_speed_kmh), [[key, option[1], -1, -1]]])
 	# Auffahrten an diesem Ort, in beide Richtungen
 	for id: Vector3i in _interchanges_of(cell):
 		for dir: int in [1, -1]:

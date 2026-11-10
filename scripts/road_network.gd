@@ -1584,6 +1584,9 @@ func _update_visuals() -> void:
 					entry.mesh_instance.add_child(_make_posts(segment))
 				if is_highway_key(key):
 					_add_signs(segment, key, entry.mesh_instance)
+				# Tempolimits und Kurven-Warnschilder (SpeedLimits)
+				if not segment.limit_signs.is_empty():
+					_add_limit_signs(segment, entry.mesh_instance)
 				if is_rest_key(key) and rest_part(key) == 0:
 					_add_rest_props(segment, key, entry.mesh_instance)
 				# Parkbucht mit Schild und Bank am Aussichtspunkt
@@ -1714,6 +1717,35 @@ func _add_signs(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
 							_rest_exit_sign(parent, at, travel, nose.y)
 						else:
 							_exit_sign(parent, at, travel, interchange, nose.y)
+
+
+var _limit_sign_material: ShaderMaterial
+
+
+## Tempolimit- und Warnschilder eines Abschnitts: ein Mesh (Punktfarben, reflektiert nachts)
+## und die Zahlen als Label3D
+func _add_limit_signs(segment: RoadSegment, parent: Node3D) -> void:
+	var signs := TrafficSigns.new()
+	signs.build(segment)
+	if _limit_sign_material == null:
+		_limit_sign_material = ShaderMaterial.new()
+		_limit_sign_material.shader = load("res://shaders/sign.gdshader")
+	var instance := MeshInstance3D.new()
+	instance.mesh = signs.mesh()
+	instance.material_override = _limit_sign_material
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(instance)
+	for label: Array in signs.labels:
+		var text := Label3D.new()
+		text.text = label[0]
+		text.font = UiStyle.font("semibold")
+		text.font_size = label[3]
+		text.pixel_size = 0.004
+		text.modulate = label[4]
+		text.outline_size = 0
+		text.double_sided = false
+		text.transform = Transform3D(label[2], label[1])
+		parent.add_child(text)
 
 
 ## Spitze der Sperrfläche einer Ausfahrt (die Rampe ist dort weit genug von der Fahrbahn weg für
@@ -2384,6 +2416,22 @@ func _free_visuals(entry: Entry) -> void:
 	if entry.body:
 		entry.body.queue_free()
 		entry.body = null
+
+
+## Liegt Punkt i eines Abschnitts zwischen Ortsschild und Ortsmitte (dort gilt 50)?
+func in_village(segment: RoadSegment, i: int) -> bool:
+	if not is_road_key(segment.key):
+		return false
+	var s := i * RoadSegment.POINT_SPACING
+	var length := (segment.points.size() - 1) * RoadSegment.POINT_SPACING
+	for end: Array in [[Vector2i(segment.key.x, segment.key.y), s], [edge_end_cell(segment.key), length - s]]:
+		var village: Village = _villages.get(end[0])
+		if village == null:
+			continue
+		var reach := village.sign_reach(segment)
+		if reach > 0.0 and end[1] < reach:
+			return true
+	return false
 
 
 ## Dörfer: Mesh, Schilder und Kollision je nach Entfernung, ganz weit weg vergessen

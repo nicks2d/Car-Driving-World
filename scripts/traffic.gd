@@ -66,6 +66,8 @@ const LOT_LANE: float = -18.5
 const VILLAGE_SPEED: float = 50.0 / 3.6
 const VILLAGE_RADIUS: float = 170.0
 const LATERAL_ACCEL: float = 2.6
+## Im Rennen nimmt die KI Kurven so schnell, wie der Grip hergibt (m/s²)
+const RACE_LATERAL_ACCEL: float = 7.0
 ## Spurwechsel: so schnell seitlich (m/s)
 const LANE_RATE: float = 1.3
 ## IDM: Mindestabstand, Zeitlücke, angenehme Verzögerung
@@ -163,6 +165,12 @@ class TrafficCar:
 	## Auf dem Beschleunigungsstreifen: bis hierher (Meter auf dem Stück) muss es eingefädelt
 	## haben (-1 = fährt nicht gerade auf)
 	var merge_end: float = -1.0
+	## Wie genau es das Tempolimit nimmt (0,95 bis 1,1)
+	var limit_factor: float = 1.0
+	## Spontanes Rennen gegen den Spieler (Race): fährt nach Grip statt nach Limits; blinkt zurück
+	var racing: bool = false
+	var flash_timer: float = 0.0
+	var shown_flash: bool = false
 	## Zuletzt gesetzte Materialien (nur bei Änderung neu setzen)
 	var shown_brake: bool = false
 	var shown_left: bool = false
@@ -187,6 +195,8 @@ var _materials: Dictionary = {}
 ## Vorbereitete Modelle je Typ (null = keins da) und Blinker-Meshes je Modell und Seite
 var _models: Dictionary = {}
 var _lamp_meshes: Dictionary = {}
+## Kennzeichen-Stellen je Modell: [vorne, hinten] (Modell-Koordinaten, Mitte des Schilds)
+var _plate_spots: Dictionary = {}
 ## Geparkte Autos, deren Modell noch lädt: [Knoten, Typ, Lackfarbe]
 var _waiting_parked: Array = []
 var _parked_timer: float = 0.0
@@ -382,6 +392,7 @@ func _spawn(type: String, leg: Leg, s: float, fast: bool) -> void:
 			traffic_car.road_speed = _rng.randf_range(65.0, 100.0) / 3.6
 			traffic_car.highway_speed = _rng.randf_range(185.0, 230.0) / 3.6 if fast \
 				else _rng.randf_range(110.0, 175.0) / 3.6
+	traffic_car.limit_factor = _rng.randf_range(0.95, 1.1)
 	traffic_car.leg = leg
 	traffic_car.s = s
 	traffic_car.lateral = leg.lateral
@@ -422,7 +433,7 @@ func _spawn(type: String, leg: Leg, s: float, fast: bool) -> void:
 ## Test (--lineup): von jedem Typ ein stehendes Auto vor dem Spieler, ab start Metern voraus,
 ## auf der Autobahn abwechselnd rechte und linke Spur. Jedes zweite blinkt links, jedes dritte
 ## hat den Warnblinker an (Licht prüfen).
-func spawn_lineup(start: float) -> void:
+func spawn_lineup(start: float, only: String = "") -> void:
 	var p := car.global_position
 	var best: Array = []
 	var best_distance := INF
@@ -446,6 +457,8 @@ func spawn_lineup(start: float) -> void:
 	var s0 := _s_near(segment, forward, Vector2(p.x, p.z))
 	var k := 0
 	for type: String in TYPES:
+		if only != "" and type != only:
+			continue
 		var leg := Leg.new()
 		leg.key = best[0]
 		leg.segment = segment
@@ -852,11 +865,23 @@ func _desired_speed(c: TrafficCar) -> float:
 	# Auf dem Verzögerungsstreifen schon auf Rampentempo bremsen
 	if leg.kind == Kind.HIGHWAY and not c.plan.is_empty() and c.lane_target == HW_RAMP:
 		target = minf(target, 90.0 / 3.6)
-	if leg.kind == Kind.ROAD or leg.kind == Kind.CONNECTOR:
+	if (leg.kind == Kind.ROAD or leg.kind == Kind.CONNECTOR) and not c.racing:
 		for cell: Vector2i in _cells_of(leg):
 			var node: Variant = roads.node_at(cell)
 			if node != null and c.position.distance_to(node as Vector3) < VILLAGE_RADIUS:
 				target = minf(target, VILLAGE_SPEED)
+	# Tempolimits (SpeedLimits), etwas voraus schauen (am Schild schon langsam); „bei Nässe“ nur nass
+	if not c.racing and (leg.kind == Kind.ROAD or leg.kind == Kind.HIGHWAY) and not leg.segment.limits_forward.is_empty():
+		var count := leg.segment.points.size()
+		var limits := leg.segment.limits_forward if leg.forward else leg.segment.limits_backward
+		var wet := leg.segment.wet_forward if leg.forward else leg.segment.wet_backward
+		for ahead: float in [0.0, 60.0]:
+			var f := (c.s + ahead) / RoadSegment.POINT_SPACING
+			if not leg.forward:
+				f = (count - 1) - f
+			var k := clampi(roundi(f), 0, count - 1)
+			if limits[k] > 0 and (wet[k] == 0 or car.wetness > 0.3):
+				target = minf(target, limits[k] * 5.0 / 3.6 * c.limit_factor)
 	# Kurven: nach vorne schauen (bremsen braucht Weg)
 	var curvature := 0.0
 	if c.next != null:
@@ -871,7 +896,7 @@ func _desired_speed(c: TrafficCar) -> float:
 			var i := clampi(roundi(f), 0, n - 1)
 			curvature = maxf(curvature, absf(leg.segment.curvature[i]))
 	if curvature > 0.0001:
-		target = minf(target, sqrt(LATERAL_ACCEL / curvature))
+		target = minf(target, sqrt((RACE_LATERAL_ACCEL if c.racing else LATERAL_ACCEL) / curvature))
 	# Nässe und Schnee: vorsichtiger
 	target *= lerpf(0.7, 1.0, clampf((car.grip_factor - 0.5) / 0.5, 0.0, 1.0))
 	return maxf(target, 5.0)
@@ -908,6 +933,165 @@ func _acceleration(c: TrafficCar) -> float:
 
 ## Vordermann in der eigenen Spur (seitlicher Versatz offset, positiv = rechts):
 ## [Lücke in Metern, Tempo in Fahrtrichtung] oder leer
+# ---------------------------------------------------------------------------
+# Spontane Rennen (Race)
+# ---------------------------------------------------------------------------
+
+## KI-Auto, dem der Spieler gerade Lichthupe gibt: bis 40 m vor ihm (oder neben ihm), gleiche
+## Richtung, auf Landstraße oder Autobahn. null = keins
+func race_candidate(from: Vector3, forward: Vector3) -> TrafficCar:
+	var flat_forward := Vector3(forward.x, 0.0, forward.z).normalized()
+	var best: TrafficCar = null
+	var best_distance := 40.0
+	for c in _cars:
+		if c.truck or c.crash_timer > 0.0 or (c.leg.kind != Kind.ROAD and c.leg.kind != Kind.HIGHWAY):
+			continue
+		var rel := c.position - from
+		var ahead := rel.dot(flat_forward)
+		if ahead < -4.0 or ahead > 40.0 or Vector3(c.forward.x, 0.0, c.forward.z).normalized().dot(flat_forward) < 0.7:
+			continue
+		if rel.length() < best_distance:
+			best_distance = rel.length()
+			best = c
+	return best
+
+
+## Wie gern nimmt dieses Auto an? (0–1) Die Schnellen und der LC 500 fast immer, sonst selten
+func race_chance(c: TrafficCar) -> float:
+	if c.type == "lc500" or c.fast:
+		return 0.8
+	if c.type == "s3":
+		return 0.5
+	return 0.12
+
+
+func start_race(c: TrafficCar) -> void:
+	c.racing = true
+	c.flash_timer = 1.2
+	c.plan.clear()
+	c.road_speed = 220.0 / 3.6
+	c.highway_speed = 260.0 / 3.6
+	c.fast = true
+	c.accel = maxf(c.accel, 3.2)
+
+
+func end_race(c: TrafficCar) -> void:
+	if not is_instance_valid(c.node):
+		return
+	c.racing = false
+	c.road_speed = _rng.randf_range(65.0, 100.0) / 3.6
+	c.highway_speed = _rng.randf_range(150.0, 200.0) / 3.6
+
+
+## Punkt s Meter auf dem Stück, auf dem das Auto fährt (Mitte der Spur)
+func point_on_leg(c: TrafficCar, s: float) -> Vector3:
+	return _pose(c.leg, clampf(s, c.leg.from, c.leg.to), c.leg.lateral)[0]
+
+
+func is_alive(c: TrafficCar) -> bool:
+	return c in _cars
+
+
+## Die count nächsten Autos bis radius Meter (für die Vorbeifahrt-Geräusche)
+func nearest_cars(from: Vector3, count: int, radius: float) -> Array:
+	var near: Array = []
+	for c in _cars:
+		var d := c.position.distance_to(from)
+		if d < radius:
+			near.append([d, c])
+	near.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var result: Array = []
+	for k in mini(count, near.size()):
+		result.append(near[k][1])
+	return result
+
+
+## Test (--race): ein LC 500 fährt distance Meter vor dem Spieler auf derselben Straße los
+func spawn_racer(distance: float) -> TrafficCar:
+	spawn_lineup(distance)
+	var racer: TrafficCar = null
+	for c in _cars.duplicate():
+		if c.crash_timer > 1e8:
+			if c.type == "lc500" and racer == null:
+				racer = c
+				c.crash_timer = 0.0
+				c.blink = 0
+				c.hazard = false
+				c.speed = 20.0
+			else:
+				_remove(c)
+	return racer
+
+
+## Test (--cruise): ein Lkw fährt distance Meter vor dem Spieler mit kmh los (rechte Spur)
+func spawn_leader(distance: float, kmh: float) -> TrafficCar:
+	spawn_lineup(distance, "lkw")
+	var leader: TrafficCar = null
+	for c in _cars.duplicate():
+		if c.crash_timer > 1e8:
+			if c.type == "lkw" and leader == null:
+				leader = c
+				c.crash_timer = 0.0
+				c.blink = 0
+				c.blink_timer = 0.0
+				c.hazard = false
+				c.speed = kmh / 3.6
+				c.road_speed = kmh / 3.6
+				c.highway_speed = kmh / 3.6
+				c.fast = false
+				if c.leg.kind == Kind.HIGHWAY:
+					c.leg.lateral = HW_RIGHT
+					c.lateral = HW_RIGHT
+					c.lane_target = HW_RIGHT
+			else:
+				_remove(c)
+	return leader
+
+
+## Für Tempomat und Autopilot (gleiche Regeln wie für die KI): nächstes KI-Auto in der Spur
+## vor position (seitlich um offset nach rechts versetzt): [Lücke in Metern, Tempo in
+## Fahrtrichtung] oder leer. curvature (1/m, positiv = Linkskurve) sagt den eigenen Weg voraus
+## (wie ein Radar-Tempomat aus der Drehrate), sonst fällt der Vordermann in Kurven aus der Spur.
+func leader_ahead(from: Vector3, forward: Vector3, own_length: float, reach: float, offset: float = 0.0,
+		curvature: float = 0.0) -> Array:
+	var flat_forward := Vector3(forward.x, 0.0, forward.z).normalized()
+	var right := flat_forward.cross(Vector3.UP)
+	var best: Array = []
+	var best_gap := reach
+	for other in _cars:
+		var rel := other.position - from
+		var ahead := rel.dot(flat_forward)
+		if ahead <= 0.0 or ahead > reach + other.length:
+			continue
+		var bend := -curvature * ahead * ahead * 0.5
+		if absf(rel.dot(right) - offset - bend) > 2.1 or absf(rel.y) > 4.0 + ahead * 0.06:
+			continue
+		var other_forward := Vector3(other.forward.x, 0.0, other.forward.z).normalized()
+		if other_forward.dot(flat_forward) < 0.3:
+			continue
+		var gap := ahead - (own_length + other.length) * 0.5
+		if gap < best_gap:
+			best_gap = gap
+			best = [gap, other.speed * other_forward.dot(flat_forward)]
+	return best
+
+
+## Ist die Spur um offset Meter rechts (negativ = links) neben from frei? Vorne bis front,
+## hinten bis back Meter (schnellere Autos von hinten zählen weiter)
+func lane_free_at(from: Vector3, forward: Vector3, own_speed: float, offset: float, front: float, back: float) -> bool:
+	var flat_forward := Vector3(forward.x, 0.0, forward.z).normalized()
+	var right := flat_forward.cross(Vector3.UP)
+	for other in _cars:
+		var rel := other.position - from
+		var ahead := rel.dot(flat_forward)
+		var behind_reach := back + maxf(other.speed - own_speed, 0.0) * 4.0
+		if ahead > front or ahead < -behind_reach:
+			continue
+		if absf(rel.dot(right) - offset) < 2.4:
+			return false
+	return true
+
+
 func _leader(c: TrafficCar, offset: float, reach: float) -> Array:
 	var right := Vector3(c.forward.x, 0.0, c.forward.z).normalized().cross(Vector3.UP)
 	var flat_forward := Vector3(c.forward.x, 0.0, c.forward.z).normalized()
@@ -1091,6 +1275,16 @@ func _update_looks(delta: float) -> void:
 			c.far.set_surface_override_material(indices["ind_r"], _material("ind_on" if right_on else "ind_off"))
 			if not c.lamps.is_empty():
 				c.lamps[1].visible = right_on
+		# Zurückblinken (Rennen angenommen): Scheinwerfer kurz hell
+		c.flash_timer = maxf(c.flash_timer - delta, 0.0)
+		var flashing := c.flash_timer > 0.0 and fmod(c.flash_timer, 0.5) > 0.2
+		if flashing != c.shown_flash:
+			c.shown_flash = flashing
+			c.far.set_surface_override_material(indices["head"], _material("head_flash") if flashing else null)
+			for mesh: MeshInstance3D in [c.near, c.mid]:
+				if mesh and PreparedModel.surface_index(mesh.mesh, "head") >= 0:
+					mesh.set_surface_override_material(PreparedModel.surface_index(mesh.mesh, "head"),
+						_material("head_flash") if flashing else null)
 		# Räder drehen sich nur in der nahen Stufe
 		if not c.wheels.is_empty() and c.position.distance_to(eye) < near_distance + 5.0:
 			c.wheel_angle = wrapf(c.wheel_angle + c.speed * delta / c.wheel_radius, 0.0, TAU)
@@ -1169,6 +1363,11 @@ func _material(key: String) -> StandardMaterial3D:
 			material.albedo_color = Color(0.95, 0.95, 0.9)
 			material.emission_enabled = true
 			material.emission = Color(1.0, 0.96, 0.88)
+		"head_flash":
+			material.albedo_color = Color(1.0, 1.0, 0.95)
+			material.emission_enabled = true
+			material.emission = Color(1.0, 0.97, 0.9)
+			material.emission_energy_multiplier = 12.0
 		"head_off":
 			material.albedo_color = Color(0.7, 0.72, 0.74)
 			material.roughness = 0.15
@@ -1399,6 +1598,42 @@ func _add_model(c: TrafficCar, model: PreparedModel, paint: Color) -> void:
 	c.shown_shadow = false
 	for mesh: MeshInstance3D in [c.near, c.mid] + c.wheels:
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Zufallskennzeichen mit einem Kürzel aus einem Ortsnamen in der Nähe (nur nah zu sehen)
+	var place := roads.highways.place_name(Vector2i(floori(c.position.x / roads.cell_size) + _rng.randi_range(-3, 3),
+		floori(c.position.z / roads.cell_size) + _rng.randi_range(-3, 3)))
+	var text := LicensePlate.random(_rng, place)
+	var spots := _plate_spots_of(model)
+	for k in 2:
+		var spot: Vector3 = spots[k]
+		if is_nan(spot.z):
+			continue
+		var plate := LicensePlate.make_mesh(text)
+		plate.position = spot
+		plate.rotation.y = 0.0 if k == 0 else PI
+		plate.visibility_range_end = near_distance
+		c.node.add_child(plate)
+
+
+## Wo am Modell die Kennzeichen hingehören: vorderster bzw. hinterster Punkt in der Mitte auf
+## Höhe der Stoßstange (vorne 0,40 m, hinten 0,55 m), einmal pro Modell gemessen
+func _plate_spots_of(model: PreparedModel) -> Array:
+	if _plate_spots.has(model):
+		return _plate_spots[model]
+	var front := -INF
+	var rear := INF
+	for i in model.near_mesh.get_surface_count():
+		var verts: PackedVector3Array = model.near_mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]
+		for p in verts:
+			if absf(p.x) > 0.3:
+				continue
+			if absf(p.y - 0.40) < 0.07:
+				front = maxf(front, p.z)
+			if absf(p.y - 0.55) < 0.07:
+				rear = minf(rear, p.z)
+	var result: Array = [Vector3(0.0, 0.40, front + 0.012) if not is_inf(front) else Vector3(0, 0, NAN),
+		Vector3(0.0, 0.55, rear - 0.012) if not is_inf(rear) else Vector3(0, 0, NAN)]
+	_plate_spots[model] = result
+	return result
 
 
 func _lod_instance(mesh: ArrayMesh, begin: float, end: float, paint: Color) -> MeshInstance3D:

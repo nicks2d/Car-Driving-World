@@ -22,6 +22,11 @@ extends Node
 ## --garage       Foto mit geöffneter Garage (mit --car=ID ist dieses Auto und seine Marke gewählt)
 ## --flames       vor dem Foto knallt es ständig im Auspuff (Flammen an den Endrohren prüfen)
 ## --rainbow      Regenbogen zeigen (tiefe Sonne, z. B. --time=18 --heading=90)
+## --flash        Lichthupe fürs Foto an (Fernlicht hell aufgeblendet)
+## --splash       Pfützen-Fontäne an den Vorderrädern kurz vor dem Foto
+## --windows=S    Fenster öffnen: beim Foto sofort, beim Benchmark nach S Sekunden
+## --record=PFAD  mit --bench: den ganzen Ton (Master) als WAV speichern (z. B. zum Vergleich
+##                Fenster zu/offen, Ausgabe der Lautstärke pro Sekunde mit einem Python-Skript)
 ## --signal=left|right|hazard  Blinker bzw. Warnblinker fürs Foto an (leuchtend)
 ## --aurora       Polarlicht zeigen (Winternacht, z. B. --season=winter --time=23 --heading=180)
 ## --car=ID       mit diesem Auto starten (Profil cars/ID.tres, z. B. e30, e92, f90, g90)
@@ -29,6 +34,17 @@ extends Node
 ## --volfog       volumetrischen Nebel einschalten
 ## --benchshot=S  während des Benchmarks nach S Sekunden ein Bild speichern (bench_S.png),
 ##                mehrere mit Komma (--benchshot=8,16,24)
+## --acc         mit --bench: Der Autopilot hält Abstand zum Vordermann (gleiche Regeln wie der
+##                Tempomat und die KI) und überholt auf der Autobahn, statt durch den Verkehr zu fahren.
+##                Mit --acc=KMH fährt er höchstens so schnell (z. B. --acc=130).
+## --signshot=A  Foto vor dem nächsten Verkehrszeichen dieser Art: limit, curve (Kurven-Warnschild),
+##                end_limit, end_all, wet (Limit nur bei Nässe), tunnel (80 vor einem Tunnel)
+## --race        ein LC 500 fährt 30 m vor dem Spieler los, das Rennen startet sofort (mit --bench
+##                fährt der Autopilot mit), Ergebnis in der Ausgabe
+## --cruise=KMH,D,V  mit --bench: Der Autopilot lenkt nur, Gas und Bremse macht der echte
+##                Tempomat (an, sobald KMH erreicht sind), D Meter voraus fährt ein Lkw mit V km/h;
+##                jede Sekunde Tempo, Abstand, Zeitlücke, Beschleunigung, am Ende Zusammenfassung.
+##                --gap=0..3 wählt die Abstandsstufe (Standard 2)
 ## --shotevery=M  während des Benchmarks alle M gefahrenen Meter ein Bild (strecke_M.png), z. B.
 ##                für Fotos alle 100 m durch einen langen Tunnel
 ## --exitdrive    mit --bench --highway: Der Autopilot nimmt die nächste Ausfahrt (über den
@@ -84,6 +100,15 @@ var _open_garage: bool = false
 var _pause_page: int = -1
 var _full: bool = false
 var _flames: bool = false
+## Lichthupe fürs Foto gedrückt halten (--flash)
+var _flash: bool = false
+## Fenster nach so vielen Sekunden Benchmark öffnen (--windows=S, -1 = nie) und Tonaufnahme
+## des ganzen Benchmarks (--record=DATEI.wav)
+var _windows_at: float = -1.0
+## Pfützen-Fontäne fürs Foto auslösen (--splash)
+var _splash: bool = false
+var _record_path: String = ""
+var _recorder: AudioEffectRecord
 var _rainbow: bool = false
 var _signal: String = ""
 var _aurora: bool = false
@@ -123,6 +148,26 @@ var _last_position: Vector3 = Vector3.ZERO
 var _log_timer: float = 0.0
 var _bench_shots := PackedFloat32Array()
 var _shot_every: float = 0.0
+## Autopilot mit Abstand und Überholen (--acc): Höchsttempo (km/h, 0 = keins), seitlicher
+## Versatz nach links (Meter, zum Überholen) und Ziel dafür
+var _race_test: bool = false
+var _sign_shot: String = ""
+## Kamera-Lage vor dem Schild (wird jedes Bild neu gesetzt, sonst übernimmt die Verfolger-Kamera)
+var _sign_camera := Transform3D()
+var _has_sign_camera: bool = false
+var _acc: bool = false
+var _acc_max_kmh: float = 0.0
+## Tempomat-Test (--cruise): Wunschtempo, Lkw (Abstand, Tempo), Abstandsstufe, Messwerte
+var _cruise_kmh: float = 0.0
+var _cruise_leader := Vector2.ZERO
+var _cruise_gap: int = 2
+var _cruise_log: float = 0.0
+var _cruise_min_time_gap: float = INF
+var _cruise_max_brake: float = 0.0
+var _cruise_warnings: int = 0
+var _cruise_last_speed: float = 0.0
+var _lane_shift: float = 0.0
+var _lane_shift_target: float = 0.0
 var _next_distance_shot: float = 0.0
 var _exit_drive: bool = false
 ## Folgt der Autopilot gerade der Route über die Ausfahrt? (Kurven dann wie auf der Landstraße)
@@ -175,6 +220,14 @@ func _ready() -> void:
 				_full = true
 			"flames":
 				_flames = true
+			"flash":
+				_flash = true
+			"splash":
+				_splash = true
+			"windows":
+				_windows_at = float(value) if value != "" else 0.0
+			"record":
+				_record_path = value
 			"rainbow":
 				_rainbow = true
 			"signal":
@@ -200,6 +253,20 @@ func _ready() -> void:
 				_exit_drive = true
 			"shotevery":
 				_shot_every = float(value)
+			"race":
+				_race_test = true
+			"signshot":
+				_sign_shot = value
+			"cruise":
+				var cruise_parts := value.split(",")
+				_cruise_kmh = float(cruise_parts[0])
+				if cruise_parts.size() >= 3:
+					_cruise_leader = Vector2(float(cruise_parts[1]), float(cruise_parts[2]))
+			"gap":
+				_cruise_gap = int(value)
+			"acc":
+				_acc = true
+				_acc_max_kmh = float(value) if value != "" else 0.0
 			"nowait":
 				_no_wait = true
 			"nohud":
@@ -249,6 +316,18 @@ func on_world_ready(game: Node3D) -> void:
 		Input.action_press("steer_left" if _steer == "left" else "steer_right")
 	if _no_hud and game.has_node("HUD"):
 		game.get_node("HUD").visible = false
+	if _sign_shot != "":
+		_place_sign_camera(game)
+	if _windows_at >= 0.0 and _bench_seconds <= 0.0:
+		(game.get_node("OpenWindows") as OpenWindows).open = true
+		game.car.windows_open = 1.0
+	if _cruise_kmh > 0.0 and _cruise_leader.x > 0.0:
+		var leader := (game.get_node("Traffic") as Traffic).spawn_leader(_cruise_leader.x, _cruise_leader.y)
+		print("Tempomat-Test: Lkw %s, %d m voraus, %d km/h" % ["da" if leader else "keiner", _cruise_leader.x, _cruise_leader.y])
+	if _race_test:
+		var racer := (game.get_node("Traffic") as Traffic).spawn_racer(30.0)
+		var started := racer != null and (game.get_node("Race") as Race).start(racer)
+		print("Rennen-Test: Gegner %s, gestartet: %s" % ["da" if racer else "keiner", started])
 	for part in _hide:
 		if game.has_node("HUD/" + part):
 			game.get_node("HUD/" + part).visible = false
@@ -295,6 +374,10 @@ func _start_bench() -> void:
 	_timer = 0.0
 	_extend_route()
 	_last_position = _game.car.global_position
+	if _record_path != "":
+		_recorder = AudioEffectRecord.new()
+		AudioServer.add_bus_effect(AudioServer.get_bus_index("Master"), _recorder)
+		_recorder.set_recording_active(true)
 
 
 func _process(delta: float) -> void:
@@ -322,10 +405,18 @@ func _process(delta: float) -> void:
 			# Knalle im Auspuff auslösen (Flammen prüfen), etwa alle 50 ms
 			if _flames and fmod(_timer, 0.05) < delta:
 				_game.car.get_node("EngineSound").popped.emit(1.0)
+			if _flash:
+				_game.car.flash_time = 0.2
+			# Fontäne kurz vor dem Foto, damit sie gerade hochspritzt
+			if _splash and _timer <= 0.35 and _timer + delta > 0.35:
+				(_game.get_node("Puddles") as Puddles).splash(80.0)
 			if _fly_height > 0.0:
 				_place_fly_camera()
 			if _car_view >= 0.0:
 				_place_car_view_camera()
+			if _has_sign_camera:
+				camera.global_transform = _sign_camera
+				camera.reset_physics_interpolation()
 			if _timer <= 0.0:
 				_state = "done"
 				_take_screenshot()
@@ -354,8 +445,16 @@ func _process(delta: float) -> void:
 			if not _bench_shots.is_empty() and _timer >= _bench_shots[0]:
 				_bench_shots.remove_at(0)
 				_save_image("bench_%d" % int(_timer))
+			if _windows_at >= 0.0 and _timer >= _windows_at:
+				_windows_at = -1.0
+				(_game.get_node("OpenWindows") as OpenWindows).open = true
+				print("Fenster auf bei %.1f s" % _timer)
 			if _timer >= _bench_seconds:
 				_state = "done"
+				if _recorder:
+					_recorder.set_recording_active(false)
+					_recorder.get_recording().save_to_wav(_record_path)
+					print("Aufnahme gespeichert: ", _record_path)
 				_print_bench()
 				get_tree().quit()
 
@@ -437,6 +536,9 @@ func _drive_autopilot() -> void:
 	# Lenken: auf einen Punkt etwas voraus zielen (je schneller, desto weiter voraus)
 	var look_ahead := maxi(int((6.0 + speed * 0.45) / RoadSegment.POINT_SPACING), 2)
 	var aim := _route[mini(_route_index + look_ahead, _route.size() - 1)]
+	# Überholen: das Ziel liegt eine Spur weiter links
+	_lane_shift = move_toward(_lane_shift, _lane_shift_target, 1.3 * get_physics_process_delta_time())
+	aim += Vector3.UP.cross(car.global_basis.z).normalized() * _lane_shift
 	var local := car.global_transform.affine_inverse() * aim
 	var angle := atan2(local.x, local.z)  # positiv = Ziel liegt links
 	if angle > 0.0:
@@ -463,6 +565,10 @@ func _drive_autopilot() -> void:
 		var curve_speed := maxf(sqrt(lateral * radius), 4.0)
 		var distance_to_curve := (i - _route_index) * RoadSegment.POINT_SPACING
 		target_speed = minf(target_speed, sqrt(curve_speed * curve_speed + 2.0 * 4.0 * distance_to_curve))
+	if _acc:
+		target_speed = _acc_speed(car, speed, target_speed)
+	if _cruise_kmh > 0.0 and _drive_with_cruise(car, speed):
+		return
 	if speed < target_speed - 1.0:
 		Input.action_press("accelerate")
 		Input.action_release("brake")
@@ -472,6 +578,132 @@ func _drive_autopilot() -> void:
 	else:
 		Input.action_release("accelerate")
 		Input.action_release("brake")
+
+
+## Kamera 9 m vor das nächste Verkehrszeichen der gewünschten Art (--signshot), Blick darauf
+func _place_sign_camera(game: Node3D) -> void:
+	var here: Vector3 = game.car.global_position
+	var best: Array = []
+	var best_distance := INF
+	for pair: Array in game.roads.loaded_segments(Rect2(here.x - 2500.0, here.z - 2500.0, 5000.0, 5000.0)):
+		var candidate: RoadSegment = pair[1]
+		for entry: Array in candidate.limit_signs:
+			var kind: String = entry[2]
+			var wanted := false
+			match _sign_shot:
+				"curve":
+					wanted = kind.begins_with("curve") or kind == "double_curve"
+				"wet":
+					wanted = kind == "limit" and entry[4]
+				"tunnel":
+					wanted = kind == "limit" and entry[3] == SpeedLimits.TUNNEL_LIMIT and candidate.kind == RoadSegment.Kind.ROAD
+				_:
+					wanted = kind == _sign_shot
+			if not wanted:
+				continue
+			var p: Vector3 = candidate.points[entry[0]]
+			var d := p.distance_to(here)
+			if d < best_distance:
+				best_distance = d
+				best = [candidate, entry]
+	if best.is_empty():
+		# Zur Fehlersuche: welche Schilder gibt es in der Nähe?
+		var found := {}
+		for pair: Array in game.roads.loaded_segments(Rect2(here.x - 2500.0, here.z - 2500.0, 5000.0, 5000.0)):
+			for entry: Array in (pair[1] as RoadSegment).limit_signs:
+				var label := "%s %d%s" % [entry[2], entry[3], " nass" if entry[4] else ""]
+				found[label] = found.get(label, 0) + 1
+		print("Kein Schild der Art %s in der Nähe, gefunden: %s" % [_sign_shot, found])
+		# Autobahn-Kurven: wie viele Meter enger als 2000/1500/1200 m Radius, Tunnel an Landstraßen
+		var radii := [0, 0, 0, 0]
+		var tunnels := 0
+		for pair: Array in game.roads.loaded_segments(Rect2(here.x - 2500.0, here.z - 2500.0, 5000.0, 5000.0)):
+			var nearby: RoadSegment = pair[1]
+			if nearby.kind == RoadSegment.Kind.ROAD:
+				tunnels += nearby.tunnel_ranges.size()
+			if nearby.kind != RoadSegment.Kind.HIGHWAY:
+				continue
+			for k in nearby.curvature:
+				radii[0] += 4
+				for j in 3:
+					if absf(k) > 1.0 / [2000.0, 1500.0, 1200.0][j]:
+						radii[j + 1] += 4
+		print("Autobahn %d m, enger als 2000/1500/1200 m: %s; Tunnel an Landstraßen: %d" % [radii[0], radii.slice(1), tunnels])
+		return
+	var segment: RoadSegment = best[0]
+	var entry: Array = best[1]
+	var travel := segment.direction_at(entry[0]) * float(entry[1])
+	travel.y = 0.0
+	travel = travel.normalized()
+	var right := travel.cross(Vector3.UP).normalized()
+	var sign_at: Vector3 = segment.points[entry[0]] + right * (segment.road_width * 0.5 + segment.shoulder_width + 0.8) + Vector3.UP * 2.0
+	var eye := sign_at - travel * 9.0 - right * 3.0 + Vector3.UP * -0.4
+	_sign_camera = Transform3D(Basis.looking_at(sign_at - eye), eye)
+	_has_sign_camera = true
+	camera.set_physics_process(false)
+	camera.global_transform = _sign_camera
+	camera.reset_physics_interpolation()
+	_fly_height = 0.0
+	_car_view = -1.0
+	print("Schild %s (%d km/h) bei %s" % [entry[2], entry[3], Vector2(sign_at.x, sign_at.z).round()])
+
+
+## Tempomat-Test (--cruise): bis zum Wunschtempo fährt der Autopilot, dann der echte Tempomat
+## (Gas und Bremse los). Gibt true zurück, solange der Tempomat fährt.
+func _drive_with_cruise(car: VehicleBody3D, speed: float) -> bool:
+	var cruise := _game.get_node("CruiseControl") as CruiseControl
+	var delta := get_physics_process_delta_time()
+	if not cruise.active:
+		if speed * 3.6 < _cruise_kmh - 2.0:
+			return false
+		cruise.gap_level = _cruise_gap
+		cruise.switch_on(_cruise_kmh)
+		print("Tempomat an bei %.0f km/h, Stufe %d (%.1f s)" % [speed * 3.6, _cruise_gap, cruise.gaps[_cruise_gap]])
+	Input.action_release("accelerate")
+	Input.action_release("brake")
+	if cruise.warning:
+		_cruise_warnings += 1
+	if cruise.leader_gap > 0.0 and speed > 5.0:
+		_cruise_min_time_gap = minf(_cruise_min_time_gap, cruise.leader_gap / speed)
+	_cruise_log += delta
+	if _cruise_log >= 1.0:
+		# Verzögerung über die letzte Sekunde (einzelne Physikschritte springen zu stark)
+		if _cruise_last_speed > 0.0:
+			_cruise_max_brake = maxf(_cruise_max_brake, (_cruise_last_speed - speed) / _cruise_log)
+		_cruise_last_speed = speed
+		_cruise_log = 0.0
+		print("Tempomat: %.0f km/h (Wunsch %.0f), Abstand %s, Zeitlücke %s, Gas %.2f, Bremse %.2f%s" % [
+			speed * 3.6, cruise.set_speed_kmh,
+			"%.0f m" % cruise.leader_gap if cruise.leader_gap > 0.0 else "-",
+			"%.2f s" % (cruise.leader_gap / speed) if cruise.leader_gap > 0.0 and speed > 1.0 else "-",
+			maxf(cruise.car.assist_throttle, 0.0), cruise.car.assist_brake, ", WARNUNG" if cruise.warning else ""])
+	return true
+
+
+## Autopilot mit Abstand (--acc): Wunschtempo nach dem IDM wie Tempomat und KI, auf der Autobahn
+## links überholen, wenn der Vordermann langsamer ist und links frei ist, danach wieder rechts
+func _acc_speed(car: VehicleBody3D, speed: float, target_speed: float) -> float:
+	var traffic := _game.get_node_or_null("Traffic") as Traffic
+	if _acc_max_kmh > 0.0:
+		target_speed = minf(target_speed, _acc_max_kmh / 3.6)
+	if traffic == null:
+		return target_speed
+	var forward := car.global_basis.z
+	var curvature := car.angular_velocity.y / speed if speed > 5.0 else 0.0
+	var leader := traffic.leader_ahead(car.global_position, forward, 4.6, 200.0, 0.0, curvature)
+	if on_highway:
+		var slower: bool = not leader.is_empty() and (leader[1] as float) < target_speed - 3.0 and (leader[0] as float) < 120.0
+		if _lane_shift_target == 0.0 and slower and traffic.lane_free_at(car.global_position, forward, speed, -3.75, 60.0, 40.0):
+			_lane_shift_target = 3.75
+		elif _lane_shift_target > 0.0 and absf(_lane_shift - _lane_shift_target) < 0.2 \
+				and traffic.lane_free_at(car.global_position, forward, speed, 3.75, 70.0, 25.0):
+			_lane_shift_target = 0.0
+	if leader.is_empty():
+		return target_speed
+	# Wie der Tempomat: Mindestabstand + 1,8 s, schneller annähern bremst früher
+	var gap: float = leader[0]
+	var wanted := Traffic.MIN_GAP + speed * 1.8
+	return minf(target_speed, maxf((leader[1] as float) + (gap - wanted) * 0.35, 0.0))
 
 
 ## Kurz vor dem Foto: Navi-Ziel setzen, Fotomodus öffnen (wenn gewünscht)
@@ -571,6 +803,12 @@ func _print_bench() -> void:
 	print("BENCH window=%s screen_scale=%.1f" % [DisplayServer.window_get_size(), DisplayServer.screen_get_scale()])
 	print("BENCH autopilot: %.0f m gefahren (%.0f km/h im Schnitt, max. %.0f km/h, davon %.0f m im Tunnel), max. %.1f m neben der Straßenmitte, min. Aufrecht-Wert %.2f" % [
 		_distance_driven, _distance_driven / maxf(_timer, 0.1) * 3.6, _top_speed * 3.6, _tunnel_driven, _max_off_road, _lowest_up])
+	var puddles := _game.get_node_or_null("Puddles") as Puddles
+	if puddles and puddles.splash_count > 0:
+		print("BENCH pfützen: %d Fontänen" % puddles.splash_count)
+	if _cruise_kmh > 0.0:
+		print("BENCH tempomat: kleinste Zeitlücke %.2f s, stärkste Bremsung %.1f m/s², Warnung %d Bilder" % [
+			_cruise_min_time_gap, _cruise_max_brake, _cruise_warnings])
 
 
 func _average(values: PackedFloat32Array) -> float:

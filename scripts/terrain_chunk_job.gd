@@ -444,7 +444,7 @@ func skirt_bottom_at(x: float, z: float) -> float:
 		for e in grid_size:
 			var vert := _edge_vertex(edge, e)
 			var vx := float(vert % grid_size) * spacing
-			var vz := float(vert / grid_size) * spacing
+			var vz := floorf(float(vert) / grid_size) * spacing
 			var d := (vx - lx) * (vx - lx) + (vz - lz) * (vz - lz)
 			if d < best_distance:
 				best_distance = d

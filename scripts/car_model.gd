@@ -57,6 +57,8 @@ var _stickers: Array[Node3D] = []
 var _head_glow: StandardMaterial3D
 var _tail_glow: StandardMaterial3D
 var _spots: Array[SpotLight3D] = []
+## Unsichtbares Material für die Original-Kennzeichen des Modells
+var _hidden_material: StandardMaterial3D
 var _lights_on: bool = false
 var _was_night: bool = false
 var _day_night: DayNight
@@ -67,6 +69,7 @@ var _anchors: Array[Node3D] = []
 var _calipers: Array = []
 ## Alles, was beim Wechsel wieder weg muss (Halter, Scheinwerfer, Vorschau-Räder)
 var _extra_nodes: Array[Node] = []
+var _plates: Array[MeshInstance3D] = []
 
 
 ## Pfad zum Modell eines Profils: scene.gltf (ältere Downloads) oder die .glb im Ordner
@@ -161,9 +164,22 @@ func _process(_delta: float) -> void:
 		_lights_on = night
 	if Input.is_action_just_pressed("toggle_lights"):
 		_lights_on = not _lights_on
+	# Fenster: Lage der Scheiben im Auto und wie weit sie offen sind
+	if _glass and _car:
+		_glass.set_shader_parameter("car_inverse", Projection(_car.global_transform.affine_inverse()))
+		_glass.set_shader_parameter("window_open", _car.windows_open)
+		if _glass_box.size != Vector3.ZERO:
+			_glass.set_shader_parameter("top_y", _glass_box.end.y)
+			_glass.set_shader_parameter("belt_y", _glass_box.position.y + _glass_box.size.y * 0.35)
+	# Lichthupe: Fernlicht kurz an (heller und weiter), auch tagsüber gut zu sehen
+	var flash := _car.flash_time > 0.0
 	for spot in _spots:
-		spot.visible = _lights_on
-	_head_glow.emission_energy_multiplier = headlight_glow if _lights_on else 0.15
+		spot.visible = _lights_on or flash
+		spot.light_energy = headlight_energy * (2.5 if flash else 1.0)
+		spot.spot_range = headlight_range * (1.6 if flash else 1.0)
+		# Fernlicht leuchtet waagerecht (Abblendlicht 3° nach unten)
+		spot.basis = Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, deg_to_rad(0.5 if flash else -3.0))
+	_head_glow.emission_energy_multiplier = headlight_glow * 3.0 if flash else (headlight_glow if _lights_on else 0.15)
 	_tail_glow.emission_energy_multiplier = brake_glow if _car.braking else (taillight_glow if _lights_on else 0.1)
 
 
@@ -319,6 +335,102 @@ func _build(scene: PackedScene) -> void:
 	_setup_headlights()
 	_set_stickers(stickers_visible)
 	_set_placeholder(false)
+	_place_plates(body)
+
+
+## Kennzeichen vorne und hinten: Text aus der Garage (pro Auto gespeichert). Hat das Modell ein
+## eigenes Kennzeichenfeld (Material „manufacturerplate“), kommt das Schild dorthin und das Original
+## wird ausgeblendet. Sonst wird die Stelle gemessen: der vorderste bzw. hinterste Punkt der
+## Karosserie in der Mitte (|x| < 0,3 m) auf Höhe der Stoßstange (vorne 0,40 m, hinten 0,55 m).
+func _place_plates(body: Array) -> void:
+	if _car == null:
+		return
+	var to_car := _car.global_transform.affine_inverse()
+	var floor_y := Car.resting_wheel_center(_profile, 0).y - _profile.wheel_radius
+	var front := -INF
+	var rear := INF
+	for mi: MeshInstance3D in body:
+		if not is_instance_valid(mi) or mi.mesh == null:
+			continue
+		var xform := to_car * mi.global_transform
+		for s in mi.mesh.get_surface_count():
+			var verts: PackedVector3Array = mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+			for k in range(0, verts.size(), 3):
+				var p := xform * verts[k]
+				if absf(p.x) > 0.3:
+					continue
+				var height := p.y - floor_y
+				if absf(height - 0.40) < 0.07:
+					front = maxf(front, p.z)
+				if absf(height - 0.55) < 0.07:
+					rear = minf(rear, p.z)
+	# Mitte des Schilds je Seite (vorne/hinten), aus dem Modell oder gemessen
+	var spots: Array = [Vector3(0.0, floor_y + 0.40, front), Vector3(0.0, floor_y + 0.55, rear)]
+	var own := _model_plate_spots(body, to_car)
+	for side in 2:
+		if own[side] != null:
+			spots[side] = own[side]
+	var text := plate_text(_profile.id)
+	_plates.clear()
+	for side in 2:
+		var spot: Vector3 = spots[side]
+		if is_inf(spot.z):
+			continue
+		var plate := LicensePlate.make_mesh(text)
+		_car.add_child(plate)
+		var outward := 0.012 if side == 0 else -0.012
+		plate.position = spot + Vector3(0.0, 0.0, outward)
+		plate.rotation = Vector3(0.0, 0.0 if side == 0 else PI, 0.0)
+		_extra_nodes.append(plate)
+		_plates.append(plate)
+
+
+## Eigene Kennzeichenfelder des Modells: [vorne, hinten] = äußerste Mitte in Auto-Koordinaten oder
+## null. Die Originalflächen werden unsichtbar (unser Schild ersetzt sie).
+func _model_plate_spots(body: Array, to_car: Transform3D) -> Array:
+	var boxes: Array = [null, null]
+	for mi: MeshInstance3D in body:
+		if not is_instance_valid(mi) or mi.mesh == null:
+			continue
+		var xform := to_car * mi.global_transform
+		for s in mi.mesh.get_surface_count():
+			var material := mi.mesh.surface_get_material(s)
+			if material == null or not material.resource_name.to_lower().contains("manufacturerplate"):
+				continue
+			for p0 in mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX] as PackedVector3Array:
+				var p := xform * p0
+				var side := 0 if p.z > 0.0 else 1
+				if boxes[side] == null:
+					boxes[side] = AABB(p, Vector3.ZERO)
+				else:
+					boxes[side] = (boxes[side] as AABB).expand(p)
+			if _hidden_material == null:
+				_hidden_material = StandardMaterial3D.new()
+				_hidden_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				_hidden_material.albedo_color = Color(0, 0, 0, 0)
+			mi.set_surface_override_material(s, _hidden_material)
+	var result: Array = [null, null]
+	for side in 2:
+		if boxes[side] != null:
+			var box: AABB = boxes[side]
+			var center := box.get_center()
+			result[side] = Vector3(center.x, center.y, box.end.z if side == 0 else box.position.z)
+	return result
+
+
+## Neues Kennzeichen (Garage) an beide Schilder
+func refresh_plates() -> void:
+	var texture := LicensePlate.make_texture(plate_text(_profile.id))
+	for plate in _plates:
+		if is_instance_valid(plate):
+			((plate.mesh as QuadMesh).material as StandardMaterial3D).albedo_texture = texture
+
+
+## Gespeichertes Kennzeichen eines Autos (Garage), sonst „M-EW 2026“
+static func plate_text(car_id: String) -> String:
+	var config := ConfigFile.new()
+	config.load("user://einstellungen.cfg")
+	return config.get_value("kennzeichen", car_id, "M-EW 2026")
 
 
 func _meshes_under(node: Node) -> Array[MeshInstance3D]:
@@ -631,6 +743,7 @@ func _merge_attached(holder: Node3D) -> Array[MeshInstance3D]:
 func _make_materials() -> void:
 	# Pro Auto neu (Glas-Deckkraft und Glanzgrenze stehen im Profil)
 	_glass = null
+	_glass_box = AABB()
 	_rim = null
 	_tire = null
 	_exhaust = null
@@ -652,7 +765,9 @@ func _make_materials() -> void:
 	_tail_glow.emission = Color(1.0, 0.05, 0.03)
 
 
-var _glass: StandardMaterial3D
+var _glass: ShaderMaterial
+## Scheiben im Auto (Auto-Koordinaten): für Brüstung und Oberkante der Seitenfenster
+var _glass_box := AABB()
 var _rim: StandardMaterial3D
 var _tire: StandardMaterial3D
 var _exhaust: StandardMaterial3D
@@ -674,11 +789,10 @@ func _replacement_for(material: Material, front: bool) -> Material:
 		return _tail_glow if not front else null
 	if _any_match(material_name, _profile.glass_materials):
 		if _glass == null:
-			_glass = StandardMaterial3D.new()
-			_glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			_glass.albedo_color = Color(0.03, 0.04, 0.05, _profile.glass_opacity)
-			_glass.metallic = 0.2
-			_glass.roughness = 0.03
+			# Eigener Shader: Seitenscheiben lassen sich herunterfahren (Car.windows_open)
+			_glass = ShaderMaterial.new()
+			_glass.shader = load("res://shaders/car_glass.gdshader")
+			_glass.set_shader_parameter("glass_color", Color(0.03, 0.04, 0.05, _profile.glass_opacity))
 		return _glass
 	if _any_match(material_name, _profile.rim_materials):
 		if _rim == null:
@@ -732,6 +846,9 @@ func _setup_mesh(mi: MeshInstance3D) -> void:
 		var replacement := _replacement_for(mi.mesh.surface_get_material(s), front)
 		if replacement:
 			mi.set_surface_override_material(s, replacement)
+			if replacement == _glass and _car:
+				var in_car := _car.global_transform.affine_inverse() * mi.global_transform * mi.get_aabb()
+				_glass_box = in_car if _glass_box.size == Vector3.ZERO else _glass_box.merge(in_car)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if _matches(mi, _profile.shadow_parts) \
 		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if _matches(mi, _profile.low_detail_parts):

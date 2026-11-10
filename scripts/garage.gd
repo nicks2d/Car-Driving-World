@@ -67,6 +67,8 @@ var _bars: Array = []  # [Name-Label, Wert-Label, Bar]
 var _paint_row: HBoxContainer
 var _accent_row: HBoxContainer
 var _exhaust_toggle: Toggle
+var _plate_edit: LineEdit
+var _plate_hint: Label
 var _time_buttons: Array[Button] = []
 var _weather_buttons: Array[Button] = []
 var _season_buttons: Array[Button] = []
@@ -409,6 +411,24 @@ func _pick_car(index: int) -> void:
 	_refresh_all()
 
 
+## Kennzeichen prüfen (z. B. „M-CD 2026“) und für dieses Auto speichern
+func _set_plate(text: String) -> void:
+	var plate := LicensePlate.normalize(text)
+	if plate == "":
+		_plate_hint.text = "Format: M-CD 2026"
+		_plate_hint.add_theme_color_override("font_color", UiStyle.RED)
+		return
+	_plate_edit.text = plate
+	_plate_hint.text = ""
+	var config := ConfigFile.new()
+	config.load(SETTINGS_PATH)
+	config.set_value("kennzeichen", cars[_selected].id, plate)
+	config.save(SETTINGS_PATH)
+	var model := car.get_node_or_null("Model") as CarModel if car else null
+	if model:
+		model.refresh_plates()
+
+
 func _set_paint(index: int) -> void:
 	var count := cars[_selected].paint_colors.size()
 	if count == 0:
@@ -472,6 +492,9 @@ func _refresh_all() -> void:
 		name_size -= 2
 	_name_label.add_theme_font_size_override("font_size", name_size)
 	_subtitle_label.text = p.subtitle
+	if _plate_edit and not _plate_edit.has_focus():
+		_plate_edit.text = CarModel.plate_text(p.id)
+		_plate_hint.text = ""
 	_fill_bars(p)
 	_fill_paint()
 	_fill_accents()
@@ -673,6 +696,26 @@ func _build_panel() -> void:
 	_paint_row = HBoxContainer.new()
 	_paint_row.add_theme_constant_override("separation", 8)
 	box.add_child(_paint_row)
+	_spacer(box, 10)
+	# Wunschkennzeichen (pro Auto), wird beim Bestätigen geprüft
+	var plate_row := HBoxContainer.new()
+	plate_row.add_theme_constant_override("separation", 10)
+	box.add_child(plate_row)
+	var plate_label := UiStyle.label("KENNZEICHEN", 13, "semibold", UiStyle.TEXT_DIM, 2)
+	plate_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	plate_row.add_child(plate_label)
+	_plate_edit = LineEdit.new()
+	_plate_edit.custom_minimum_size = Vector2(150.0, 36.0)
+	_plate_edit.placeholder_text = "M-EW 2026"
+	_plate_edit.max_length = 12
+	_plate_edit.add_theme_font_override("font", UiStyle.font("semibold"))
+	_plate_edit.add_theme_font_size_override("font_size", 16)
+	_plate_edit.text_submitted.connect(_set_plate)
+	_plate_edit.focus_exited.connect(func() -> void: _set_plate(_plate_edit.text))
+	plate_row.add_child(_plate_edit)
+	_plate_hint = UiStyle.label("", 13, "regular", UiStyle.TEXT_DIM)
+	_plate_hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	plate_row.add_child(_plate_hint)
 	_spacer(box, 12)
 	# HUD-Farbe und Sportauspuff in einer Zeile
 	var extras := HBoxContainer.new()
@@ -726,6 +769,7 @@ func _build_panel() -> void:
 	box.add_child(bottom)
 	bottom.add_child(_outline_button("Credits", func() -> void: _credits.visible = true))
 	bottom.add_child(_outline_button("Sammlung", _show_collection))
+	bottom.add_child(_outline_button("Rennen", _show_races))
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom.add_child(gap)
@@ -882,6 +926,13 @@ func _spacer(parent: Control, height: float) -> void:
 	spacer.custom_minimum_size = Vector2(0.0, height)
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(spacer)
+
+
+## Statistik der Lichthupe-Rennen (Race)
+func _show_races() -> void:
+	var stats := Race.statistics()
+	Toasts.post(get_tree(), "check", "Rennen: %d gewonnen, %d verloren" % [stats[0], stats[1]],
+		("%d abgebrochen · zuletzt %s" % [stats[2], stats[3]]) if stats[3] != "" else "Noch kein Rennen gefahren")
 
 
 func _show_collection() -> void:

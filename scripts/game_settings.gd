@@ -21,6 +21,7 @@ signal changed
 @export var speedometer: Control
 @export var fps_label: Label
 @export var debug_tools: DebugTools
+@export var cruise: CruiseControl
 ## Schwere Einstellungen (Sichtweite, Vegetation, Gras) erst so lange nach dem letzten
 ## Ändern anwenden (beim Ziehen am Regler nicht bei jedem Schritt alles neu bauen)
 @export var heavy_delay: float = 0.35
@@ -42,7 +43,7 @@ const DEFAULTS := {
 	"grafik": {"qualitaet": "hoch", "render_scale": 0.75, "sichtweite": 2000.0, "schatten": 2, "vegetation": 1.0,
 		"gras": 2, "ssao": true, "spiegelungen": true, "volumennebel": false, "wolkenschatten": true, "verkehr": 1.0},
 	"anzeige": {"vollbild": false, "aufloesung": "1280x720", "vsync": true, "fps_limit": 0, "fps_anzeige": false},
-	"steuerung": {"grip": "sport", "lenkung": 1.0},
+	"steuerung": {"grip": "sport", "lenkung": 1.0, "tempolimit": true},
 	"audio": {"gesamt": 1.0, "motor": 1.0, "umgebung": 1.0, "musik": 0.8},
 	"spiel": {"einheit": "kmh", "tageslaenge": 10.0},
 }
@@ -61,7 +62,9 @@ const ACTIONS: Array = [["accelerate", "Gas"], ["brake", "Bremse / rückwärts"]
 	["reset_car", "Auto aufrichten"], ["photo_mode", "Fotomodus"], ["toggle_map", "Große Karte"],
 	["open_garage", "Garage"], ["cycle_weather", "Wetter wechseln"], ["cycle_season", "Jahreszeit wechseln"],
 	["time_warp", "Zeitraffer (halten)"], ["cycle_paint", "Lackfarbe"], ["toggle_stickers", "Aufkleber"],
-	["toggle_fps", "FPS-Anzeige"]]
+	["toggle_fps", "FPS-Anzeige"], ["cruise_toggle", "Tempomat an/aus"], ["cruise_faster", "Wunschtempo +"],
+	["cruise_slower", "Wunschtempo −"], ["cruise_distance", "Abstandsstufe"], ["flash_lights", "Lichthupe"],
+	["toggle_windows", "Fenster / Dach"]]
 
 var _values: Dictionary = {}
 var _keys: Dictionary = {}  # Aktion -> physischer Tastencode (nur geänderte)
@@ -163,6 +166,9 @@ func _apply_all() -> void:
 func _apply(section: String, key: String) -> void:
 	var value: Variant = _values[section][key]
 	match key:
+		"tempolimit":
+			if cruise:
+				cruise.adopt_limits = value
 		"render_scale":
 			get_tree().root.scaling_3d_scale = value
 		"sichtweite", "vegetation":

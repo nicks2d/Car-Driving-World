@@ -163,6 +163,11 @@ var _blend_time: float = 1.0
 var _change_timer: float = 0.0
 ## Anteil jeder Jahreszeit (für weiche Übergänge), Reihenfolge wie Season
 var _season_weights: PackedFloat32Array = PackedFloat32Array([0.0, 1.0, 0.0, 0.0])
+
+
+## Wie sehr gerade Herbst ist (0–1, weich übergeblendet; z. B. für das Laub hinter dem Auto)
+func autumn_weight() -> float:
+	return _season_weights[Season.AUTUMN]
 var _lightning_timer: float = 3.0
 var _flash_time: float = 10.0
 var _flash_strength: float = 0.0

@@ -10,6 +10,13 @@
 [ext_resource type="Script" path="res://scripts/debug_tools.gd" id="9_debug"]
 [ext_resource type="Shader" path="res://shaders/terrain.gdshader" id="10_terrain_shader"]
 [ext_resource type="Shader" path="res://shaders/horizon.gdshader" id="82_horizon_shader"]
+[ext_resource type="Script" path="res://scripts/speed_limits.gd" id="83_limits"]
+[ext_resource type="Script" path="res://scripts/cruise_control.gd" id="84_cruise"]
+[ext_resource type="Script" path="res://scripts/race.gd" id="85_race"]
+[ext_resource type="Script" path="res://scripts/passby_sound.gd" id="86_passby"]
+[ext_resource type="Script" path="res://scripts/open_windows.gd" id="87_windows"]
+[ext_resource type="Script" path="res://scripts/puddles.gd" id="88_puddles"]
+[ext_resource type="Script" path="res://scripts/autumn_leaves.gd" id="89_leaves"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
@@ -334,7 +341,7 @@ target = NodePath("../Car")
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
-[node name="Speedometer" type="Control" parent="HUD" node_paths=PackedStringArray("car")]
+[node name="Speedometer" type="Control" parent="HUD" node_paths=PackedStringArray("car", "limits", "cruise")]
 layout_mode = 3
 anchors_preset = 3
 anchor_left = 1.0
@@ -350,6 +357,8 @@ grow_vertical = 0
 mouse_filter = 2
 script = ExtResource("50_speedo")
 car = NodePath("../../Car")
+limits = NodePath("../../SpeedLimits")
+cruise = NodePath("../../CruiseControl")
 
 [node name="Minimap" type="Control" parent="HUD" node_paths=PackedStringArray("car", "roads", "navigation", "tiles", "viewpoints")]
 layout_mode = 3
@@ -541,8 +550,9 @@ camera = NodePath("../Camera")
 day_night = NodePath("../DayNight")
 debug_tools = NodePath("../DebugTools")
 
-[node name="Settings" type="Node" parent="." node_paths=PackedStringArray("world_environment", "sun", "day_night", "weather", "terrain", "grass", "roads", "traffic", "car", "garage", "speedometer", "fps_label", "debug_tools")]
+[node name="Settings" type="Node" parent="." node_paths=PackedStringArray("cruise", "world_environment", "sun", "day_night", "weather", "terrain", "grass", "roads", "traffic", "car", "garage", "speedometer", "fps_label", "debug_tools")]
 script = ExtResource("77_settings")
+cruise = NodePath("../CruiseControl")
 world_environment = NodePath("../WorldEnvironment")
 sun = NodePath("../Sun")
 day_night = NodePath("../DayNight")
@@ -565,3 +575,42 @@ big_map = NodePath("../BigMap")
 photo_mode = NodePath("../PhotoMode")
 hud = NodePath("../HUD")
 weather = NodePath("../Weather")
+
+[node name="SpeedLimits" type="Node" parent="." node_paths=PackedStringArray("roads", "car")]
+script = ExtResource("83_limits")
+roads = NodePath("../Roads")
+car = NodePath("../Car")
+
+[node name="CruiseControl" type="Node" parent="." node_paths=PackedStringArray("car", "traffic", "limits")]
+script = ExtResource("84_cruise")
+car = NodePath("../Car")
+traffic = NodePath("../Traffic")
+limits = NodePath("../SpeedLimits")
+
+[node name="Race" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "traffic", "roads", "navigation", "debug_tools")]
+script = ExtResource("85_race")
+car = NodePath("../Car")
+traffic = NodePath("../Traffic")
+roads = NodePath("../Roads")
+navigation = NodePath("../Navigation")
+debug_tools = NodePath("../DebugTools")
+
+[node name="PassbySound" type="Node3D" parent="." node_paths=PackedStringArray("traffic", "camera")]
+script = ExtResource("86_passby")
+traffic = NodePath("../Traffic")
+camera = NodePath("../Camera")
+
+[node name="OpenWindows" type="Node" parent="." node_paths=PackedStringArray("car")]
+script = ExtResource("87_windows")
+car = NodePath("../Car")
+
+[node name="Puddles" type="Node3D" parent="." node_paths=PackedStringArray("car", "limits")]
+script = ExtResource("88_puddles")
+car = NodePath("../Car")
+limits = NodePath("../SpeedLimits")
+
+[node name="AutumnLeaves" type="GPUParticles3D" parent="." node_paths=PackedStringArray("car", "weather")]
+script = ExtResource("89_leaves")
+car = NodePath("../Car")
+weather = NodePath("../Weather")
+world_gen = SubResource("WorldGen_main")

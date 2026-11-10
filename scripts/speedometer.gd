@@ -1,7 +1,9 @@
 extends Control
 ## Tacho unten rechts (Entwurf „Glas“): Drehzahl als 270°-Bogen mit Zahlen pro 1.000/min
 ## und rotem Bereich (je Auto bis zu dessen Begrenzer), in der Mitte das Tempo groß,
-## darunter der Gang im Kästchen und die Drehzahl in Tausend.
+## darunter der Gang im Kästchen und die Drehzahl in Tausend. Oben in der Mitte die
+## Verkehrszeichenerkennung (SpeedLimits): das geltende Limit als rundes Schild, „unbegrenzt“
+## durchgestrichen; ab 10 km/h zu schnell pulsiert es rot.
 
 @export var car: Car
 ## Halbmesser des Bogens und Breite der Linie (UI-Einheiten, Panel ist 300 × 300)
@@ -11,6 +13,8 @@ extends Control
 @export var needle_speed: float = 12.0
 ## Tempo in Meilen pro Stunde statt km/h (Einstellungen > Spiel)
 @export var use_mph: bool = false
+@export var limits: SpeedLimits
+@export var cruise: CruiseControl
 
 const SIGNAL_GREEN := Color("#3FD47A")
 const START_ANGLE: float = PI * 0.75
@@ -79,6 +83,10 @@ func _draw() -> void:
 			_draw_signal_arrow(Vector2(size.x - 34.0, 34.0), 1.0)
 	if car.hazard:
 		_draw_hazard(Vector2(size.x * 0.5, 100.0), car.signal_lit)
+	if cruise and cruise.active:
+		_draw_cruise(Vector2(40.0, 214.0))
+	if limits and limits.effective_limit >= 0:
+		_draw_limit(Vector2(size.x * 0.5, 40.0), limits.effective_limit, car.linear_velocity.length() * 3.6)
 	# Unten: Fahrstufe, Gang im Kästchen, Drehzahl in Tausend
 	var gear_box := Rect2(center.x - 20.0, 248.0, 40.0, 36.0)
 	UiStyle.draw_box(self, gear_box, Color(1, 1, 1, 0.12), 9, Color(1, 1, 1, 0.16), 1)
@@ -87,6 +95,42 @@ func _draw() -> void:
 	UiStyle.draw_text(self, "R" if car.gear < 0 else "D", Vector2(center.x - 38.0, 272.0), 15, "semibold", UiStyle.TEXT_DIM, 0.5)
 	UiStyle.draw_text(self, ("%.1f" % (_rpm / 1000.0)), Vector2(center.x + 44.0, 272.0), 15, "semibold",
 		UiStyle.TEXT_DIM, 0.5)
+
+
+## Tempomat: Symbol (Tacho mit Pfeil) und Wunschtempo, darunter die Abstandsstufe als Balken
+## (hell, wenn ein Vordermann erkannt ist), rot blinkend, wenn er mehr bremsen müsste
+func _draw_cruise(at: Vector2) -> void:
+	var accent := UiStyle.RED if cruise.warning and fmod(Time.get_ticks_msec() / 250.0, 2.0) < 1.0 else UiStyle.accent
+	draw_arc(at, 11.0, PI * 0.8, PI * 2.2, 20, accent, 2.5, true)
+	draw_line(at, at + Vector2.from_angle(-PI * 0.3) * 8.0, accent, 2.5, true)
+	UiStyle.draw_text(self, str(roundi(cruise.set_speed_kmh)), at + Vector2(0, 30), 17, "semibold", accent, 0.5)
+	var bars := cruise.gap_level + 1
+	for k in cruise.gaps.size():
+		var lit := k < bars
+		var color := (accent if cruise.leader_gap >= 0.0 else Color(1, 1, 1, 0.75)) if lit else Color(1, 1, 1, 0.15)
+		draw_rect(Rect2(at + Vector2(-14.0, 40.0 + k * 6.0), Vector2(28.0 - k * 4.0, 3.0)), color)
+
+
+## Erkanntes Limit: weiß mit rotem Rand und Zahl, 0 = unbegrenzt (fünf schräge Striche)
+func _draw_limit(center: Vector2, limit: int, speed_kmh: float) -> void:
+	var r := 22.0
+	if limit > 0 and speed_kmh > limit + 10.0:
+		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 1000.0 * TAU * 1.6)
+		draw_circle(center, r + 6.0 + pulse * 3.0, Color(UiStyle.RED, 0.25 + pulse * 0.35))
+	draw_circle(center, r, Color.WHITE)
+	if limit > 0:
+		draw_arc(center, r - 3.0, 0.0, TAU, 40, UiStyle.RED, 6.0, true)
+		UiStyle.draw_text(self, str(limit), center + Vector2(0, 7), 19 if limit < 100 else 16, "extrabold",
+			Color(0.05, 0.05, 0.05), 0.5)
+	else:
+		for k in 5:
+			var offset := (k - 2) * 4.5
+			var direction := Vector2(1, -1).normalized()
+			var normal := Vector2(1, 1).normalized() * offset
+			var half := sqrt(maxf(r * r - offset * offset, 0.0)) * 0.85
+			draw_line(center + normal - direction * half, center + normal + direction * half, Color(0.15, 0.15, 0.15), 1.6, true)
+	if limits.current_wet_only and limit == limits.current_limit:
+		UiStyle.draw_text(self, "Nässe", center + Vector2(0, r + 14.0), 11, "semibold", UiStyle.TEXT_DIM, 0.5)
 
 
 ## Blinkerpfeil (direction: -1 = nach links, 1 = nach rechts)

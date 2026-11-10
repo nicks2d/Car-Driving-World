@@ -72,6 +72,17 @@ var in_tunnel: bool = false
 var sport_exhaust: bool = true
 ## false = Gas und Bremse werden nicht gelesen, Handbremse an (Test-Fotos: Auto bleibt stehen)
 var throttle_enabled: bool = true
+## Tempomat (CruiseControl): Gas 0–1 (negativ = aus) und Bremse 0–1. Gibt der Fahrer selbst Gas,
+## zählt seins; seine Bremse zählt immer.
+var assist_throttle: float = -1.0
+var assist_brake: float = 0.0
+## Fenster offen (0 = zu, 1 = ganz unten; Taste V, OpenWindows)
+var windows_open: float = 0.0
+## Lichthupe (F, setzt CarSignals): solange > 0 blendet das Licht auf (Sekunden)
+var flash_time: float = 0.0
+## Wird gesendet, wenn der Fahrer die Lichthupe betätigt (für spontane Rennen; CarSignals sendet)
+@warning_ignore("unused_signal")
+signal flashed
 ## Blinker (setzt CarSignals): 1 = links, -1 = rechts, 0 = aus; Warnblinker; leuchtet gerade
 var turn_signal: int = 0
 var hazard: bool = false
@@ -215,6 +226,8 @@ func _update_steering(delta: float, speed_kmh: float) -> void:
 ## Drehzahl aus dem Tempo und Gangwahl wie bei einer Automatik
 func _update_gearbox(delta: float, forward_speed: float) -> void:
 	throttle_input = Input.get_action_strength("accelerate") if throttle_enabled else 0.0
+	if throttle_enabled and assist_throttle >= 0.0 and throttle_input < 0.05:
+		throttle_input = assist_throttle
 	_shift_timer = maxf(_shift_timer - delta, 0.0)
 	# Rückwärtsgang: nur aus dem Stand mit S. Gas legt wieder den 1. Gang ein.
 	if gear == -1:
@@ -315,7 +328,7 @@ func _drive_force() -> float:
 
 func _update_engine_and_brakes(forward_speed: float) -> void:
 	var throttle: float = throttle_input
-	var brake_input: float = Input.get_action_strength("brake")
+	var brake_input: float = maxf(Input.get_action_strength("brake"), assist_brake if throttle_enabled else 0.0)
 	var drive_force: float = 0.0
 	var brake_value: float = 0.0
 	var speed_kmh := forward_speed * 3.6
