@@ -18,6 +18,7 @@
 [ext_resource type="Script" path="res://scripts/puddles.gd" id="88_puddles"]
 [ext_resource type="Script" path="res://scripts/autumn_leaves.gd" id="89_leaves"]
 [ext_resource type="Script" path="res://scripts/dyno.gd" id="90_dyno"]
+[ext_resource type="Script" path="res://scripts/waterfalls.gd" id="91_waterfalls"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
@@ -622,3 +623,8 @@ script = ExtResource("90_dyno")
 car = NodePath("../Car")
 cars = Array[ExtResource("57_profile")]([ExtResource("52_m2"), ExtResource("53_e30"), ExtResource("54_e92"), ExtResource("55_f90"), ExtResource("56_g90"), ExtResource("79_m4csl"), ExtResource("80_sl65"), ExtResource("81_c63")])
 debug_tools = NodePath("../DebugTools")
+
+[node name="Waterfalls" type="Node3D" parent="." node_paths=PackedStringArray("car")]
+script = ExtResource("91_waterfalls")
+car = NodePath("../Car")
+world_gen = SubResource("WorldGen_main")

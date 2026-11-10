@@ -237,6 +237,8 @@ func _draw_dashed_polyline(points: PackedVector2Array, color: Color, width: floa
 
 
 func _draw_markers() -> void:
+	if show_unknown:
+		_draw_landmarks()
 	_draw_rest_areas()
 	if viewpoints:
 		_draw_viewpoints()
@@ -255,6 +257,19 @@ func _draw_markers() -> void:
 		var arrow := PackedVector2Array([p + forward * 9.0, p - forward * 6.0 + side * 6.5,
 			p - forward * 2.5, p - forward * 6.0 - side * 6.5])
 		draw_colored_polygon(arrow, Color.WHITE)
+
+
+## Namen besonderer Orte auf der großen Karte: Talsperren (nur schon berechnete, sonst würde die
+## Karte beim Verschieben Stauseen ausrechnen)
+func _draw_landmarks() -> void:
+	var visible_rect := Rect2(Vector2.ZERO, size).grow(60.0)
+	for lake: WorldGen.Lake in roads.world_gen.cached_reservoirs_near(_view_rect):
+		var p := world_to_screen(lake.center)
+		if not visible_rect.has_point(p):
+			continue
+		var text := "Talsperre %s" % roads.highways.place_name(lake.name_cell)
+		UiStyle.draw_text(self, text, p + Vector2(1.5, 1.5), 14, "semibold", Color(0.0, 0.05, 0.12, 0.8), 0.5)
+		UiStyle.draw_text(self, text, p, 14, "semibold", Color(0.78, 0.9, 1.0), 0.5)
 
 
 ## Raststätten: Zapfsäule im dunklen Kreis (an der Parkplatz-Mitte)

@@ -119,6 +119,7 @@ assets/
 - [x] Extra: Lichthupe und spontane Rennen gegen KI-Autos, Vorbeifahrt-Geräusche
 - [x] Extra: Fenster runter, Wunschkennzeichen, Pfützen mit Fontäne, Herbstlaub
 - [x] Extra: Werkstatt mit Leistungsprüfstand (Messlauf, PS-/Nm-Diagramm, Vergleich von 3 Autos)
+- [x] Extra: Talsperren mit Staumauer und Stausee, Wasserfälle mit Becken, Gischt und Rauschen
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -827,6 +828,55 @@ assets/
   (sonst würde sie am Tunnelportal in den Berg schneiden). Tunnel-Prüfwerkzeug danach: 0 Stellen.
   Der Test-Autopilot fährt dort jetzt mit 89 km/h durch. An der Kreuzung Mühlingen (945, 600)
   schneidet er die Kurve und bleibt manchmal hängen (Autopilot, keine Straßen-Sache).
+- Talsperren (`world_gen.gd`, Lake mit `reservoir`): je 10-km-Zelle (Chance 0,8) dort, wo die
+  Luftlinie zwischen zwei Ortszellen-Mitten einen vollen Fluss fast quer (> 60°) kreuzt und das Tal
+  eng ist (beide Hänge erreichen die Krone 22–36 m über dem Fluss, Mauer ≤ 700 m). Die
+  Flussrichtung kommt aus der Null-Linie des Fluss-Rauschens (`river_direction`; `river_flow` ist
+  nur das großräumige Gefälle). Stausee = Flutfüllung (40-m-Raster, bis 4,5 km) bis 3 m unter
+  die Krone; abgelehnt, wenn er den Rand erreicht, um die Mauer läuft, unter 0,15 km² oder über
+  12 km² hat oder einen runden See berührt. Gelände bleibt (das Tal wird nur gefüllt). Nur aus dem
+  Gelände, damit die Reihenfolge egal ist. Gemessen: 9 Talsperren auf 50 × 50 km (Flüsse sind
+  selten: nur ~36 Stellen, an denen eine Straßenlinie einen vollen Fluss kreuzt), 42 ms pro
+  Zelle im Mittel. Prüfen: `tools/landmarks.gd` (Liste mit Foto-Befehlen).
+- Der Stausee zählt überall als Wasser (`lakes_near`, `Lake.covers`/`surface_at`, nie hinter der
+  Mauer): Orte entstehen nicht darin, Wegsuche und Autobahn weichen aus oder bauen Brücken,
+  Karte, Gras, Bäume, Auto im Wasser. Fernsicht (Horizont-Ring, große Karte) nimmt nur schon
+  berechnete (`cached_reservoirs_near`), sonst würde sie Flutfüllungen anstoßen.
+- Straße über die Krone (`RoadSegment.dam`): Die Wegsuche läuft in zwei Teilen (Ort → Mauerende,
+  Mauerende → Ort, `_find_path_via_dam`), dazwischen die Kronenlinie als Gerade mit 90 m Anlauf
+  an beiden Enden (dort liegen die Kurven); die Mauerenden sind beim Zusammenfassen von Knicken
+  gesperrt (`_locked`). Abfahrtsrichtung am Ort zeigt auf das nahe Mauerende
+  (`RoadNetwork.dam_entry`), sonst Haarnadel vor der Kreuzung. Korridor breiter (`min_corridor`).
+  Höhe auf der Krone fest; zählt sonst wie Brücke (kein Bankett, keine Böschung, Ceiling darunter),
+  nur Platte/Brüstung/Pfeiler baut die Mauer. Talsperren-Straßen gibt es immer und sie gewinnen bei
+  Überlappungen (`_priority` −1).
+- Staumauer (`dam.gd`, gebaut vom WaterManager aus der Kronenlinie, steht also auch ohne Straße):
+  Krone mit Platte, Gehwegen, Betonbrüstung (Kollision) und Handlauf, Laternen alle 32 m
+  abwechselnd (nachts 4 echte Lichter bis 180 m), Wasserseite senkrecht bis unter den Spiegel,
+  Talseite nach unten flacher (0,72 m pro m) und in der Mitte 9 m nach außen gewölbt, Beton-Shader
+  mit Fugen und Wasserspuren (`dam.gdshader`). Überlauf über dem Fluss: dunkle Öffnungen unter der
+  Fahrbahn, fallendes Wasser über die Talseite, unten Gischt, Nebel, Rauschen. Am Ende `dam_b`
+  ist die Mauer zur Seeseite 7,5 m breiter: dort die Parkbucht als Aussichtspunkt „Talsperre …“
+  (ohne eingeebnetes Gelände darunter). Karte: Name „Talsperre <Ort>“ am See.
+- Stausee-Fläche (`WaterManager._reservoir_mesh`): je Rasterzeile lange Streifen, nah an der Mauer
+  Zelle für Zelle 6 m vor der Kronenlinie abgeschnitten. Darunter kein Fluss (Chunk-Job).
+- Wasserfälle (`world_gen.gd` `waterfalls_near`, `waterfalls.gd`): je 2,5-km-Zelle Chance 0,35,
+  steilster von 64 Punkten (Steigung > 1,1) mit Kante in einer Rinne (seitlich höher) und Hang
+  darüber (+25 m auf 120 m), nicht im Schnee, Fuß unter der Baumgrenze, 16–55 m hoch. Gemessen:
+  18 auf 40 × 40 km. Band aus fallendem Wasser (`waterfall.gdshader`, Streifen laufen nach unten,
+  Ränder ausgefranst per Dither) 0,5 m über dem Fels, Becken = kleiner See mit Felsrand
+  (`Lake.pool`, gräbt sich ins Gelände), bis 320 m Gischt, Nebel und Rauschen (3D, prozedural).
+  Wasserfall bis 300 m an einer Straße → Aussichtspunkt „Wasserfall bei …“.
+- Überlappung mit großem Höhenunterschied (`RoadSegment.comes_close`): zählt nur dann nicht, wenn
+  die obere Straße dort eine Brücke ist oder die untere im Tunnel liegt. Vorher fuhr eine
+  Landstraße am Start (0, −1, 1) 10 m neben und 13 m unter einer Autobahn auf einem Damm entlang,
+  mitten in den Damm hinein (Autopilot überschlug sich bei (105, 194)).
+- Testen: `--cam=X,Z,H --lookat=X,Z,H` freie Kamera (H über dem Gelände), z. B. Talsperre
+  Rosenstadt von oben `--pos=2700,4200 --cam=2560,4620,260 --lookat=2700,4200,0`, Krone
+  `--pos=2500,4186 --heading=86`, Wasserfall `--pos=1200,4071 --cam=1330,4030,90
+  --lookat=1190,4074,10`, Karte `--pos=2700,4300 --map`. Achtung: Ist das Spielfenster ganz
+  verdeckt, zeichnet macOS es nicht und das Foto hängt (Hauptthread in nanosleep); Testläufe mit
+  `--always-on-top` starten.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

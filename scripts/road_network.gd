@@ -300,6 +300,13 @@ func node_at(cell: Vector2i) -> Variant:
 	var margin := cell_size * 0.15
 	var best: Variant = null
 	var best_score := INF
+	# Führt eine Straße von hier über eine Staumauer, soll der Ort hinter dem nahen Mauerende
+	# liegen (sonst müsste die Straße über die Mauer hinaus und in einer Kehre zurück)
+	var dams: Array = []
+	for option: Array in _arm_keys(cell):
+		var lake := world_gen.dam_for_road(option[0])
+		if lake:
+			dams.append(lake)
 	# Mehrere Zufallsstellen probieren und die flachste, tiefste nehmen
 	for i in 8:
 		var p := Vector2(cell.x * cell_size + rng.randf_range(margin, cell_size - margin),
@@ -312,7 +319,7 @@ func node_at(cell: Vector2i) -> Variant:
 			continue
 		var too_close_to_lake := false
 		for lake: WorldGen.Lake in lakes:
-			if p.distance_to(lake.center) < lake.radius + 50.0:
+			if lake.covers(p, 50.0):
 				too_close_to_lake = true
 		if too_close_to_lake:
 			continue
@@ -321,6 +328,13 @@ func node_at(cell: Vector2i) -> Variant:
 		var slope := (absf(world_gen.terrain_height(p.x + 20.0, p.y, lakes) - h)
 			+ absf(world_gen.terrain_height(p.x, p.y + 20.0, lakes) - h)) / 20.0
 		var score := relief + slope * 400.0
+		for lake: WorldGen.Lake in dams:
+			var along := (lake.dam_b - lake.dam_a).normalized()
+			var center := Vector2(cell) * cell_size + Vector2.ONE * cell_size * 0.5
+			var end_point := lake.dam_a if center.distance_to(lake.dam_a) < center.distance_to(lake.dam_b) else lake.dam_b
+			var outward := -along if end_point == lake.dam_a else along
+			if (p - end_point).dot(outward) < 120.0:
+				score += 100000.0
 		if relief < 300.0 and score < best_score:
 			best_score = score
 			best = Vector3(p.x, h, p.y)
@@ -338,7 +352,8 @@ func _edge_exists(cell: Vector2i, dir: int) -> bool:
 	if node_at(cell) != null and node_at(other) != null:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = world_gen.hash_cell(cell.x, cell.y, 303 + dir)
-		exists = rng.randf() < connection_chance
+		# Über eine Staumauer führt immer eine Straße
+		exists = rng.randf() < connection_chance or world_gen.dam_for_road(key) != null
 	_edge_cache[key] = exists
 	return exists
 
@@ -378,7 +393,13 @@ func _departure(cell: Vector2i, toward: Vector2i) -> Vector2:
 			var other_cell := _end_cell(key) if option[1] else Vector2i(key.x, key.y)
 			var other: Vector3 = node_at(other_cell)
 			others.append(other_cell)
-			angles.append(atan2(other.z - center.z, other.x - center.x))
+			# Über eine Staumauer: zum nahen Mauerende statt zum anderen Ort
+			var lake := world_gen.dam_for_road(key)
+			if lake:
+				var entry_point := dam_entry(lake, Vector2(center.x, center.z), Vector2(other.x, other.z))
+				angles.append(atan2(entry_point.y - center.z, entry_point.x - center.x))
+			else:
+				angles.append(atan2(other.z - center.z, other.x - center.x))
 		# Zu eng beieinander liegende Richtungen ein Stück auseinanderdrehen
 		for attempt in 30:
 			for a in angles.size():
@@ -395,8 +416,20 @@ func _departure(cell: Vector2i, toward: Vector2i) -> Vector2:
 	return _departures[cell].get(toward, Vector2.ZERO)
 
 
+## Talsperren-Straße: An welchem Mauerende (verlängert um RoadSegment.DAM_RUNOUT) fährt die
+## Straße von here aus auf die Krone, wenn sie zu other weiterführt? (Kürzere Summe der Wege)
+static func dam_entry(lake: WorldGen.Lake, here: Vector2, other: Vector2) -> Vector2:
+	var along := (lake.dam_b - lake.dam_a).normalized()
+	var ext_a := lake.dam_a - along * RoadSegment.DAM_RUNOUT
+	var ext_b := lake.dam_b + along * RoadSegment.DAM_RUNOUT
+	return ext_a if here.distance_to(ext_a) + other.distance_to(ext_b) <= here.distance_to(ext_b) + other.distance_to(ext_a) else ext_b
+
+
 ## Fester Zufallswert pro Abschnitt: Überlappen sich zwei, fällt der mit dem größeren weg
 func _priority(key: Vector3i) -> int:
+	# Straßen über eine Staumauer gehen vor (sonst fiele die Mauer weg)
+	if world_gen.dam_for_road(key) != null:
+		return -1
 	return world_gen.hash_cell(key.x * 2 + key.z, key.y, 404)
 
 
@@ -1115,6 +1148,16 @@ func _make_segment(key: Vector3i) -> RoadSegment:
 	segment.min_curve_radius = min_curve_radius
 	segment.max_bank = max_bank
 	segment.crossings = crossings
+	# Talsperre: Die Wegsuche muss bis zur Mauer reichen (die Orte liegen nicht in der Zellmitte,
+	# die Mauer wurde an der Luftlinie der Zellmitten gesucht)
+	var dam := world_gen.dam_for_road(key)
+	if dam:
+		var a := Vector2(segment.start.x, segment.start.z)
+		var b := Vector2(segment.end.x, segment.end.z)
+		var t := clampf((dam.dam_center - a).dot(b - a) / a.distance_squared_to(b), 0.0, 1.0)
+		var off := dam.dam_center.distance_to(a.lerp(b, t))
+		segment.dam = dam
+		segment.min_corridor = off + dam.dam_a.distance_to(dam.dam_b) * 0.5 + 150.0
 	return segment
 
 

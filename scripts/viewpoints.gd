@@ -21,7 +21,10 @@ const CHANCE: float = 0.22
 ## Eine „Gegend“ sind 6 × 6 Ortszellen (7,2 km)
 const REGION_CELLS: int = 6
 const SAVE_PATH := "user://aussichtspunkte.cfg"
-const KIND_NAMES := {"view": "Aussicht", "lake": "Seeufer", "pass": "Passhöhe"}
+const KIND_NAMES := {"view": "Aussicht", "lake": "Seeufer", "pass": "Passhöhe", "dam": "Talsperre",
+	"waterfall": "Wasserfall"}
+## Bis so weit von der Straße zählt ein Wasserfall für eine Parkbucht (Meter)
+const WATERFALL_REACH: float = 300.0
 const REST_VIEW_NAMES := {"lake": "Seeblick", "mountain": "Bergblick"}
 ## Auf dem Parkplatz einer Raststätte mit Aussicht: so nah an der Mitte (Meter)
 const REST_DISCOVER_RADIUS: float = 110.0
@@ -39,13 +42,24 @@ var _timer: float = 0.0
 var _map_timer: float = 0.0
 
 
-## Hat diese Landstraße einen Aussichtspunkt? (nur aus dem Seed)
+## Hat diese Landstraße einen Aussichtspunkt? (nur aus dem Seed) Immer, wenn sie über eine
+## Staumauer führt oder ein Wasserfall nah an ihrer Luftlinie liegt.
 static func has_spot(world_gen: WorldGen, key: Vector3i) -> bool:
 	if not RoadNetwork.is_road_key(key):
 		return false
 	var rng := RandomNumberGenerator.new()
 	rng.seed = world_gen.hash_cell(key.x, key.y, 404 + key.z)
-	return rng.randf() < CHANCE
+	if rng.randf() < CHANCE or world_gen.dam_for_road(key) != null:
+		return true
+	var a := (Vector2(key.x, key.y) + Vector2(0.5, 0.5)) * WorldGen.PLACE_CELL
+	var b := a + (Vector2(WorldGen.PLACE_CELL, 0.0) if key.z == 0 else Vector2(0.0, WorldGen.PLACE_CELL))
+	for fall: Dictionary in world_gen.waterfalls_near(Rect2(a, Vector2.ZERO).expand(b).grow(WATERFALL_REACH)):
+		var bottom: Vector3 = fall["bottom"]
+		var q := Vector2(bottom.x, bottom.z)
+		var t := clampf((q - a).dot(b - a) / a.distance_squared_to(b), 0.0, 1.0)
+		if q.distance_to(a.lerp(b, t)) < WATERFALL_REACH + 150.0:
+			return true
+	return false
 
 
 static func spot_id(key: Vector3i) -> String:
@@ -81,6 +95,8 @@ static func bay_offset(segment: RoadSegment) -> float:
 static func find_spot(segment: RoadSegment) -> Dictionary:
 	var points := segment.points
 	var n := points.size()
+	if segment.dam_range.x >= 0:
+		return _dam_spot(segment)
 	if n < END_MARGIN * 2 + 10:
 		return {}
 	var world_gen := segment.world_gen
@@ -88,9 +104,15 @@ static func find_spot(segment: RoadSegment) -> Dictionary:
 	var offset := bay_offset(segment)
 	var best: Dictionary = {}
 	var best_score := -INF
+	var falls: Array = world_gen.waterfalls_near(segment.bounds.grow(WATERFALL_REACH))
 	for i in range(END_MARGIN, n - END_MARGIN, 4):
 		if not _bay_fits(segment, i):
 			continue
+		# Talsperre: gleich hinter der Mauer, auf der Seite des Stausees
+		if segment.dam_range.x >= 0:
+			var gap := mini(absi(i - segment.dam_range.x), absi(i - segment.dam_range.y))
+			if gap > 70:
+				continue
 		# Passhöhe: höchster Punkt weit und breit, 400 m davor und danach je 30 m tiefer
 		var crest := points[i].y - points[maxi(i - 100, 0)].y > 30.0 and points[i].y - points[mini(i + 100, n - 1)].y > 30.0
 		for k in range(maxi(i - 25, 0), mini(i + 26, n)):
@@ -120,22 +142,53 @@ static func find_spot(segment: RoadSegment) -> Dictionary:
 			drop /= 9.0
 			var kind := "view"
 			var score := drop
+			var look := s
 			if shore > 0.0:
 				kind = "lake"
 				score = 1000.0 + shore + drop
 			elif crest:
 				kind = "pass"
 				score = 500.0 + drop
+			# Wasserfall in Sichtweite geht vor (näher ist besser)
+			for fall: Dictionary in falls:
+				var bottom: Vector3 = fall["bottom"]
+				var d := Vector2(bottom.x - center.x, bottom.z - center.z).length()
+				if d < WATERFALL_REACH and score < 1800.0 - d:
+					kind = "waterfall"
+					score = 1800.0 - d
+					look = Vector3(bottom.x - center.x, 0.0, bottom.z - center.z).normalized()
 			if score > best_score:
 				best_score = score
-				best = {"index": i, "side": side, "kind": kind, "center": center, "look": s}
+				best = {"index": i, "side": side, "kind": kind, "center": center, "look": look}
 	return best
 
 
+## Talsperre: Bucht auf der Mauer selbst, am Ende dam_b auf der Seeseite (dort ist die Mauer
+## breiter, siehe Dam.BAY_*), Blick über den Stausee
+static func _dam_spot(segment: RoadSegment) -> Dictionary:
+	var lake := segment.dam
+	var along := (lake.dam_b - lake.dam_a).normalized()
+	var target := lake.dam_b - along * Dam.BAY_CENTER
+	var best := -1
+	var best_distance := INF
+	for i in range(segment.dam_range.x, segment.dam_range.y + 1):
+		var d := Vector2(segment.points[i].x, segment.points[i].z).distance_to(target)
+		if d < best_distance:
+			best_distance = d
+			best = i
+	if best < 0 or best_distance > 8.0:
+		return {}
+	var toward := Vector3(-lake.flow.x, 0.0, -lake.flow.y)
+	var right := segment.direction_at(best).cross(Vector3.UP).normalized()
+	var side := 1.0 if right.dot(toward) > 0.0 else -1.0
+	var center := segment.points[best] + right * side * bay_offset(segment)
+	return {"index": best, "side": side, "kind": "dam", "center": center, "look": toward}
+
+
 ## Passt an Punkt i eine Bucht? Keine Brücke, kein Tunnel, keine enge Kurve, nicht zu steil.
-static func _bay_fits(segment: RoadSegment, i: int) -> bool:
+static func _bay_fits(segment: RoadSegment, i: int, max_curvature: float = 1.0 / 250.0) -> bool:
 	for j in range(i - 7, i + 8):
-		if segment.bridge[j] == 1 or segment.tunnel[j] == 1 or absf(segment.curvature[j]) > 1.0 / 250.0:
+		if segment.bridge[j] == 1 or segment.tunnel[j] == 1 or absf(segment.curvature[j]) > max_curvature:
 			return false
 		if absf(segment.points[j + 1].y - segment.points[j].y) > RoadSegment.POINT_SPACING * 0.06:
 			return false
@@ -146,6 +199,9 @@ static func _bay_fits(segment: RoadSegment, i: int) -> bool:
 ## je (x, y, z, Radius)
 static func bay_pads(segment: RoadSegment) -> PackedVector4Array:
 	var result := PackedVector4Array()
+	# Auf der Staumauer liegt die Bucht auf Beton, das Gelände darunter bleibt
+	if segment.viewpoint.get("kind", "") == "dam":
+		return result
 	var i0: int = segment.viewpoint["index"]
 	var side: float = segment.viewpoint["side"]
 	var offset := bay_offset(segment)
@@ -177,8 +233,12 @@ func _process(delta: float) -> void:
 		_update_map_spots()
 
 
-## Name eines Aussichtspunkts, z. B. „Seeufer bei Tannbach“
+## Name eines Aussichtspunkts, z. B. „Seeufer bei Tannbach“, „Talsperre Tannbach“
 func spot_name(key: Vector3i, spot: Dictionary) -> String:
+	if spot["kind"] == "dam":
+		var lake := roads.world_gen.dam_for_road(key)
+		if lake:
+			return "Talsperre %s" % roads.highways.place_name(lake.name_cell)
 	return "%s bei %s" % [KIND_NAMES[spot["kind"]], roads.highways.place_name(Vector2i(key.x, key.y))]
 
 

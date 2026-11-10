@@ -63,6 +63,10 @@ var tunnel_cost: float = TUNNEL_COST
 var portal_cost: float = PORTAL_COST
 ## Fester Weg statt Wegsuche (x/z-Punkte), z. B. für Zubringer und Rampen
 var fixed_path: PackedVector2Array
+## Talsperre, über deren Krone diese Landstraße führt (WorldGen.Lake mit reservoir), sonst null;
+## die Wegsuche sucht dann mindestens so breit links und rechts der Luftlinie (Meter)
+var dam: WorldGen.Lake
+var min_corridor: float = 0.0
 ## false: Höhe gleichmäßig von start.y nach end.y (Rampen), statt dem Gelände zu folgen
 var follow_ground: bool = true
 ## Gerade abgeschnittene Enden (breite, gerade Parkplätze): Das Gelände wird hinter den Enden
@@ -116,6 +120,10 @@ var points: PackedVector3Array
 var ground: PackedFloat32Array
 ## 1 = an diesem Punkt ist die Straße eine Brücke (über Wasser oder hoch über dem Gelände)
 var bridge: PackedByteArray
+## 1 = auf der Staumauer (zählt sonst wie Brücke, nur Platte, Brüstung und Pfeiler baut die Mauer);
+## erster und letzter Punkt auf der Mauer (-1 = keine)
+var on_dam := PackedByteArray()
+var dam_range := Vector2i(-1, -1)
 ## Krümmung an jedem Punkt (1 / Radius): positiv = Linkskurve, 0 = Gerade
 var curvature: PackedFloat32Array
 ## Querneigung an jedem Punkt: positiv = linke Seite tiefer (in Linkskurven), 0.05 = 5 %
@@ -219,7 +227,8 @@ func build() -> void:
 	var straight := Vector2(start.x, start.z).distance_to(Vector2(end.x, end.z))
 	var best := _build_variant(false)
 	# Großer Umweg oder gar kein Weg: auch eine Variante rechnen, die Berge durchbohren darf.
-	if best.is_empty() or best["length"] > straight * DETOUR_FOR_TUNNEL:
+	# (Straßen über eine Staumauer suchen ohne Tunnel: die Wegsuche läuft in zwei Teilen)
+	if dam == null and (best.is_empty() or best["length"] > straight * DETOUR_FOR_TUNNEL):
 		var bored := _build_variant(true)
 		# Die Tunnel-Variante gewinnt nur mit Tunnel (sonst bleibt die Straße wie bisher)
 		# und wenn sie deutlich günstiger ist
@@ -237,11 +246,13 @@ func build() -> void:
 	tunnel = best["tunnel"]
 	tunnel_ranges = best["tunnel_ranges"]
 	bounds = best["bounds"]
+	on_dam = best["on_dam"]
+	dam_range = best["dam_range"]
 	valid = true
 	SpeedLimits.compute(self)
 	_make_sag()
 	# Manche Landstraßen bekommen einen Aussichtspunkt: beste Stelle für die Parkbucht suchen
-	if Viewpoints.has_spot(world_gen, key):
+	if dam_range.x >= 0 or Viewpoints.has_spot(world_gen, key):
 		viewpoint = Viewpoints.find_spot(self)
 
 
@@ -347,13 +358,14 @@ func extra_at(i: int, side: float) -> float:
 
 ## Eine Variante komplett berechnen (Weg, Kurven, Profil). Leer = kein vernünftiger Weg.
 func _build_variant(allow_tunnels: bool) -> Dictionary:
-	var path := _find_path(allow_tunnels)
+	var path := _find_path_via_dam() if dam else _find_path(allow_tunnels)
 	if path.size() < 2:
 		return {}
 	# Kleine Zickzacks der Wegsuche entfernen: übrig bleibt ein Polygonzug aus langen Geraden.
 	# Die geraden Kreuzungszufahrten (erster und letzter Abschnitt) bleiben unverändert.
-	var last := path.size() - 1
-	path = PackedVector2Array([path[0]]) + _simplify(path.slice(1, last), simplify_tolerance) + PackedVector2Array([path[last]])
+	# (Mit Staumauer schon in _find_path_via_dam, jeder Teil für sich.)
+	if dam == null:
+		path = _simplified(path)
 	if path.size() < 4:
 		return {}
 	if not _fit_curves(path):
@@ -366,6 +378,7 @@ func _build_variant(allow_tunnels: bool) -> Dictionary:
 		tunnel_length += (r.y - r.x) * POINT_SPACING
 	return {"points": points, "curvature": curvature, "bank": bank, "ground": ground,
 		"bridge": bridge, "tunnel": tunnel, "tunnel_ranges": tunnel_ranges.duplicate(), "bounds": bounds,
+		"on_dam": on_dam, "dam_range": dam_range,
 		"length": (points.size() - 1) * POINT_SPACING, "tunnel_length": tunnel_length}
 
 
@@ -386,7 +399,7 @@ func _find_path(allow_tunnels: bool) -> PackedVector2Array:
 	var dir_u := (b - a) / length
 	var dir_v := Vector2(-dir_u.y, dir_u.x)
 	var margin := 150.0
-	var half_width := corridor_half_width(length)
+	var half_width := maxf(corridor_half_width(length), min_corridor)
 	var nu := int((length + 2.0 * margin) / grid_step) + 1
 	var nv := int(2.0 * half_width / grid_step) + 1
 	var grid_origin := a - dir_u * margin - dir_v * half_width
@@ -408,10 +421,24 @@ func _find_path(allow_tunnels: bool) -> PackedVector2Array:
 			var h := world_gen.terrain_height(p.x, p.y, lakes)
 			heights[i] = h
 			var penalty := (h - world_gen.ground_level(p.x, p.y)) * 0.02
+			# Talsperre: Auf der Krone ist es flach und trocken, der Fluss darunter ist gesperrt
+			# (die Straße soll über die Mauer führen)
+			if dam and _dam_distance(p) < 12.0:
+				heights[i] = dam.crest
+				extra[i] = 0.0
+				continue
+			if dam:
+				var below := (p - dam.dam_center).dot(dam.flow)
+				# Direkt unter der Mauer (bis 90 m) und am Fluss talab (1,5 km) kommt man nicht durch
+				if below > -12.0 and below < 90.0 and dam.dam_distance(p) < 90.0 + 15.0:
+					penalty += 100000.0
+				elif p.distance_to(dam.dam_center) < 1500.0 and below > 0.0 \
+						and world_gen.river_surface_near(p.x, p.y, 25.0) > WorldGen.NO_WATER:
+					penalty += 100000.0
 			if world_gen.water_level_at(p.x, p.y, lakes) > WorldGen.NO_WATER:
 				var in_lake := false
 				for lake: WorldGen.Lake in lakes:
-					if p.distance_to(lake.center) < lake.radius + 15.0:
+					if lake.covers(p, 15.0):
 						in_lake = true
 				penalty += 100000.0 if in_lake else 250.0
 			# In den ersten und letzten 250 m soll die Straße in einem Kegel von ±30° um ihre
@@ -710,7 +737,15 @@ func _fit_curves(poly: PackedVector2Array) -> bool:
 				candidate_radius = radius
 				candidate = c
 		if tightest_radius < min_curve_radius:
-			poly = _merge_corner(poly, tightest, INF)
+			var merged := _merge_corner(poly, tightest, INF)
+			# Gesperrter Knick (Staumauer): stattdessen einen Nachbarn zusammenfassen
+			if merged.size() < 2 and _is_locked(poly[tightest]):
+				for other: int in [tightest - 1, tightest + 1]:
+					if other > 0 and other < poly.size() - 1 and not _is_locked(poly[other]):
+						merged = _merge_corner(poly, other, INF)
+						if merged.size() >= 2:
+							break
+			poly = merged
 			if poly.size() < 2:
 				return false
 		elif candidate != -1:
@@ -721,6 +756,13 @@ func _fit_curves(poly: PackedVector2Array) -> bool:
 				poly = merged
 		else:
 			_sample_curves(poly, tangents)
+			return true
+	return false
+
+
+func _is_locked(p: Vector2) -> bool:
+	for k in _locked:
+		if k.distance_squared_to(p) < 0.01:
 			return true
 	return false
 
@@ -786,6 +828,9 @@ func _merge_corner(poly: PackedVector2Array, c: int, max_shift: float) -> Packed
 		options = [c, c - 1]
 	for leg in options:
 		var result := poly.duplicate()
+		# Gesperrte Punkte (Enden der Staumauer) bleiben, wo sie sind
+		if _is_locked(poly[c]) or _is_locked(poly[leg]) or _is_locked(poly[mini(leg + 1, last)]):
+			continue
 		if leg == 0 or leg == last - 1:
 			if c == 1 or c == last - 1:
 				continue
@@ -941,6 +986,15 @@ func _make_profile(allow_tunnels: bool) -> bool:
 		if water > WorldGen.NO_WATER:
 			smooth[i] = maxf(smooth[i], water + 4.5)
 			over_water[i] = 1
+	# Auf der Staumauer liegt die Straße genau auf Kronenhöhe
+	var fixed := PackedByteArray()
+	fixed.resize(n)
+	if dam:
+		for i in n:
+			if _dam_distance(Vector2(points[i].x, points[i].z)) < 8.0:
+				smooth[i] = dam.crest
+				over_water[i] = 0
+				fixed[i] = 1
 	# An den Orten liegt die Straße flach auf Ortshöhe (dort ist die Kreuzung)
 	var flat_b := flat_end if flat_end >= 0 else flat_points
 	for i in n:
@@ -953,9 +1007,11 @@ func _make_profile(allow_tunnels: bool) -> bool:
 	_apply_crossings(smooth, max_step)
 	# Steigung begrenzen: vorwärts und rückwärts durchgehen
 	for i in range(flat_points, n - flat_b):
-		smooth[i] = clampf(smooth[i], smooth[i - 1] - max_step, smooth[i - 1] + max_step)
+		if fixed[i] == 0:
+			smooth[i] = clampf(smooth[i], smooth[i - 1] - max_step, smooth[i - 1] + max_step)
 	for i in range(n - flat_b - 1, flat_points - 1, -1):
-		smooth[i] = clampf(smooth[i], smooth[i + 1] - max_step, smooth[i + 1] + max_step)
+		if fixed[i] == 0:
+			smooth[i] = clampf(smooth[i], smooth[i + 1] - max_step, smooth[i + 1] + max_step)
 	# Passt es trotzdem nicht (Höhenunterschied zu groß für die Länge), keine Straße
 	for i in range(1, n):
 		if absf(smooth[i] - smooth[i - 1]) > max_step + 0.01:
@@ -972,7 +1028,7 @@ func _make_profile(allow_tunnels: bool) -> bool:
 	# Wenn die Straße tiefe Einschnitte (außerhalb von Tunneln) oder riesige Brücken bräuchte,
 	# lieber keine Straße
 	for i in n:
-		if (tunnel[i] == 0 and ground[i] - smooth[i] > MAX_CUT) or smooth[i] - ground[i] > max_fill:
+		if fixed[i] == 0 and ((tunnel[i] == 0 and ground[i] - smooth[i] > MAX_CUT) or smooth[i] - ground[i] > max_fill):
 			fail_reason = "Einschnitt %.0f m / Damm %.0f m bei Punkt %d von %d" % [ground[i] - smooth[i], smooth[i] - ground[i], i, n]
 			return false
 		points[i].y = smooth[i]
@@ -986,8 +1042,72 @@ func _make_profile(allow_tunnels: bool) -> bool:
 			for j in range(maxi(i - 3, keep_clear), mini(i + 4, n - keep_clear)):
 				if tunnel[j] == 0:
 					bridge[j] = 1
+	# Staumauer: zählt als Brücke (kein Bankett, keine Böschung darunter), merken wo
+	on_dam = fixed
+	dam_range = Vector2i(-1, -1)
+	for i in n:
+		if fixed[i] == 1:
+			bridge[i] = 1
+			dam_range = Vector2i(i if dam_range.x < 0 else dam_range.x, i)
 	bounds = _points_rect().grow(road_width * 0.5 + shoulder_width + MAX_BANK)
 	return true
+
+
+## Talsperre: Die Wegsuche läuft in zwei Teilen, vom Ort zum näheren Mauerende und vom anderen
+## Ende zum Ort. Dazwischen liegt die Krone als Gerade, an beiden Enden DAM_RUNOUT Meter weiter
+## (dort liegen die Kurven, nicht mehr auf der Mauer). Die letzten bzw. ersten Meter führen genau
+## in Richtung der Krone. Leer, wenn einer der Teile keinen Weg findet.
+const DAM_RUNOUT: float = 90.0
+## Punkte des Polygonzugs, die beim Zusammenfassen von Knicken bleiben müssen (Mauerenden)
+var _locked := PackedVector2Array()
+
+
+func _find_path_via_dam() -> PackedVector2Array:
+	var s2 := Vector2(start.x, start.z)
+	var e2 := Vector2(end.x, end.z)
+	var near := RoadNetwork.dam_entry(dam, s2, e2)
+	var far := RoadNetwork.dam_entry(dam, e2, s2)
+	var crest_dir := (far - near).normalized()
+	var saved := [start, end, start_direction, end_direction, lead_end]
+	# Teil 1: Ort → näheres Mauerende (die letzten Meter in Richtung der Krone)
+	end = Vector3(near.x, dam.crest, near.y)
+	end_direction = -crest_dir
+	lead_end = 60.0
+	var first := _find_path(false)
+	end = saved[1]
+	end_direction = saved[3]
+	lead_end = saved[4]
+	# Teil 2: anderes Mauerende → Ort
+	start = Vector3(far.x, dam.crest, far.y)
+	start_direction = crest_dir
+	var saved_lead := lead
+	lead = 60.0
+	var second := _find_path(false)
+	lead = saved_lead
+	start = saved[0]
+	start_direction = saved[2]
+	if first.size() < 2 or second.size() < 2:
+		fail_reason = "kein Weg zur Staumauer"
+		return PackedVector2Array()
+	first = _simplified(first)
+	second = _simplified(second)
+	# Gesperrt: die Mauerenden und die geraden Anläufe davor (die Krone bleibt eine Gerade)
+	_locked = PackedVector2Array([first[first.size() - 2], near, far, second[1]])
+	return first + second
+
+
+## Polygonzug ohne kleine Zickzacks; erster und letzter Abschnitt (gerade Zufahrten) bleiben
+func _simplified(path: PackedVector2Array) -> PackedVector2Array:
+	var last := path.size() - 1
+	return PackedVector2Array([path[0]]) + _simplify(path.slice(1, last), simplify_tolerance) + PackedVector2Array([path[last]])
+
+
+## Abstand zur Kronenlinie der Talsperre (über die Enden hinaus 8 m mitgezählt)
+func _dam_distance(p: Vector2) -> float:
+	var along := dam.dam_b - dam.dam_a
+	var length := along.length()
+	var t := clampf((p - dam.dam_a).dot(along) / (length * length), -8.0 / length, 1.0 + 8.0 / length)
+	return p.distance_to(dam.dam_a + along * t)
 
 
 ## Kreuzende Straßen (crossings): Wo sich die Mittellinien schneiden, muss diese Straße
@@ -1376,8 +1496,12 @@ func _build_bridges(lefts: PackedVector3Array) -> void:
 		if bridge[i] == 0:
 			i += 1
 			continue
+		# Auf der Staumauer baut die Mauer Platte und Brüstung
+		if not on_dam.is_empty() and on_dam[i] == 1:
+			i += 1
+			continue
 		var j := i
-		while j < n and bridge[j] == 1:
+		while j < n and bridge[j] == 1 and (on_dam.is_empty() or on_dam[j] == 0):
 			j += 1
 		# Ein Brückenstück reicht von Punkt i bis j-1, einen Punkt Überlappung auf jeder Seite
 		for k in range(maxi(i - 1, 0), mini(j, n - 1)):
@@ -1808,7 +1932,8 @@ func comes_close(other: RoadSegment, distance: float, clearance: float, min_vert
 			grid[cell] = []
 		grid[cell].append(i)
 	var limit := distance * distance
-	for q in other.points:
+	for j in other.points.size():
+		var q := other.points[j]
 		if _near_any(q, shared, clearance):
 			continue
 		var cell := Vector2i(floori(q.x / distance), floori(q.z / distance))
@@ -1816,8 +1941,16 @@ func comes_close(other: RoadSegment, distance: float, clearance: float, min_vert
 			for dx in range(-1, 2):
 				for i: int in grid.get(cell + Vector2i(dx, dz), []):
 					var p := points[i]
-					if (p.x - q.x) * (p.x - q.x) + (p.z - q.z) * (p.z - q.z) < limit \
-							and absf(p.y - q.y) < min_vertical:
+					if (p.x - q.x) * (p.x - q.x) + (p.z - q.z) * (p.z - q.z) >= limit:
+						continue
+					if absf(p.y - q.y) < min_vertical:
+						return true
+					# Großer Höhenunterschied geht nur über eine Brücke oder durch einen Tunnel:
+					# liegt die obere auf einem Damm, käme die untere in den Damm hinein
+					var self_higher := p.y > q.y
+					var upper_bridge := bridge[i] == 1 if self_higher else other.bridge[j] == 1
+					var lower_tunnel := other.tunnel[j] == 1 if self_higher else tunnel[i] == 1
+					if min_vertical < INF and not upper_bridge and not lower_tunnel:
 						return true
 	return false
 

@@ -195,7 +195,7 @@ func run() -> void:
 			if grid_holes[p] == 1:
 				collision_heights[p] = NAN
 
-	_build_river_water(origin)
+	_build_river_water(origin, lakes)
 	if with_vegetation:
 		_place_vegetation(origin, hs, side, lakes, roads)
 
@@ -374,7 +374,7 @@ func _instance(x: float, y: float, z: float, angle: float, sx: float, sy: float,
 func _is_wet(x: float, z: float, h: float, lakes: Array) -> bool:
 	var level := world_gen.river_surface_near(x, z, 10.0)
 	for lake: WorldGen.Lake in lakes:
-		if Vector2(x, z).distance_to(lake.center) < lake.radius + 15.0:
+		if lake.covers(Vector2(x, z), 15.0):
 			level = maxf(level, lake.level)
 	return level > WorldGen.NO_WATER and h < level + 1.0
 
@@ -383,7 +383,7 @@ func _is_wet(x: float, z: float, h: float, lakes: Array) -> bool:
 func _wetness(x: float, z: float, h: float, lakes: Array) -> float:
 	var level := world_gen.river_surface_near(x, z, 14.0)
 	for lake: WorldGen.Lake in lakes:
-		if Vector2(x, z).distance_to(lake.center) < lake.radius + 60.0:
+		if lake.covers(Vector2(x, z), 8.0 if lake.pool else 60.0):
 			level = maxf(level, lake.level)
 	if level <= WorldGen.NO_WATER:
 		return 0.0
@@ -393,15 +393,23 @@ func _wetness(x: float, z: float, h: float, lakes: Array) -> float:
 ## Flussoberfläche: ein Raster, in dem nur die Quadrate am Fluss verwendet werden.
 ## Sie reicht etwas unter das Ufer, damit man ihren Rand nicht sieht.
 ## In UV steht die Fließrichtung (für den Wasser-Shader).
-func _build_river_water(origin: Vector2) -> void:
+func _build_river_water(origin: Vector2, lakes: Array) -> void:
 	var step := clampf(spacing * 2.0, 4.0, 8.0)
 	var count := roundi(chunk_size / step) + 1
+	# Unter Stauseen fließt kein sichtbarer Fluss (die Seefläche liegt darüber)
+	var reservoirs: Array = []
+	for lake: WorldGen.Lake in lakes:
+		if lake.reservoir:
+			reservoirs.append(lake)
 	var levels := PackedFloat32Array()
 	levels.resize(count * count)
 	var any_water := false
 	for gz in count:
 		for gx in count:
 			var level := world_gen.river_surface_near(origin.x + gx * step, origin.y + gz * step, 7.0)
+			for lake: WorldGen.Lake in reservoirs:
+				if level > WorldGen.NO_WATER and lake.surface_at(Vector2(origin.x + gx * step, origin.y + gz * step)):
+					level = WorldGen.NO_WATER
 			levels[gz * count + gx] = level
 			if level > WorldGen.NO_WATER:
 				any_water = true

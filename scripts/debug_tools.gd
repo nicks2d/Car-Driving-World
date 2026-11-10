@@ -22,6 +22,8 @@ extends Node
 ## --garage       Foto mit geöffneter Garage (mit --car=ID ist dieses Auto und seine Marke gewählt)
 ## --flames       vor dem Foto knallt es ständig im Auspuff (Flammen an den Endrohren prüfen)
 ## --rainbow      Regenbogen zeigen (tiefe Sonne, z. B. --time=18 --heading=90)
+## --cam=X,Z,H    freie Kamera fürs Foto: H Meter über dem Gelände bei X,Z, Blick auf --lookat=X,Z[,H]
+##                (Ziel H Meter über dem Gelände, Standard 1), z. B. für Talsperren und Brücken
 ## --flash        Lichthupe fürs Foto an (Fernlicht hell aufgeblendet)
 ## --dyno=ID,…    mit --shot: Garage > Prüfstand öffnen und diese Autos nacheinander messen
 ##                (z. B. --dyno=sl65,m4csl), Foto NAME_lauf.png im ersten Lauf, NAME.png am Ende
@@ -94,6 +96,10 @@ var _fly_height: float = 0.0
 var _pitch: float = -10.0
 var _look_at: Vector2 = Vector2.ZERO
 var _has_look_at: bool = false
+## Freie Kamera (--cam=X,Z,H): Lage und Höhe über dem Gelände; Ziel-Höhe über dem Gelände (--lookat=X,Z,H)
+var _cam := Vector3.ZERO
+var _has_cam: bool = false
+var _look_height: float = 1.0
 var _car_view: float = -1.0
 var _steer: String = ""
 var _photo: bool = false
@@ -210,6 +216,12 @@ func _ready() -> void:
 				var xz := value.split(",")
 				_look_at = Vector2(float(xz[0]), float(xz[1]))
 				_has_look_at = true
+				if xz.size() >= 3:
+					_look_height = float(xz[2])
+			"cam":
+				var xzh := value.split(",")
+				_cam = Vector3(float(xzh[0]), float(xzh[2]) if xzh.size() >= 3 else 2.0, float(xzh[1]))
+				_has_cam = true
 			"carview":
 				_car_view = float(value)
 			"steer":
@@ -326,8 +338,6 @@ func on_world_ready(game: Node3D) -> void:
 		Input.action_press("steer_left" if _steer == "left" else "steer_right")
 	if _no_hud and game.has_node("HUD"):
 		game.get_node("HUD").visible = false
-	if _sign_shot != "":
-		_place_sign_camera(game)
 	if _windows_at >= 0.0 and _bench_seconds <= 0.0:
 		(game.get_node("OpenWindows") as OpenWindows).open = true
 		game.car.windows_open = 1.0
@@ -427,6 +437,8 @@ func _process(delta: float) -> void:
 			if _has_sign_camera:
 				camera.global_transform = _sign_camera
 				camera.reset_physics_interpolation()
+			if _has_cam:
+				_place_free_camera()
 			if _timer <= 0.0:
 				_state = "done"
 				_take_screenshot()
@@ -782,6 +794,17 @@ func _place_fly_camera() -> void:
 	var eye := car.global_position + Vector3.UP * _fly_height - forward * _fly_height * 0.8
 	var yaw := atan2(forward.x, forward.z)
 	camera.global_transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(_pitch), yaw + PI, 0.0)), eye)
+	camera.reset_physics_interpolation()
+
+
+## Freie Kamera (--cam): über dem Gelände an einer festen Stelle, Blick auf --lookat
+func _place_free_camera() -> void:
+	camera.set_physics_process(false)
+	var eye := Vector3(_cam.x, _game.ground_height(_cam.x, _cam.z) + _cam.y, _cam.z)
+	var target := eye + Vector3.FORWARD
+	if _has_look_at:
+		target = Vector3(_look_at.x, _game.ground_height(_look_at.x, _look_at.y) + _look_height, _look_at.y)
+	camera.global_transform = Transform3D(Basis.looking_at(target - eye), eye)
 	camera.reset_physics_interpolation()
 
 
