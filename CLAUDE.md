@@ -121,6 +121,7 @@ assets/
 - [x] Extra: Werkstatt mit Leistungsprüfstand (Messlauf, PS-/Nm-Diagramm, Vergleich von 3 Autos)
 - [x] Extra: Talsperren mit Staumauer und Stausee, Wasserfälle mit Becken, Gischt und Rauschen
 - [x] Extra: Bogen- und Hängebrücken als Landmarke, Badestellen, Campingplätze und Boote an Seen
+- [x] Extra: Mondphasen, Sternschnuppen, Lichtverschmutzung (dunkle Nächte fern von Orten)
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -899,6 +900,16 @@ assets/
   Bäume können auf der Wiese stehen). Testen: Badestelle `--pos=-1367,-1497 --cam=-1320,-1440,40
   --lookat=-1367,-1497,0`, Campingplatz nachts `--pos=3272,-6100 --cam=3120,-6425,10
   --lookat=3055,-6440,1 --time=22.5`.
+- Himmel (Teil 3): `DayNight.moon_age` (Spieltage, Zyklus 29,53, läuft mit der Uhr, gespeichert in
+  `[welt] mondalter`, Garage: 6 Knöpfe Neumond … abnehmende Sichel, `set_moon_phase`). Shader
+  (`sky.gdshader`): Scheibe als Kugel beleuchtet (Winkel aus der Phase, zunehmend rechts hell),
+  dunkler Teil 1,2 % (Erdschein), Mondhof und Mondlicht mal Beleuchtung (Neumond 5 %).
+  Sternschnuppen: in klaren Nächten (Sonne unter −10°, Bewölkung < 0,3) alle 15–50 s eine, zu 25 %
+  ein Schwarm aus 3–4 aus einer Richtung; bis zu 4 gleichzeitig (Shader-Arrays `meteors`,
+  `meteor_dirs`, 0,6–1,2 s). Lichtverschmutzung: Dörfer (nach Häusern) und Raststätten bis 4 km um
+  die Kamera (`RoadNetwork.light_sources`), alle 2 s, weich übergeblendet; weniger und
+  schwächere Sterne (Schwelle 0,9945 → 0,9988) und warmer Schein am Horizont zu den Lichtern.
+  Testen: `--moon=0.5 --lookmoon --cam=X,Z,H --time=23.5`, `--meteors`.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

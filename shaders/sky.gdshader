@@ -21,6 +21,16 @@ uniform float moon_size = 0.022;
 // 0 = Tag, 1 = Nacht (blendet Sterne und Mond ein)
 uniform float night_amount = 0.0;
 uniform float star_brightness = 2.5;
+// Mondphase: 0 = Neumond, 0,5 = Vollmond, 1 = wieder Neumond (zunehmend: rechte Seite hell)
+uniform float moon_phase = 0.5;
+// Sternschnuppen: je Eintrag Startrichtung (xyz) und Fortschritt (w, 0–1; außerhalb = keine),
+// dazu die Flugrichtung
+uniform vec4 meteors[4];
+uniform vec3 meteor_dirs[4];
+// Lichtverschmutzung (0 = dunkel, 1 = mitten im Ort): weniger Sterne, warmer Schein am Horizont
+// in Richtung der Lichter (glow_direction, waagerecht)
+uniform float light_pollution = 0.0;
+uniform vec3 glow_direction = vec3(1.0, 0.0, 0.0);
 
 // Wolken
 uniform sampler2D cloud_noise : filter_linear_mipmap, repeat_enable;
@@ -94,24 +104,64 @@ void sky() {
 		vec3 p = dir * 350.0;
 		vec3 cell = floor(p);
 		float r = hash13(cell);
-		if (r > 0.9975) {
+		// Fern von Orten viel mehr Sterne, in Orten nur die hellsten
+		float limit = mix(0.9945, 0.9988, light_pollution);
+		if (r > limit) {
 			vec3 center = cell + 0.5 + (vec3(hash13(cell + 1.3), hash13(cell + 2.7), hash13(cell + 4.1)) - 0.5) * 0.6;
 			float d = length(p - center);
 			float twinkle = 0.75 + 0.25 * sin(TIME * (1.5 + r * 40.0) + r * 300.0);
-			float bright = (r - 0.9975) / 0.0025;
+			float bright = (r - limit) / (1.0 - limit);
 			col += vec3(0.85, 0.9, 1.0) * smoothstep(0.32, 0.0, d) * star_brightness * (0.3 + bright * 1.7)
-				* twinkle * night_amount * smoothstep(0.0, 0.2, dir.y);
+				* twinkle * night_amount * smoothstep(0.0, 0.2, dir.y) * (1.0 - light_pollution * 0.6);
 		}
+	}
+
+	// --- Sternschnuppen: kurze helle Striche, die schnell verglühen ---
+	if (night_amount > 0.01 && dir.y > 0.0) {
+		for (int m = 0; m < 4; m++) {
+			float progress = meteors[m].w;
+			if (progress <= 0.0 || progress >= 1.0) {
+				continue;
+			}
+			vec3 start = meteors[m].xyz;
+			vec3 head = normalize(start + meteor_dirs[m] * progress * 0.35);
+			vec3 tail = normalize(start + meteor_dirs[m] * max(progress - 0.18, 0.0) * 0.35);
+			// Abstand zur Strecke tail–head (klein genug, um sie gerade zu nehmen)
+			vec3 seg = head - tail;
+			float h = clamp(dot(dir - tail, seg) / max(dot(seg, seg), 1e-6), 0.0, 1.0);
+			float dist = length(dir - (tail + seg * h));
+			float fade = sin(progress * 3.14159) * h;
+			col += vec3(1.0, 0.95, 0.85) * smoothstep(0.0022, 0.0, dist) * fade * 3.0 * night_amount;
+		}
+	}
+
+	// --- Lichtverschmutzung: warmer Schein über den Lichtern am Horizont ---
+	if (light_pollution > 0.01) {
+		vec2 flat_dir = normalize(dir.xz + vec2(1e-5));
+		float toward = max(dot(flat_dir, normalize(glow_direction.xz + vec2(1e-5))), 0.0);
+		float low = exp(-max(dir.y, 0.0) * 9.0);
+		col += vec3(0.55, 0.36, 0.2) * light_pollution * low * (0.35 + 0.65 * toward * toward) * night_amount * 0.5;
 	}
 
 	// --- Mond: Scheibe mit etwas Struktur und leichtem Hof ---
 	float cos_moon = dot(dir, moon_direction);
 	float moon_disk = smoothstep(cos(moon_size), cos(moon_size * 0.9), cos_moon);
+	// Phase: Scheibe als Kugel, von der Seite der Sonne beleuchtet (Winkel aus der Phase)
+	float illumination = 0.5 - 0.5 * cos(moon_phase * 6.28318);
 	if (moon_disk > 0.0) {
+		vec3 right = normalize(cross(moon_direction, vec3(0.0, 1.0, 0.0)));
+		vec3 up = cross(right, moon_direction);
+		vec2 local = vec2(dot(dir, right), dot(dir, up)) / sin(moon_size);
+		vec3 normal = vec3(local, sqrt(max(1.0 - dot(local, local), 0.0)));
+		float angle = moon_phase * 6.28318;
+		vec3 light_dir = vec3(sin(angle), 0.0, -cos(angle));
+		float lit = smoothstep(-0.06, 0.06, dot(normal, light_dir));
 		float spots = texture(cloud_noise, (dir.xy - moon_direction.xy) * 18.0 + 0.5).r;
-		col = mix(col, vec3(0.85, 0.88, 0.95) * (0.75 + spots * 0.5) * 1.6, moon_disk * night_amount);
+		vec3 surface = vec3(0.85, 0.88, 0.95) * (0.75 + spots * 0.5) * 1.6;
+		// Dunkler Teil: schwacher Erdschein
+		col = mix(col, surface * mix(0.012, 1.0, lit), moon_disk * night_amount);
 	}
-	col += vec3(0.35, 0.45, 0.7) * pow(max(cos_moon, 0.0), 300.0) * 0.6 * night_amount;
+	col += vec3(0.35, 0.45, 0.7) * pow(max(cos_moon, 0.0), 300.0) * 0.6 * night_amount * illumination;
 
 	// --- Sonnenscheibe ---
 	float disk = smoothstep(cos(sun_size), cos(sun_size * 0.8), cos_sun);

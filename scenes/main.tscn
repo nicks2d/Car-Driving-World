@@ -287,11 +287,12 @@ shadow_bias = 0.04
 directional_shadow_blend_splits = true
 directional_shadow_max_distance = 300.0
 
-[node name="DayNight" type="Node" parent="." node_paths=PackedStringArray("sun", "world_environment", "weather")]
+[node name="DayNight" type="Node" parent="." node_paths=PackedStringArray("sun", "world_environment", "weather", "roads")]
 script = ExtResource("20_daynight")
 sun = NodePath("../Sun")
 world_environment = NodePath("../WorldEnvironment")
 weather = NodePath("../Weather")
+roads = NodePath("../Roads")
 
 [node name="Terrain" type="Node3D" parent="."]
 process_mode = 3

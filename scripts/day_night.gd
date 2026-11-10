@@ -9,6 +9,8 @@ extends Node
 @export var sun: DirectionalLight3D
 @export var world_environment: WorldEnvironment
 @export var weather: Weather
+## Für die Lichtverschmutzung (Dörfer und Raststätten in der Nähe)
+@export var roads: RoadNetwork
 
 @export_group("Zeit")
 ## Aktuelle Uhrzeit in Stunden (0 bis 24)
@@ -70,6 +72,22 @@ extends Node
 
 ## 0 = Nacht, 1 = Tag (für andere, z. B. Helligkeit von Regen und Talnebel)
 var daylight: float = 1.0
+
+## Mond: Alter in Spieltagen (0 = Neumond, MOON_CYCLE / 2 = Vollmond), läuft mit der Uhr mit
+const MOON_CYCLE: float = 29.53
+const MOON_PHASE_NAMES: Array[String] = ["Neumond", "Zunehmende Sichel", "Zunehmender Halbmond",
+	"Zunehmender Mond", "Vollmond", "Abnehmender Mond", "Abnehmender Halbmond", "Abnehmende Sichel"]
+var moon_age: float = 10.0
+## Lichtverschmutzung an der Kamera (0 = dunkler Himmel, 1 = mitten im Ort) und Richtung der Lichter
+var light_pollution: float = 0.0
+var _glow_direction := Vector3.RIGHT
+var _pollution_timer: float = 0.0
+var _pollution_target: float = 0.0
+## Sternschnuppen: je [Startrichtung, Flugrichtung, Fortschritt, Dauer]; Pause bis zur nächsten
+var _meteors: Array = []
+var _meteor_timer: float = 12.0
+var _meteor_rng := RandomNumberGenerator.new()
+var _saved_day: int = -1
 ## Wie tief die Kamera in einem Tunnel ist (setzt TunnelEffects): 0 = draußen, 1 = drin
 var tunnel_cover: float = 0.0
 
@@ -88,6 +106,8 @@ var _sky_material: ShaderMaterial
 func _ready() -> void:
 	# Damit andere (z. B. das Auto für die Scheinwerfer) den Tag-Nacht-Wechsel finden
 	add_to_group("day_night")
+	_meteor_rng.randomize()
+	_load_moon()
 	var env := world_environment.environment
 	_sky_material = env.sky.sky_material as ShaderMaterial
 	env.fog_density = fog_density
@@ -98,15 +118,132 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	var hours_per_second := 24.0 / (day_length_minutes * 60.0)
+	var advance := 0.0
 	if Input.is_action_pressed("time_warp"):
-		time_of_day += delta * hours_per_second * time_warp_factor
+		advance = delta * hours_per_second * time_warp_factor
 	elif not paused:
-		time_of_day += delta * hours_per_second
-	time_of_day = fposmod(time_of_day, 24.0)
+		advance = delta * hours_per_second
+	time_of_day = fposmod(time_of_day + advance, 24.0)
+	moon_age = fposmod(moon_age + advance / 24.0, MOON_CYCLE)
+	# Einmal pro Spieltag merken (Testläufe nicht)
+	if floori(moon_age) != _saved_day:
+		_saved_day = floori(moon_age)
+		_save_moon()
+	_update_meteors(delta)
+	_update_pollution(delta)
 	# Augen-Anpassung: im Tunnel langsam heller, draußen schneller wieder normal
 	var speed := adapt_to_dark if tunnel_cover > _adaptation else adapt_to_light
 	_adaptation = move_toward(_adaptation, tunnel_cover, delta * speed)
 	_update_lighting()
+
+
+## Richtung zum Mond: ungefähr gegenüber der Sonne, etwas versetzt
+func moon_direction() -> Vector3:
+	var sun_dir := sun_direction()
+	return Vector3(-sun_dir.x * 0.8, -sun_dir.y, -sun_dir.z + 0.35).normalized()
+
+
+## Wie viel der Mondscheibe hell ist (0 = Neumond, 1 = Vollmond)
+func moon_illumination() -> float:
+	return 0.5 - 0.5 * cos(moon_age / MOON_CYCLE * TAU)
+
+
+## Mondphase 0–7 (Neumond, zunehmende Sichel, … , abnehmende Sichel)
+func moon_phase_index() -> int:
+	return posmod(roundi(moon_age / MOON_CYCLE * 8.0), 8)
+
+
+## Mondphase setzen (Garage): 0–7 wie MOON_PHASE_NAMES
+func set_moon_phase(index: int) -> void:
+	moon_age = MOON_CYCLE * index / 8.0
+	_saved_day = floori(moon_age)
+	_save_moon()
+	_update_lighting()
+
+
+func _testing() -> bool:
+	var tools := get_node_or_null("../DebugTools") as DebugTools
+	return tools != null and tools.is_active()
+
+
+func _load_moon() -> void:
+	var config := ConfigFile.new()
+	if config.load("user://einstellungen.cfg") == OK and not _testing():
+		moon_age = config.get_value("welt", "mondalter", moon_age)
+	_saved_day = floori(moon_age)
+
+
+func _save_moon() -> void:
+	if _testing():
+		return
+	var config := ConfigFile.new()
+	config.load("user://einstellungen.cfg")
+	config.set_value("welt", "mondalter", moon_age)
+	config.save("user://einstellungen.cfg")
+
+
+## Sternschnuppen in klaren Nächten: ab und zu eine, manchmal ein kleiner Schwarm aus einer Richtung
+func _update_meteors(delta: float) -> void:
+	var clear_night := sun_direction().y < sin(deg_to_rad(-10.0)) and (weather == null or weather.overcast < 0.3)
+	for meteor: Array in _meteors:
+		meteor[2] = float(meteor[2]) + delta / float(meteor[3])
+	_meteors = _meteors.filter(func(m: Array) -> bool: return float(m[2]) < 1.0)
+	_meteor_timer -= delta
+	if clear_night and _meteor_timer <= 0.0:
+		var swarm := _meteor_rng.randf() < 0.25
+		var angle := _meteor_rng.randf() * TAU
+		var radiant := Vector3(cos(angle), 0.0, sin(angle))
+		for k in (_meteor_rng.randi_range(3, 4) if swarm else 1):
+			spawn_meteor(radiant if swarm else Vector3.ZERO, k * 0.6)
+		_meteor_timer = _meteor_rng.randf_range(15.0, 50.0)
+	var starts := PackedVector4Array()
+	var dirs := PackedVector3Array()
+	for k in 4:
+		if k < _meteors.size():
+			var start: Vector3 = _meteors[k][0]
+			starts.append(Vector4(start.x, start.y, start.z, float(_meteors[k][2])))
+			dirs.append(_meteors[k][1])
+		else:
+			starts.append(Vector4(0.0, 1.0, 0.0, -1.0))
+			dirs.append(Vector3.RIGHT)
+	if _sky_material:
+		_sky_material.set_shader_parameter("meteors", starts)
+		_sky_material.set_shader_parameter("meteor_dirs", dirs)
+
+
+## Eine Sternschnuppe starten (radiant: gemeinsame Richtung eines Schwarms, sonst zufällig;
+## delay: so viele Sekunden später)
+func spawn_meteor(radiant: Vector3 = Vector3.ZERO, delay: float = 0.0) -> void:
+	if _meteors.size() >= 4:
+		return
+	var azimuth := _meteor_rng.randf() * TAU
+	var elevation := deg_to_rad(_meteor_rng.randf_range(25.0, 70.0))
+	var start := Vector3(cos(azimuth) * cos(elevation), sin(elevation), sin(azimuth) * cos(elevation))
+	var away := radiant if radiant != Vector3.ZERO else Vector3(cos(azimuth + 1.7), 0.0, sin(azimuth + 1.7))
+	var direction := (away.normalized() - Vector3.UP * 0.5).normalized()
+	direction = (direction - start * direction.dot(start)).normalized()
+	var duration := _meteor_rng.randf_range(0.6, 1.2)
+	_meteors.append([start, direction, -delay / duration, duration])
+
+
+## Lichtverschmutzung: Dörfer und Raststätten bis 4 km um die Kamera (näher und größer = mehr)
+func _update_pollution(delta: float) -> void:
+	_pollution_timer -= delta
+	if _pollution_timer <= 0.0 and roads:
+		_pollution_timer = 2.0
+		var camera := get_viewport().get_camera_3d()
+		var eye := camera.global_position if camera else Vector3.ZERO
+		var total := 0.0
+		var direction := Vector2.ZERO
+		for source: Vector3 in roads.light_sources(Vector2(eye.x, eye.z), 4000.0):
+			var offset := Vector2(source.x - eye.x, source.y - eye.z)
+			var weight := source.z * pow(1.0 - minf(offset.length() / 4000.0, 1.0), 2.0)
+			total += weight
+			direction += offset.normalized() * weight
+		_pollution_target = clampf(total * 0.5, 0.0, 1.0)
+		if direction.length() > 0.001:
+			_glow_direction = Vector3(direction.x, 0.0, direction.y).normalized()
+	light_pollution = move_toward(light_pollution, _pollution_target, delta * 0.2)
 
 
 ## Uhrzeit setzen und das Licht sofort anpassen (auch wenn das Spiel pausiert, z. B. Garage)
@@ -140,8 +277,7 @@ func sun_direction() -> Vector3:
 
 func _update_lighting() -> void:
 	var sun_dir := sun_direction()
-	# Der Mond steht ungefähr gegenüber der Sonne, etwas versetzt
-	var moon_dir := Vector3(-sun_dir.x * 0.8, -sun_dir.y, -sun_dir.z + 0.35).normalized()
+	var moon_dir := moon_direction()
 	var elevation := rad_to_deg(asin(sun_dir.y))
 	# Position im Farbverlauf: 0 = tiefe Nacht (-18°), 1 = hoher Sonnenstand (+40°)
 	var t := clampf((elevation + 18.0) / 58.0, 0.0, 1.0)
@@ -160,8 +296,9 @@ func _update_lighting() -> void:
 	else:
 		_point_light_from(moon_dir)
 		sun.light_color = Color(0.62, 0.72, 1.0)
+		# Vollmond hell, Neumond fast dunkel
 		sun.light_energy = moon_energy * smoothstep(-4.0, -10.0, elevation) * clampf(moon_dir.y * 4.0, 0.0, 1.0) \
-			* (1.0 - overcast * 0.9)
+			* (1.0 - overcast * 0.9) * (0.05 + 0.95 * moon_illumination())
 
 	# Bei bedecktem Himmel gibt es keine harten Schatten. Ganz ausschalten spart viel
 	# Rechenzeit, die dafür in Regen-Spiegelungen und Partikel geht.
@@ -187,6 +324,9 @@ func _update_lighting() -> void:
 	_sky_material.set_shader_parameter("sun_disk_color", sun_colors.sample(t))
 	_sky_material.set_shader_parameter("sun_disk_energy", 40.0 * (1.0 - overcast * 0.97))
 	_sky_material.set_shader_parameter("night_amount", night * (1.0 - overcast))
+	_sky_material.set_shader_parameter("moon_phase", moon_age / MOON_CYCLE)
+	_sky_material.set_shader_parameter("light_pollution", light_pollution)
+	_sky_material.set_shader_parameter("glow_direction", _glow_direction)
 	var cloud_light := cloud_light_colors.sample(t)
 	cloud_light = cloud_light.lerp(Color(cloud_light.get_luminance(), cloud_light.get_luminance(), cloud_light.get_luminance()), overcast * 0.6)
 	_sky_material.set_shader_parameter("cloud_light_color", cloud_light * (1.0 - overcast * 0.45))

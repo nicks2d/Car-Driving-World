@@ -74,6 +74,10 @@ var _plate_hint: Label
 var _time_buttons: Array[Button] = []
 var _weather_buttons: Array[Button] = []
 var _season_buttons: Array[Button] = []
+## Mondphase: Neumond, zunehmende Sichel, zunehmender Halbmond, Vollmond, abnehmender Halbmond,
+## abnehmende Sichel (Index in DayNight-Phasen 0–7)
+var _moon_buttons: Array[Button] = []
+const MOON_BUTTON_PHASES: Array[int] = [0, 1, 2, 4, 6, 7]
 var _drive_button: Button
 var _cards: Array[CarCard] = []
 var _brand_tabs: Array[Button] = []
@@ -480,6 +484,12 @@ func _set_weather(index: int) -> void:
 	_select_segment(_weather_buttons, index)
 
 
+func _set_moon(index: int) -> void:
+	if day_night:
+		day_night.set_moon_phase(MOON_BUTTON_PHASES[index])
+	_select_segment(_moon_buttons, index)
+
+
 func _set_season(index: int) -> void:
 	if weather:
 		weather.set_season(index, true)
@@ -520,6 +530,13 @@ func _refresh_all() -> void:
 		var weather_index := WEATHER_MODES.find(weather.mode)
 		_select_segment(_weather_buttons, weather_index)
 		_select_segment(_season_buttons, weather.season)
+	if day_night and not _moon_buttons.is_empty():
+		var phase := day_night.moon_phase_index()
+		var nearest := 0
+		for k in MOON_BUTTON_PHASES.size():
+			if absi(MOON_BUTTON_PHASES[k] - phase) < absi(MOON_BUTTON_PHASES[nearest] - phase):
+				nearest = k
+		_select_segment(_moon_buttons, nearest)
 	_drive_button.add_theme_stylebox_override("normal", UiStyle.box(UiStyle.accent, 16))
 	_drive_button.add_theme_stylebox_override("hover", UiStyle.box(UiStyle.accent.lightened(0.12), 16))
 	_drive_button.add_theme_stylebox_override("pressed", UiStyle.box(UiStyle.accent.darkened(0.1), 16))
@@ -754,6 +771,8 @@ func _build_panel() -> void:
 	_weather_buttons = _segmented(box, WEATHER_NAMES, _set_weather)
 	_spacer(box, 8)
 	_season_buttons = _segmented(box, Weather.SEASON_NAMES, _set_season)
+	_spacer(box, 8)
+	_moon_buttons = _segmented(box, ["●", "◐ Sichel", "◑ Halb", "Voll ○", "◑ Halb", "◐ Sichel"], _set_moon)
 	_spacer(box, 18)
 	_drive_button = Button.new()
 	_drive_button.text = "Losfahren  →"

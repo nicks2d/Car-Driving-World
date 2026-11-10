@@ -27,6 +27,9 @@ extends Node
 ## --flash        Lichthupe fürs Foto an (Fernlicht hell aufgeblendet)
 ## --dyno=ID,…    mit --shot: Garage > Prüfstand öffnen und diese Autos nacheinander messen
 ##                (z. B. --dyno=sl65,m4csl), Foto NAME_lauf.png im ersten Lauf, NAME.png am Ende
+## --moon=P       Mondphase fürs Foto (0 = Neumond, 0.25 = zunehmender Halbmond, 0.5 = Vollmond)
+## --meteors      Sternschnuppen vor dem Foto auslösen (immer wieder eine neue)
+## --lookmoon     freie Kamera (--cam) blickt genau zum Mond
 ## --splash       Pfützen-Fontäne an den Vorderrädern kurz vor dem Foto
 ## --windows=S    Fenster öffnen: beim Foto sofort, beim Benchmark nach S Sekunden
 ## --record=PFAD  mit --bench oder --dyno: den ganzen Ton (Master) als WAV speichern (z. B. zum Vergleich
@@ -119,6 +122,10 @@ var _flash: bool = false
 var _windows_at: float = -1.0
 ## Pfützen-Fontäne fürs Foto auslösen (--splash)
 var _splash: bool = false
+## Mondphase fürs Foto (0 = Neumond, 0,5 = Vollmond; -1 = wie gespeichert) und Sternschnuppen
+var _moon: float = -1.0
+var _meteors: bool = false
+var _look_moon: bool = false
 var _record_path: String = ""
 var _recorder: AudioEffectRecord
 var _rainbow: bool = false
@@ -242,6 +249,12 @@ func _ready() -> void:
 				_flash = true
 			"splash":
 				_splash = true
+			"moon":
+				_moon = float(value)
+			"meteors":
+				_meteors = true
+			"lookmoon":
+				_look_moon = true
 			"dyno":
 				for id in value.split(","):
 					_dyno_cars.append(id)
@@ -338,6 +351,12 @@ func on_world_ready(game: Node3D) -> void:
 		Input.action_press("steer_left" if _steer == "left" else "steer_right")
 	if _no_hud and game.has_node("HUD"):
 		game.get_node("HUD").visible = false
+	if _moon >= 0.0:
+		var day_night := game.get_node("DayNight") as DayNight
+		day_night.moon_age = _moon * DayNight.MOON_CYCLE
+		day_night.refresh()
+	if _sign_shot != "":
+		_place_sign_camera(game)
 	if _windows_at >= 0.0 and _bench_seconds <= 0.0:
 		(game.get_node("OpenWindows") as OpenWindows).open = true
 		game.car.windows_open = 1.0
@@ -427,6 +446,9 @@ func _process(delta: float) -> void:
 				_game.car.get_node("EngineSound").popped.emit(1.0)
 			if _flash:
 				_game.car.flash_time = 0.2
+			# Sternschnuppen: immer wieder neue, damit das Foto welche erwischt
+			if _meteors and fmod(_timer, 0.4) < delta:
+				(_game.get_node("DayNight") as DayNight).spawn_meteor()
 			# Fontäne kurz vor dem Foto, damit sie gerade hochspritzt
 			if _splash and _timer <= 0.35 and _timer + delta > 0.35:
 				(_game.get_node("Puddles") as Puddles).splash(80.0)
@@ -804,6 +826,8 @@ func _place_free_camera() -> void:
 	var target := eye + Vector3.FORWARD
 	if _has_look_at:
 		target = Vector3(_look_at.x, _game.ground_height(_look_at.x, _look_at.y) + _look_height, _look_at.y)
+	if _look_moon:
+		target = eye + (_game.get_node("DayNight") as DayNight).moon_direction() * 100.0
 	camera.global_transform = Transform3D(Basis.looking_at(target - eye), eye)
 	camera.reset_physics_interpolation()
 

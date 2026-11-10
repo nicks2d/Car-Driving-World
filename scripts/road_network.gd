@@ -1837,6 +1837,21 @@ func _update_landmark(entry: Entry, p: Vector2) -> void:
 	entry.landmark_instance = node
 
 
+## Lichtquellen für die Lichtverschmutzung (DayNight): je (x, z, Stärke) für Dörfer (nach Häusern)
+## und Raststätten in radius Metern
+func light_sources(p: Vector2, radius: float) -> Array[Vector3]:
+	var result: Array[Vector3] = []
+	for village: Village in _villages.values():
+		var c := Vector2(village.center.x, village.center.z)
+		if c.distance_to(p) < radius and not village.houses.is_empty():
+			result.append(Vector3(c.x, c.y, clampf(village.houses.size() / 8.0, 0.3, 1.5)))
+	if highways:
+		for rest: Dictionary in highways.rest_areas_in(Rect2(p - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)):
+			var center: Vector3 = rest["center"]
+			result.append(Vector3(center.x, center.z, 1.2))
+	return result
+
+
 ## Landmarken-Brücken in der Nähe für die Karte: [{"name", "position" (x/z), "kind"}]
 func landmark_bridges(rect: Rect2) -> Array:
 	var result: Array = []
