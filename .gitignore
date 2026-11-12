@@ -25,3 +25,6 @@ Thumbs.db
 /assets/models/*
 !/assets/models/README.md
 !/assets/models/.gitkeep
+
+# Eigene Prompt-Sammlung: bleibt nur lokal
+/PROMPTS.md
