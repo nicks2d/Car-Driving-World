@@ -23,6 +23,7 @@ extends Node
 ## --collection=N Garage mit offener Sammlung (0 = Orte, 1 = Aussichtspunkte)
 ##                Mit --bench öffnen --map und --garage/--collection erst nach der Fahrt
 ##                (Foto NAME_ende.png bzw. bench_ende.png), z. B. Karte mit Nebel nach der Fahrt.
+## --chill        mit --bench: der Chill-Modus fährt und filmt (Fotos mit --benchshot)
 ## --flames       vor dem Foto knallt es ständig im Auspuff (Flammen an den Endrohren prüfen)
 ## --rainbow      Regenbogen zeigen (tiefe Sonne, z. B. --time=18 --heading=90)
 ## --cam=X,Z,H    freie Kamera fürs Foto: H Meter über dem Gelände bei X,Z, Blick auf --lookat=X,Z[,H]
@@ -113,6 +114,8 @@ var _open_map: bool = false
 var _open_garage: bool = false
 ## Garage mit offener Sammlung (0 = Orte, 1 = Aussichtspunkte), -1 = nicht
 var _collection_page: int = -1
+## Benchmark im Chill-Modus (--chill mit --bench): der Chill-Modus fährt und filmt
+var _chill: bool = false
 ## Prüfstand-Test (--dyno=ID,ID,…): diese Autos nacheinander messen, Fotos während des ersten
 ## Laufs und am Ende mit dem Vergleich
 var _dyno_cars: Array[String] = []
@@ -247,6 +250,8 @@ func _ready() -> void:
 			"collection":
 				_collection_page = int(value)
 				_open_garage = true
+			"chill":
+				_chill = true
 			"pause":
 				_pause_page = int(value)
 			"full":
@@ -419,6 +424,9 @@ func _start_bench() -> void:
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	_state = "bench"
 	_timer = 0.0
+	if _chill:
+		(_game.get_node("ChillMode") as ChillMode).start()
+		return
 	_extend_route()
 	_last_position = _game.car.global_position
 	if _record_path != "":
@@ -544,7 +552,7 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if _state != "bench":
+	if _state != "bench" or _chill:
 		return
 	_drive_autopilot()
 

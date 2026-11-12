@@ -1,6 +1,7 @@
 class_name PauseMenu
 extends CanvasLayer
-## Pausemenü (Esc) im Glas-Stil: Weiterfahren, Garage, Karte, Fotomodus, Einstellungen,
+## Pausemenü (Esc) im Glas-Stil: Weiterfahren, Garage, Karte, Fotomodus, Chill-Modus,
+## Einstellungen,
 ## Spiel beenden. Die Einstellungen haben fünf Reiter (Grafik, Anzeige, Steuerung, Audio,
 ## Spiel); jede Änderung wirkt sofort und wird gespeichert (GameSettings). Das Spiel ist
 ## angehalten, deshalb darf das Glas hier echt weichzeichnen.
@@ -11,8 +12,9 @@ extends CanvasLayer
 @export var photo_mode: PhotoMode
 @export var hud: CanvasLayer
 @export var weather: Weather
+@export var chill_mode: ChillMode
 
-const MAIN_SIZE := Vector2(440.0, 600.0)
+const MAIN_SIZE := Vector2(440.0, 668.0)
 const SETTINGS_SIZE := Vector2(1200.0, 800.0)
 const TABS: Array[String] = ["Grafik", "Anzeige", "Steuerung", "Audio", "Spiel"]
 const SECTIONS: Array[String] = ["grafik", "anzeige", "steuerung", "audio", "spiel"]
@@ -162,6 +164,10 @@ func _build_main() -> void:
 		close()
 		if photo_mode:
 			photo_mode.open()))
+	box.add_child(_big_button("Chill-Modus", false, func() -> void:
+		close()
+		if chill_mode:
+			chill_mode.start()))
 	box.add_child(_big_button("Einstellungen", false, _show_settings))
 	_quit_button = _big_button("Spiel beenden", false, func() -> void:
 		if _quit_armed:
@@ -351,6 +357,8 @@ func _fill_game() -> void:
 	weather_row.add_child(auto)
 	_slider_row("Tageslänge", "Echtzeit für 24 Stunden im Spiel", "spiel", "tageslaenge", 4.0, 60.0, 1.0,
 		func(v: float) -> String: return "%d min" % roundi(v))
+	_choice_row("Chill-Modus: Zeitraffer", "So schnell vergeht die Zeit, während das Auto von selbst fährt", "spiel",
+		"chill_zeit", ["Normal", "4-fach", "12-fach"], [1, 4, 12])
 	_toggle_row("Entdecker-Karte", "Karte zeigt nur, wo du schon warst; der Rest liegt im Nebel", "spiel", "entdecker")
 
 

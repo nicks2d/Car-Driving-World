@@ -123,6 +123,7 @@ assets/
 - [x] Extra: Bogen- und Hängebrücken als Landmarke, Badestellen, Campingplätze und Boote an Seen
 - [x] Extra: Mondphasen, Sternschnuppen, Lichtverschmutzung (dunkle Nächte fern von Orten)
 - [x] Extra: Entdecker-Karte mit Nebel (Sichtlinien von Aussichtspunkten), Orte-Sammlung in der Garage
+- [x] Extra: Chill-Modus (Autopilot auf schönen Strecken, Kamera mit Schnitten wie im Film)
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -604,7 +605,7 @@ assets/
   Zubringer 5), 13–32 Spurwechsel, kein Auto festgefahren, kleinster Abstand in einer Spur 4 m.
   Autopilot 60 s mit Verkehr (Fenster): Landstraße 139 FPS, Autobahn 121 FPS, keine Fehler.
 - Pausemenü (Teil 6, `pause_menu.gd`, Esc): Glas mit echter Unschärfe (Spiel pausiert),
-  Weiterfahren, Garage, Karte, Fotomodus, Einstellungen, Spiel beenden (zweiter Klick).
+  Weiterfahren, Garage, Karte, Fotomodus, Chill-Modus, Einstellungen, Spiel beenden (zweiter Klick).
   Esc öffnet nur, wenn nichts anderes pausiert hat; in den Einstellungen geht Esc zurück.
 - Einstellungen (`game_settings.gd`, Knoten „Settings“): Reiter Grafik, Anzeige, Steuerung,
   Audio, Spiel; alles wirkt sofort, gespeichert in `user://einstellungen.cfg` (Abschnitte
@@ -933,6 +934,31 @@ assets/
   `--bench=4 --map --pos=433,-861 --heading=57` (Blick vom Aussichtspunkt), `--bench=90
   --collection=0 --pos=-660,459 --heading=103` (Orte-Sammlung nach der Fahrt durch Buchhof und
   Mühlingen), `--collection=1` = Reiter Aussichtspunkte.
+- Chill-Modus (`chill_mode.gd`, `ChillMode`, Pausemenü „Chill-Modus“): übernimmt die normale
+  Fahrkamera (`set_physics_process(false)`, dann laufen Regen, Talnebel usw. mit) und gibt ihr
+  eigene Kamera-Attribute (leichte Tiefenunschärfe hinter dem Auto). Kein HUD, keine Meldungen,
+  schwarze Balken oben/unten (je 8,5 %). Einstellungen alle 10–20 s: „heli“ (26 m hinten seitlich,
+  12 m hoch, kreist langsam), „side“ (6 m daneben zur Fahrbahnmitte), „low_front“ (10 m voraus,
+  0,35 m hoch, Blick zurück), „bumper“ (Stoßstange, Blick nach vorn), „roadside“ (fest am Rand
+  80–140 m voraus, auf dem geradesten Stück, Landstraße auf der tieferen Seite, Autobahn am
+  Mittelstreifen; Schnitt, sobald das Auto 45 m vorbei ist). Überblendung: das letzte Bild wird
+  festgehalten (`get_image`, ein kurzer Hänger pro Schnitt) und über 1,4 s ausgeblendet.
+- Chill-Autopilot: drückt dieselben Tasten wie ein Spieler. Route `RoadNetwork.route_from(…,
+  scenic = true, avoid)`: an Kreuzungen Punkte für Aussichtspunkte (Pass/See/Wasserfall mehr),
+  Talsperren, Landmarken-Brücken, Tunnel, dazu Zufall; die letzten 16 Abschnitte werden gemieden.
+  Auf der Autobahn bleibt er auf der Autobahn (wechselt nicht von selbst auf sie). Landstraße 2 m
+  rechts der Mitte, Wunschtempo 95 / Autobahn 150 km/h, Kurven 3 / 4,5 m/s² quer, Bremsen 2,5 m/s²,
+  Tempolimits (`SpeedLimits.effective_limit`), Abstand Mindestabstand + 2 s, Autobahn links
+  überholen mit Blinker. Im Stand Handbremse statt Bremse (Bremse im Stand = Rückwärtsgang).
+  Sackgasse: ausrollen, beim nächsten Schnitt um 180° drehen (unter der Überblendung).
+  Festgefahren, gekippt oder > 18 m neben der Route für 4 s: beim Schnitt auf die nächste Straße.
+- Beenden: jede Taste, Mausklick, Joypad oder > 40 px Mausbewegung (die ersten 0,8 s nicht, sonst
+  beendet ihn der Klick im Menü). Zeitraffer: Einstellungen > Spiel „Chill-Modus: Zeitraffer“
+  (normal / 4-fach / 12-fach, `[spiel] chill_zeit`), teilt `DayNight.day_length_minutes` solange.
+- Testen: `--bench=120 --chill --benchshot=10,25,40` (Chill-Modus fährt, Fotos, Ausgabe alle 5 s
+  „Chill: Einstellung, Tempo, Position“), z. B. Landstraße mit Sackgasse `--pos=-660,459
+  --heading=103`, Talsperre `--pos=2400,4180 --heading=86`. Gemessen 150 s ab Buchhof: 96–127 FPS
+  (Fenster), Sackgasse bei Mühlingen gewendet, durch Buchhof mit ~50 km/h.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

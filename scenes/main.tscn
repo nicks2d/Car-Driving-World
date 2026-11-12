@@ -21,6 +21,7 @@
 [ext_resource type="Script" path="res://scripts/waterfalls.gd" id="91_waterfalls"]
 [ext_resource type="Script" path="res://scripts/lake_life.gd" id="92_lakelife"]
 [ext_resource type="Script" path="res://scripts/exploration.gd" id="93_explore"]
+[ext_resource type="Script" path="res://scripts/chill_mode.gd" id="94_chill"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
@@ -561,8 +562,9 @@ camera = NodePath("../Camera")
 day_night = NodePath("../DayNight")
 debug_tools = NodePath("../DebugTools")
 
-[node name="Settings" type="Node" parent="." node_paths=PackedStringArray("cruise", "world_environment", "sun", "day_night", "weather", "terrain", "grass", "roads", "traffic", "car", "garage", "speedometer", "fps_label", "debug_tools", "exploration")]
+[node name="Settings" type="Node" parent="." node_paths=PackedStringArray("cruise", "world_environment", "sun", "day_night", "weather", "terrain", "grass", "roads", "traffic", "car", "garage", "speedometer", "fps_label", "debug_tools", "exploration", "chill_mode")]
 script = ExtResource("77_settings")
+chill_mode = NodePath("../ChillMode")
 exploration = NodePath("../Exploration")
 cruise = NodePath("../CruiseControl")
 world_environment = NodePath("../WorldEnvironment")
@@ -579,8 +581,9 @@ speedometer = NodePath("../HUD/Speedometer")
 fps_label = NodePath("../HUD/FpsLabel")
 debug_tools = NodePath("../DebugTools")
 
-[node name="PauseMenu" type="CanvasLayer" parent="." node_paths=PackedStringArray("settings", "garage", "big_map", "photo_mode", "hud", "weather")]
+[node name="PauseMenu" type="CanvasLayer" parent="." node_paths=PackedStringArray("settings", "garage", "big_map", "photo_mode", "hud", "weather", "chill_mode")]
 script = ExtResource("78_pause")
+chill_mode = NodePath("../ChillMode")
 settings = NodePath("../Settings")
 garage = NodePath("../Garage")
 big_map = NodePath("../BigMap")
@@ -649,4 +652,16 @@ weather = NodePath("../Weather")
 script = ExtResource("93_explore")
 car = NodePath("../Car")
 roads = NodePath("../Roads")
+debug_tools = NodePath("../DebugTools")
+
+[node name="ChillMode" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "camera", "roads", "traffic", "limits", "day_night", "hud", "messages", "debug_tools")]
+script = ExtResource("94_chill")
+car = NodePath("../Car")
+camera = NodePath("../Camera")
+roads = NodePath("../Roads")
+traffic = NodePath("../Traffic")
+limits = NodePath("../SpeedLimits")
+day_night = NodePath("../DayNight")
+hud = NodePath("../HUD")
+messages = NodePath("../Messages")
 debug_tools = NodePath("../DebugTools")

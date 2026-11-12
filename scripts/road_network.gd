@@ -123,6 +123,8 @@ var target: Node3D
 var highways: HighwayLayout
 var _nodes: Dictionary = {}  # Vector2i -> Vector3 (Ort) oder null (kein Ort in der Zelle)
 var _entries: Dictionary = {}  # Vector3i (Zelle x, Zelle z, Richtung) -> Entry
+## Abschnitte der zuletzt mit route_from geplanten Route (Chill-Modus merkt sie sich)
+var last_route_keys: Array[Vector3i] = []
 ## Abschnitte, die berechnet werden sollen: 1 = nur berechnen, 2 = auch prüfen
 var _wanted: Dictionary = {}  # Vector3i -> int
 var _edge_cache: Dictionary = {}  # Vector3i -> bool (gibt es diese Verbindung?)
@@ -614,8 +616,12 @@ func nearest_road_transform(near: Vector3, preferred_forward: Vector3 = Vector3.
 
 ## Ein Fahrweg ab dem nächsten Straßenpunkt in Blickrichtung, über Kreuzungen hinweg.
 ## Für den Autopiloten im Benchmark.
-func route_from(near: Vector3, forward: Vector3, min_length: float) -> PackedVector3Array:
+## scenic (Chill-Modus): an Kreuzungen lieber schöne Abschnitte nehmen, avoid = kürzlich befahrene
+## (werden gemieden). last_route_keys enthält danach die Abschnitte der Route.
+func route_from(near: Vector3, forward: Vector3, min_length: float, scenic: bool = false,
+		avoid: Array[Vector3i] = []) -> PackedVector3Array:
 	var route := PackedVector3Array()
+	last_route_keys = []
 	var best_key := Vector3i.ZERO
 	var best_index := -1
 	var best_distance := INF
@@ -638,6 +644,7 @@ func route_from(near: Vector3, forward: Vector3, min_length: float) -> PackedVec
 	var visited := {}
 	while true:
 		visited[key] = true
+		last_route_keys.append(key)
 		var points := segment.points
 		# Auf der Autobahn rechts fahren (der Weg liegt auf dem rechten Fahrstreifen)
 		var lane := HIGHWAY_LANE_OFFSET if segment.kind == RoadSegment.Kind.HIGHWAY else 0.0
@@ -663,7 +670,7 @@ func route_from(near: Vector3, forward: Vector3, min_length: float) -> PackedVec
 		var end_cell := _end_cell(key) if going_forward else Vector2i(key.x, key.y)
 		var arriving := route[route.size() - 1] - route[maxi(route.size() - 7, 0)]
 		arriving.y = 0.0
-		var next := _next_segment_at(end_cell, visited, arriving.normalized())
+		var next := _next_segment_at(end_cell, visited, arriving.normalized(), scenic, avoid)
 		if next.is_empty():
 			break
 		key = next["key"]
@@ -671,6 +678,23 @@ func route_from(near: Vector3, forward: Vector3, min_length: float) -> PackedVec
 		going_forward = next["forward"]
 		best_index = 1 if going_forward else segment.points.size() - 2
 	return route
+
+
+## Wie schön ist ein Abschnitt? Aussichtspunkte (Pass und See am meisten), Talsperren,
+## Landmarken-Brücken, Tunnel ein wenig
+static func _scenic_score(segment: RoadSegment) -> float:
+	var score := 0.0
+	if not segment.viewpoint.is_empty():
+		score += 1.2
+		if segment.viewpoint["kind"] in ["pass", "lake", "waterfall"]:
+			score += 0.6
+	if segment.dam:
+		score += 1.5
+	if not segment.landmark.is_empty():
+		score += 1.0
+	if not segment.tunnel_ranges.is_empty():
+		score += 0.3
+	return score
 
 
 ## Test (--exitdrive): Route über die nächste Ausfahrt einer Anschlussstelle in Fahrtrichtung
@@ -781,9 +805,11 @@ func _lane_point(segment: RoadSegment, i: int, dir: int, lateral: float) -> Vect
 	return segment.points[i] + travel.cross(Vector3.UP).normalized() * lateral
 
 
-func _next_segment_at(cell: Vector2i, visited: Dictionary, arriving: Vector3) -> Dictionary:
+func _next_segment_at(cell: Vector2i, visited: Dictionary, arriving: Vector3, scenic: bool = false,
+		avoid: Array[Vector3i] = []) -> Dictionary:
 	# Straßen, die an diesem Ort beginnen (vorwärts) oder enden (rückwärts).
-	# Genommen wird die, bei der man am wenigsten abbiegen muss.
+	# Genommen wird die, bei der man am wenigsten abbiegen muss; scenic: dazu Punkte für schöne
+	# Abschnitte und etwas Zufall, kürzlich befahrene und Wenden gibt es nur, wenn nichts anderes geht.
 	var options := _arm_keys(cell)
 	var best: Dictionary = {}
 	var best_dot := -2.0
@@ -799,6 +825,10 @@ func _next_segment_at(cell: Vector2i, visited: Dictionary, arriving: Vector3) ->
 			else points[maxi(points.size() - 7, 0)] - points[points.size() - 1]
 		leaving.y = 0.0
 		var dot := leaving.normalized().dot(arriving)
+		if scenic:
+			dot = _scenic_score(entry.segment) + randf() * 0.8 + (dot if dot > -0.7 else -3.0)
+			if avoid.has(key):
+				dot -= 2.5
 		if dot > best_dot:
 			best_dot = dot
 			best = {"key": key, "forward": option[1]}
