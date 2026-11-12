@@ -125,6 +125,7 @@ assets/
 - [x] Extra: Entdecker-Karte mit Nebel (Sichtlinien von Aussichtspunkten), Orte-Sammlung in der Garage
 - [x] Extra: Chill-Modus (Autopilot auf schönen Strecken, Kamera mit Schnitten wie im Film)
 - [x] Extra: Mac-App „Car Driving World“ (Logo, Startbild, Build-Skript, gleiche Spielstände)
+- [x] Extra: README auf Englisch mit allen neuen Funktionen und Bildern, GitHub aktualisiert
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -995,6 +996,13 @@ assets/
   never freed“ und einen nicht freigegebenen Shader. Harmlos (passiert erst beim Schließen). Im
   Editor nicht, in einem leeren Testprojekt mit Partikeln auch nicht; Regen-Partikel waren es
   nicht. Ursache noch offen.
+- README-Bilder (`docs/screenshots/*.jpg`, 1280 × 720, JPG 86 %): nur CC-BY-Modelle (E30, E92, F90,
+  M4 CSL, Audi S3, Tankstelle), also immer `--car=e92|m4csl|f90|e30` (ohne `--car` fährt im Test der
+  M2!) und `--traffic=0` bzw. `--boxcars` (Raststätte: geparkte Autos als Kästen). `docs/` hat eine
+  `.gdignore` (Godot importiert die Bilder nicht). Neue Bilder: garage, dam, waterfall, bridge
+  (Hängebrücke `--pos=-10183,-9442 --cam=-10183,-10100,30 --lookat=-10183,-9442,35`), bath, moon,
+  dyno, rest-area, village (Buchhof nachts `--pos=-660,459 --heading=103 --time=22`), explorer-map
+  (`--bench=60 --highway --map`), chill (`--bench=62 --chill --car=m4csl --pos=2400,4180`).
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in
