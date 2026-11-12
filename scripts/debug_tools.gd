@@ -24,6 +24,7 @@ extends Node
 ##                Mit --bench öffnen --map und --garage/--collection erst nach der Fahrt
 ##                (Foto NAME_ende.png bzw. bench_ende.png), z. B. Karte mit Nebel nach der Fahrt.
 ## --chill        mit --bench: der Chill-Modus fährt und filmt (Fotos mit --benchshot)
+## --quitafter=S  normaler Spielstart (kein Test: Garage, Spielstände), nach S Sekunden beenden
 ## --flames       vor dem Foto knallt es ständig im Auspuff (Flammen an den Endrohren prüfen)
 ## --rainbow      Regenbogen zeigen (tiefe Sonne, z. B. --time=18 --heading=90)
 ## --cam=X,Z,H    freie Kamera fürs Foto: H Meter über dem Gelände bei X,Z, Blick auf --lookat=X,Z[,H]
@@ -116,6 +117,8 @@ var _open_garage: bool = false
 var _collection_page: int = -1
 ## Benchmark im Chill-Modus (--chill mit --bench): der Chill-Modus fährt und filmt
 var _chill: bool = false
+## Normaler Spielstart (mit Spielständen), nach so vielen Sekunden sauber beenden (--quitafter=S)
+var _quit_after: float = -1.0
 ## Prüfstand-Test (--dyno=ID,ID,…): diese Autos nacheinander messen, Fotos während des ersten
 ## Laufs und am Ende mit dem Vergleich
 var _dyno_cars: Array[String] = []
@@ -252,6 +255,10 @@ func _ready() -> void:
 				_open_garage = true
 			"chill":
 				_chill = true
+			"quitafter":
+				_quit_after = float(value)
+				# Die Garage hält das Spiel beim Start an: trotzdem weiterzählen
+				process_mode = Node.PROCESS_MODE_ALWAYS
 			"pause":
 				_pause_page = int(value)
 			"full":
@@ -436,6 +443,10 @@ func _start_bench() -> void:
 
 
 func _process(delta: float) -> void:
+	if _quit_after > 0.0 and Time.get_ticks_msec() > _quit_after * 1000.0:
+		_quit_after = -1.0
+		print("Beende nach --quitafter")
+		get_tree().quit()
 	match _state:
 		"wait_after_jump":
 			# Warten, bis das Spiel nach dem Sprung wieder bereit ist

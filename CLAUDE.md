@@ -124,6 +124,7 @@ assets/
 - [x] Extra: Mondphasen, Sternschnuppen, Lichtverschmutzung (dunkle Nächte fern von Orten)
 - [x] Extra: Entdecker-Karte mit Nebel (Sichtlinien von Aussichtspunkten), Orte-Sammlung in der Garage
 - [x] Extra: Chill-Modus (Autopilot auf schönen Strecken, Kamera mit Schnitten wie im Film)
+- [x] Extra: Mac-App „Car Driving World“ (Logo, Startbild, Build-Skript, gleiche Spielstände)
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 
@@ -959,6 +960,41 @@ assets/
   „Chill: Einstellung, Tempo, Position“), z. B. Landstraße mit Sackgasse `--pos=-660,459
   --heading=103`, Talsperre `--pos=2400,4180 --heading=86`. Gemessen 150 s ab Buchhof: 96–127 FPS
   (Fenster), Sackgasse bei Mühlingen gewendet, durch Buchhof mit ~50 km/h.
+- Mac-App „Car Driving World“ (Teil 6): bauen mit `tools/build_mac_app.sh` → `build/Car Driving
+  World.app` (`/build/` ist in .gitignore). Export-Vorlage `export_presets.cfg` („macOS“): Bundle-ID
+  `io.github.nicks2d.cardrivingworld`, Version 1.0, Architektur „universal“ (die offizielle Vorlage
+  hat nur Universal-Programme, „arm64“ bricht ab). Das Skript macht danach mit `lipo -thin arm64`
+  eine reine Apple-Silicon-App, setzt CFBundleName/CFBundleDisplayName auf „Car Driving World“
+  (Godot nimmt den Projektnamen) und signiert ad-hoc neu (`codesign --sign -`). Filter: ohne Original-GLBs von Verkehr und Tankstelle (es reichen
+  die vorbereiteten `prepared/model.res`), ohne `kia_stinger`, `screenshots/`, `docs/` (hat
+  `.gdignore`) und `tools/`; `*.icns` kommt mit. Die App enthält die Automodelle (teils NC/ND):
+  nur für Nicks Mac, nicht hochladen, kein Release.
+- Export für arm64 verlangt `rendering/textures/vram_compression/import_etc2_astc=true` (Texturen
+  zusätzlich als ASTC; die App nimmt ASTC, der Editor weiter S3TC/BPTC). Export-Vorlagen 4.7.2:
+  nur `macos.zip` + `version.txt` in `~/Library/Application Support/Godot/export_templates/
+  4.7.2.stable/` (aus dem offiziellen .tpz).
+- Logo (`assets/icon/`): `icon.svg` (Lichtspur bei Nacht, selbst gezeichnet), `icon.png` (1024 px,
+  Fenster-/Dock-Icon `application/config/icon`), `icon.icns` (mit `iconutil` aus 16–1024 px, für
+  Export und `config/macos_native_icon`), `splash.png` (1600 × 900, Startbildschirm, Hintergrund
+  #050B1A). Entwürfe und Generator lagen im Scratchpad (Serpentine im Sonnenuntergang, Lichtspur,
+  Endlos-Schleife).
+- Name: Der Projektname bleibt „Endlose Welt“, denn danach heißt der Speicherordner
+  (`~/Library/Application Support/Godot/app_userdata/Endlose Welt`): Editor und App teilen sich so
+  Einstellungen, Karte, Orte, Aussichtspunkte und Fotos. Der Fenstertitel kommt aus
+  `Game.APP_TITLE` („Car Driving World“).
+- Exportierte Projekte: `DirAccess.get_files_at("res://…")` sieht dort nur die umgewandelten
+  Dateien. Deshalb sucht `CarModel.model_path` die .glb mit `ResourceLoader.list_directory`.
+- Gemessen (12.11., Akku 60 %, Mac warm, `--bench=30 --highway --full --quality=hoch`, 2940 × 1912,
+  abwechselnd): Editor 62,4 / 64,6 FPS (1%-Low 43,7 / 42,6), App 60,5 / 59,9 FPS (40,9 / 37,8).
+  Die App ist ~5 % langsamer, vermutlich wegen ASTC statt S3TC/BPTC. App starten mit Argumenten:
+  `"/Applications/Car Driving World.app/Contents/MacOS/Endlose Welt" -- --bench=30 …`.
+- Spielstände nach App-Start und Tests verglichen (Sicherung vorher): unverändert, die App schreibt
+  ihr Protokoll in denselben Ordner (`logs/godot.log`). `--quitafter=S` startet das Spiel ganz
+  normal (Garage, Spielstände) und beendet es nach S Sekunden sauber (zum Prüfen von Start/Ende).
+- Bekannt: Nur die exportierte App meldet beim Beenden „1 shaders of type ParticlesShaderRD were
+  never freed“ und einen nicht freigegebenen Shader. Harmlos (passiert erst beim Schließen). Im
+  Editor nicht, in einem leeren Testprojekt mit Partikeln auch nicht; Regen-Partikel waren es
+  nicht. Ursache noch offen.
 - Neue `class_name`-Skripte erst nach `Godot --headless --path . --import` bekannt, sonst
   meldet ein Start ohne Editor „Could not find type“.
 - Himmel: eigener Sky-Shader (`shaders/sky.gdshader`), Farben kommen aus Farbverläufen in

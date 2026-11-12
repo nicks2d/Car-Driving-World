@@ -78,10 +78,11 @@ static func model_path(profile: CarProfile) -> String:
 	var folder := "res://assets/models/%s" % profile.model_folder
 	if ResourceLoader.exists(folder + "/scene.gltf"):
 		return folder + "/scene.gltf"
-	if DirAccess.dir_exists_absolute(folder):
-		for file in DirAccess.get_files_at(folder):
-			if file.get_extension().to_lower() == "glb":
-				return folder.path_join(file)
+	# ResourceLoader.list_directory statt DirAccess: in der exportierten App liegen im Ordner nur
+	# noch die umgewandelten Dateien, die Liste nennt trotzdem die ursprünglichen Namen
+	for file in ResourceLoader.list_directory(folder):
+		if file.get_extension().to_lower() == "glb":
+			return folder.path_join(file)
 	return ""
 
 

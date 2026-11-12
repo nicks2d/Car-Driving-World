@@ -2,6 +2,9 @@ extends Node3D
 ## Startet die Welt: richtet die Welt-Formel ein, sucht einen Startplatz für das Auto
 ## und lässt es erst losfahren, wenn das Gelände drumherum geladen ist.
 
+## Name der App im Fenstertitel
+const APP_TITLE := "Car Driving World"
+
 ## Die Welt-Formel mit allen Einstellungen (Seed, Bergeshöhe, ...)
 @export var world_gen: WorldGen
 @export var terrain: TerrainManager
@@ -27,6 +30,8 @@ var _started: bool = false
 
 
 func _ready() -> void:
+	# Name der App (der Projektname „Endlose Welt“ bleibt, nach ihm heißt der Speicherordner user://)
+	get_window().title = APP_TITLE
 	world_gen.setup()
 	var start_point := Vector2.ZERO
 	var heading := 0.0
