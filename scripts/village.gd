@@ -193,8 +193,10 @@ func _build_house(house: Dictionary, rng: RandomNumberGenerator) -> void:
 	var along_axis := b.x if ridge_along else b.z
 	var across_axis := b.z if ridge_along else -b.x
 	_gable_roof(eave, along_axis, across_axis, length, span, rise, roof_color, wall_color)
-	# Kollision: Wände bis zur Traufe plus halbes Dach
-	boxes.append([Transform3D(b, base + Vector3.UP * (0.2 + (h + rise * 0.5) * 0.5)), Vector3(w, h + rise * 0.5, d)])
+	# Kollision: vom Fuß des Sockels (1,4 m im Boden, falls das Gelände an einer Ecke abfällt)
+	# bis zur Traufe plus halbes Dach
+	var top := 0.2 + h + rise * 0.5
+	boxes.append([Transform3D(b, base + Vector3.UP * (top - 1.4) * 0.5), Vector3(w, top + 1.4, d)])
 	if barn:
 		# Großes Tor vorne
 		_quad_on_wall("wall", base, b, Vector3.BACK, w, d, 0.0, 0.2 + 1.8, 4.0, 3.6, DOOR_COLOR)
