@@ -8,7 +8,8 @@ extends SceneTree
 ##   auch Straßen quer durch eine fremde Kreuzung
 ## - Leitplanken, Brüstungen, Tunnelwände und Portale, die in oder auf einer Fahrbahn stehen
 ## - Löcher im Gelände (an Tunneln), durch die man von außen fallen kann: unter die Map oder
-##   durch die Decke in die Röhre
+##   durch die Decke in die Röhre (Landung auf dem Tunnel-Deckel, dem Sockel vor dem Portal oder der
+##   offenen Straße davor ist in Ordnung, wie ein Sturz von der Böschung eines Einschnitts)
 ## - Bäume, Büsche, Felsen und Häuser auf Straßen oder schwebend
 ## - Straßen im Wasser (ohne Brücke)
 ## - kaputte Kreuzungen: Lücke oder Höhensprung zwischen Kreuzungsfläche und Straße
@@ -171,8 +172,23 @@ func _check_tile(tile: Rect2) -> void:
 					var seg := segments[k]
 					print("INFO %s: %d Punkte, Start %s, Ende %s, Tunnel %s, Brücken %d, rail_gaps %s, keepout %d, extra_r max %.2f" % [
 						wanted, seg.points.size(), seg.points[0].round(), seg.points[-1].round(), seg.tunnel_ranges,
-						seg.bridge.count(1), seg.rail_gaps, seg.rail_keepout.size(),
+						seg.bridge.count(1), str(seg.rail_gaps) + " Deckel %s von %d Flächen" % [seg.shell_faces, seg.collision_faces.size()], seg.rail_keepout.size(),
 						Array(seg.extra_right).max() if not seg.extra_right.is_empty() else 0.0])
+	# --probe=X,Z,KX,KY,KZ: liegt der Punkt in einer Leitplanken-Sperrzone dieses Abschnitts?
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--probe="):
+			var v := arg.trim_prefix("--probe=").split(",")
+			var q := Vector3(float(v[0]), 0.0, float(v[1]))
+			var wanted := Vector3i(int(v[2]), int(v[3]), int(v[4]))
+			for k in keys.size():
+				if keys[k] == wanted:
+					for zone: Array in segments[k].rail_keepout:
+						var line: PackedVector2Array = zone[0]
+						var best := INF
+						for j in line.size() - 1:
+							best = minf(best, Geometry2D.get_closest_point_to_segment(Vector2(q.x, q.z), line[j], line[j + 1]).distance_to(Vector2(q.x, q.z)))
+						print("PROBE Zone: %d Punkte von %s bis %s, halbe Breite %.2f, Abstand %.2f" % [line.size(), line[0].round(), line[-1].round(), zone[1], best])
+					print("PROBE in Sperrzone: ", segments[k].call("_in_keepout", q))
 	var junctions := _junctions_in(area)
 	var index := _point_index(segments)
 	times.append(Time.get_ticks_msec())
@@ -285,7 +301,9 @@ func _surface_hits(q: Vector3, index: Dictionary, segments: Array[RoadSegment], 
 		if segment.tunnel[j] == 1:
 			# Im Tunnel reicht die Fahrfläche bis an die Wand (Wände liegen genau dort)
 			half = segment.tube_half_width() - maxf(shrink, 0.3)
-		if absf(lateral.x) > half or lateral.y > RoadSegment.POINT_SPACING:
+		# Über das Ende eines Abschnitts hinaus zählt nur ein kleiner Überstand (dort beginnt die
+		# Kreuzung bzw. die Straße, an die er anschließt)
+		if absf(lateral.x) > half or lateral.y > 0.5:
 			continue
 		var y := segment.points[j].y
 		if absf(q.y - y) < max_dy:
@@ -642,8 +660,8 @@ func _check_houses(tile: Rect2, segments: Array[RoadSegment], index: Dictionary,
 						job = _single_job(Vector2i(floori(q.x / CHUNK), floori(q.z / CHUNK)))
 						by_coord[job.coord] = job
 					var ground := _surface(job, q.x, q.z)
-					# Sockel reicht 0,6 m unter die Wand: mehr Luft darunter = schwebt
-					if not is_nan(ground) and ground < c.y - 0.6:
+					# Der Sockel reicht 1,4 m in den Boden (Village._build_house): mehr Luft darunter = schwebt
+					if not is_nan(ground) and ground < c.y - 1.4:
 						_bad("Haus schwebt", q, "Haus bei %s: Ecke über Gelände %.1f m" % [Vector2(c.x, c.z).round(), c.y - ground])
 
 
@@ -669,9 +687,17 @@ func _single_job(coord: Vector2i) -> TerrainChunkJob:
 func _check_holes(tile: Rect2, jobs: Array[TerrainChunkJob], segments: Array[RoadSegment]) -> void:
 	# Alle Kollisionsflächen der Abschnitte mit Tunnel, nach 8-m-Feldern sortiert
 	var faces := PackedVector3Array()
+	# 1 = Fläche gehört zu einem Tunnel-Deckel (dort zu landen ist in Ordnung)
+	var shell := PackedByteArray()
 	for seg in segments:
 		if not seg.tunnel_ranges.is_empty():
+			var first := faces.size()
 			faces.append_array(seg.collision_faces)
+			shell.resize(faces.size())
+			var range_: Variant = seg.get("shell_faces")
+			if range_ is Vector2i:
+				for f in range((range_ as Vector2i).x, (range_ as Vector2i).y):
+					shell[first + f] = 1
 	if faces.is_empty():
 		return
 	var face_index := {}
@@ -718,15 +744,66 @@ func _check_holes(tile: Rect2, jobs: Array[TerrainChunkJob], segments: Array[Roa
 					# Wo würde man landen, wenn man hier durchs Loch fällt?
 					var top := _surface(job, x, z, false)
 					var landing := -INF
+					var on_shell := false
 					for f: int in face_index.get(Vector2i(floori(x / 8.0), floori(z / 8.0)), PackedInt32Array()):
-						var hit: Variant = Geometry3D.segment_intersects_triangle(Vector3(x, top + 1.0, z), Vector3(x, top - 200.0, z),
+						var hit: Variant = Geometry3D.segment_intersects_triangle(Vector3(x, top + 30.0, z), Vector3(x, top - 200.0, z),
 							faces[f], faces[f + 1], faces[f + 2])
-						if hit != null:
-							landing = maxf(landing, (hit as Vector3).y)
+						if hit != null and (hit as Vector3).y > landing:
+							landing = (hit as Vector3).y
+							on_shell = shell[f] == 1
 					if landing == -INF:
-						_bad("Loch im Gelände: Fall unter die Map", Vector3(x, top, z), "Gelände %.1f, darunter nichts" % top)
-					elif landing < top - 3.0:
-						_bad("Loch im Gelände: Fall in die Röhre", Vector3(x, top, z), "Gelände %.1f, Landung %.1f" % [top, landing])
+						_bad("Loch im Gelände: Fall unter die Map", Vector3(x, top, z), "Gelände %.1f, darunter nichts%s" % [
+							top, _tube_info(segments, Vector3(x, top, z))])
+					elif not on_shell and _inside_tube(segments, Vector3(x, landing, z)):
+						_bad("Loch im Gelände: Fall in die Röhre", Vector3(x, top, z), "Gelände %.1f, Landung %.1f%s" % [
+							top, landing, _tube_info(segments, Vector3(x, top, z))])
+
+
+## Liegt der Punkt unter dem Dach einer Röhre (hinter dem Portal, zwischen den Wänden)?
+func _inside_tube(segments: Array[RoadSegment], q: Vector3) -> bool:
+	for seg in segments:
+		for r in seg.tunnel_ranges:
+			for i in range(r.x, r.y):
+				var a := seg.points[i]
+				var b := seg.points[i + 1]
+				var ab := Vector2(b.x - a.x, b.z - a.z)
+				var t := Vector2(q.x - a.x, q.z - a.z).dot(ab) / maxf(ab.length_squared(), 0.0001)
+				if t < 0.0 or t > 1.0:
+					continue
+				var p := a.lerp(b, t)
+				# Die ersten Meter hinter einem Portal gehören zur Mündung (dort landet man vorn an der
+				# Öffnung, nicht unter dem Dach)
+				var from_portal := INF
+				if r.x > 0:
+					from_portal = (i - r.x + t) * RoadSegment.POINT_SPACING
+				if r.y < seg.points.size() - 1:
+					from_portal = minf(from_portal, (r.y - i - t) * RoadSegment.POINT_SPACING)
+				if from_portal < 1.0:
+					continue
+				var lateral := Vector2(q.x - p.x, q.z - p.z).length()
+				if lateral < seg.tube_half_width() and q.y < p.y + RoadSegment.TUBE_APEX and q.y > p.y - 1.0:
+					return true
+	return false
+
+
+## Lage eines Punkts zur nächsten Röhre (Fehlersuche): seitlich, Abstand zum Portal, Fahrbahnhöhe
+func _tube_info(segments: Array[RoadSegment], q: Vector3) -> String:
+	var best := ""
+	var best_d := INF
+	for seg in segments:
+		for r in seg.tunnel_ranges:
+			for i in range(r.x, r.y + 1):
+				var d := Vector2(seg.points[i].x - q.x, seg.points[i].z - q.z).length()
+				if d < best_d:
+					best_d = d
+					var portal := INF
+					if r.x > 0:
+						portal = minf(portal, (i - r.x) * RoadSegment.POINT_SPACING)
+					if r.y < seg.points.size() - 1:
+						portal = minf(portal, (r.y - i) * RoadSegment.POINT_SPACING)
+					best = " (Röhre %s Punkt %d/%d: seitlich %.1f m, Portal %.0f m, Fahrbahn %.1f, halbe Breite %.1f)" % [
+						seg.key, i, seg.points.size(), _lateral(seg, i, q).x, portal, seg.points[i].y, seg.tube_half_width()]
+	return best
 
 
 # ---------------------------------------------------------------------------

@@ -82,3 +82,33 @@
 - Testen: Tunnel nahe am Start, z. B. `-- --shot=t --pos=-1562,-8360 --heading=-29` (vor dem
   Portal, 500 m lang), innen `--pos=-1798,-8254 --heading=-64`. Leistung im Vollbild: Tunnel-
   strecke 67 FPS, Startstrecke 66,8 (Mac warm). Im Fenster begrenzt macOS auf 60 (V-Sync).
+
+## Von außen fest: Deckel, Stirnwand, Sockel (13.11.)
+
+- Problem: Die Röhre hatte nur innen an den Wänden Kollision (bis 2,5 m), das Gewölbe gar keine.
+  Wo das Gelände über der Röhre ein Loch hat (`RoadQuery.tunnel_hole`: zu dünn oder die ersten 4 m
+  hinter dem Portal, bis 1 m neben der Wand, die Dreiecke reichen eine Rasterweite weiter), fiel
+  man von außen neben der Röhre unter die Map oder durchs Gewölbe in den Tunnel.
+- Deckel (`tunnel_shell.gd`, `TunnelShell`): Betonplatte über der ganzen Röhre mit Kollision,
+  Oberkante 0,9 m über dem Scheitel (`COVER`, knapp unter der Loch-Grenze Scheitel + 1 m, die groben
+  Detailstufen heben ihr Gelände dorthin), seitlich 3,5 m über die Wand hinaus (`REACH`), Seitenwände
+  bis 4 m unter die Fahrbahn. Überall gleich hoch: Straßen kreuzen 9 m über einer Röhre, ein höherer
+  Portalkopf (erster Versuch: Stirnwandhöhe 12,1 m) ragte durch sie hindurch. Meist liegt der
+  Deckel unsichtbar im Berg; durch Löcher sieht man ihn statt der Röhre.
+- Stirnwand: Kollision links, rechts und über der Öffnung bis Deckelhöhe, ihre Seiten 1,5 m in den
+  Berg und eine Oberkante in Deckelhöhe (vorher nur seitlich bis 4 m).
+- Sockel vor der Stirnwand neben der Fahrbahn (`APRON_DEPTH` 3 m, von 0,5 m hinter der Portal-Ebene,
+  seitlich bis Deckelbreite + 0,5 m) mit Kollision: deckt den Rand der Löcher vor dem Portal ab.
+- Löcher vor der Portal-Ebene nur bis 0,7 m (`PORTAL_FRONT_HOLE`, vorher durch die Überlappung der
+  Stücke unbegrenzt): sonst ragt die Böschung in die Öffnung (Tunnel-Prüfwerkzeug), weiter vorn
+  ist die offene Straße.
+- `RoadSegment.shell_faces`: Bereich der Deckel-Flächen in `collision_faces` (für den Welt-Prüfer).
+- Gemessen: Welt-Prüfer am Start (−1600, −8300) vorher 23 Loch-Stellen, jetzt 0; Fallversuch an den
+  21 früheren Loch-Stellen (`--droptest`) vorher 17 durchgefallen (6 unter die Map, 11 in die Röhre),
+  jetzt 0 von 23 (plus zwei Fahrten quer über ein Portal); `tunnel_check.gd` 0 Stellen.
+- Das Sicherheitsnetz (Auto fällt doch unter das Gelände → sofort zurück) kommt mit dem Reset
+  (`car_reset.gd`).
+- Bekannt (alter Planungsfehler, durch den Deckel sichtbar geworden): Zwei Autobahn-Tunnel kreuzen
+  sich manchmal mit nur ~4 m Höhenunterschied, wenn die Kreuzung nah (~180 m) hinter einem
+  Stützpunkt liegt (flaches Stück + 4 % Steigung reichen nicht für 9 m), z. B. bei (−11.127, −4621)
+  und (−16.916, −4976). Welt-Prüfer: „Tunnelwand/Portal in Fahrbahn“.

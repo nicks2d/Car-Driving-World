@@ -81,6 +81,10 @@ extends Node
 ## --selftest     automatischer Testlauf (SelfTest): Landstraße, Autobahn, Wetter, Nacht, alle Menüs,
 ##                Chill-Modus, am Ende „SELFTEST ENDE“ (tools/test.sh wertet das Log aus);
 ##                --selftest=shots macht bei jedem Schritt ein Foto
+## --droptest=X,Z;X,Z;…  Fallversuch: das Auto nacheinander 2 m über dem Boden an diesen Stellen
+##                absetzen (auch über Löchern im Gelände an Tunneln), nach 2,5 s prüfen, ob es
+##                durchgefallen ist (unter dem Gelände, nichts darunter), Ergebnis je Stelle, dann Ende.
+##                Mit --dropdrive=S fährt es danach S Sekunden geradeaus (--heading) weiter.
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
 ##                Audio, Spiel
 
@@ -212,6 +216,12 @@ var _self_test: bool = false
 var _self_test_shots: bool = false
 ## Fährt der Autopilot gerade? (Der Testlauf schaltet ihn für Menüs und Chill-Modus aus)
 var autopilot_enabled: bool = true
+## Fallversuch (--droptest): Stellen, aktuelle Stelle, Zeit, Ergebnisse
+var _drop_points: Array[Vector2] = []
+var _drop_index: int = -1
+var _drop_timer: float = 0.0
+var _drop_drive: float = 0.0
+var _drop_fallen: int = 0
 
 
 func _ready() -> void:
@@ -263,6 +273,12 @@ func _ready() -> void:
 				_open_garage = true
 			"chill":
 				_chill = true
+			"droptest":
+				for pair in value.split(";"):
+					var xz := pair.split(",")
+					_drop_points.append(Vector2(float(xz[0]), float(xz[1])))
+			"dropdrive":
+				_drop_drive = float(value)
 			"selftest":
 				_self_test = true
 				_self_test_shots = value == "shots"
@@ -369,7 +385,7 @@ func is_benchmark() -> bool:
 
 func is_active() -> bool:
 	return _shot_name != "" or _bench_seconds > 0.0 or car_id != "" or weather_id != "" or season_id != "" \
-		or quality != "" or traffic_density >= 0.0
+		or quality != "" or traffic_density >= 0.0 or not _drop_points.is_empty()
 
 
 ## Das Spiel meldet: Gelände rund ums Auto ist da
@@ -390,6 +406,9 @@ func on_world_ready(game: Node3D) -> void:
 		day_night.refresh()
 	if _sign_shot != "":
 		_place_sign_camera(game)
+	if not _drop_points.is_empty():
+		_state = "droptest"
+		_next_drop()
 	if _windows_at >= 0.0 and _bench_seconds <= 0.0:
 		(game.get_node("OpenWindows") as OpenWindows).open = true
 		game.car.windows_open = 1.0
@@ -511,6 +530,8 @@ func _process(delta: float) -> void:
 			if _timer <= 0.0:
 				_state = "done"
 				_take_screenshot()
+		"droptest":
+			_update_drop(delta)
 		"bench_end":
 			_timer += delta
 			if _timer > 1.5:
@@ -580,6 +601,101 @@ func _process(delta: float) -> void:
 					print("Aufnahme gespeichert: ", _record_path)
 				_print_bench()
 				get_tree().quit()
+
+
+## Fallversuch: nächste Stelle
+func _next_drop() -> void:
+	_drop_index += 1
+	if _drop_index >= _drop_points.size():
+		print("FALLVERSUCH: %d von %d Stellen durchgefallen" % [_drop_fallen, _drop_points.size()])
+		_state = "done"
+		Input.action_release("accelerate")
+		get_tree().quit()
+		return
+	var p := _drop_points[_drop_index]
+	var surface := _surface_at(p)
+	var yaw := deg_to_rad(start_heading)
+	_game.car.teleport(Transform3D(Basis(Vector3.UP, yaw), Vector3(p.x, surface + 2.0, p.y)))
+	_drop_timer = 0.0
+
+
+func _update_drop(delta: float) -> void:
+	var car: VehicleBody3D = _game.car
+	# Nach einem weiten Sprung hält das Spiel das Auto fest, bis das Gelände da ist
+	if car.freeze or not _game.world_is_ready:
+		return
+	_drop_timer += delta
+	if _drop_drive > 0.0:
+		if _drop_timer > 1.0 and _drop_timer < 1.0 + _drop_drive:
+			Input.action_press("accelerate", 0.6)
+		else:
+			Input.action_release("accelerate")
+	if _drop_timer < 2.5 + _drop_drive:
+		return
+	var p := _drop_points[_drop_index]
+	var here := car.global_position
+	var natural := (_game as Node).call("ground_height", here.x, here.z) as float
+	var query := PhysicsRayQueryParameters3D.create(here + Vector3.UP * 0.5, here - Vector3.UP * 3000.0)
+	query.exclude = [car.get_rid()]
+	var below := car.get_world_3d().direct_space_state.intersect_ray(query)
+	var reset := car.global_position.distance_to(Vector3(p.x, here.y, p.y)) > 60.0 + _drop_drive * 30.0
+	# Durchgefallen: unter dem Auto ist nichts mehr (unter der Map) oder es steht in einer Röhre
+	# (überdacht) bzw. tief unter dem Gelände, ohne überdacht zu sein (Portale sind abgetragen,
+	# dort zählt nur die Röhre)
+	var tube := _tube_position(here)
+	var in_tube := tube.z > 0.5 and absf(tube.x) < tube.w and tube.y > 0.0
+	var fallen := below.is_empty() or in_tube or (here.y < natural - 30.0)
+	if fallen:
+		_drop_fallen += 1
+	print("Fallversuch %d (%d, %d): Ende bei %s (Röhre: seitlich %.1f, hinter dem Portal %.1f m), Gelände (natürlich) %.1f, darunter %s%s -> %s" % [
+		_drop_index + 1, p.x, p.y, here.round(), tube.x, tube.y, natural,
+		"nichts" if below.is_empty() else str(((below["position"]) as Vector3).y).pad_decimals(1),
+		" (zurückgesetzt)" if reset else "", ("IN DIE RÖHRE GEFALLEN" if in_tube else "DURCHGEFALLEN") if fallen else "ok"])
+	_next_drop()
+
+
+## Lage zur nächsten Röhre: (seitlicher Abstand, Meter hinter dem Portal (negativ = davor),
+## 1 = gefunden und auf Röhrenhöhe, halbe Röhrenbreite)
+func _tube_position(pos: Vector3) -> Vector4:
+	var result := Vector4(0.0, 0.0, 0.0, 0.0)
+	var best := INF
+	for pair: Array in (_game.roads as RoadNetwork).loaded_segments(Rect2(pos.x - 50.0, pos.z - 50.0, 100.0, 100.0)):
+		var segment: RoadSegment = pair[1]
+		var n := segment.points.size()
+		for r in segment.tunnel_ranges:
+			for i in range(r.x, r.y):
+				var a := segment.points[i]
+				var b := segment.points[i + 1]
+				var ab := Vector2(b.x - a.x, b.z - a.z)
+				var t := Vector2(pos.x - a.x, pos.z - a.z).dot(ab) / maxf(ab.length_squared(), 0.0001)
+				# Vor dem ersten bzw. hinter dem letzten Stück: dort liegt das Portal
+				if (t < 0.0 and i > r.x) or (t > 1.0 and i < r.y - 1):
+					continue
+				var q := a.lerp(b, clampf(t, 0.0, 1.0))
+				var lateral := Vector2(pos.x - q.x, pos.z - q.z)
+				var left := Vector2(-ab.y, ab.x).normalized()
+				var d := lateral.length() + maxf(-t, t - 1.0) * ab.length()
+				if d >= best:
+					continue
+				best = d
+				var along := (i - r.x + t) * RoadSegment.POINT_SPACING if r.x > 0 else 1e6
+				if r.y < n - 1:
+					along = minf(along, (r.y - i - t) * RoadSegment.POINT_SPACING)
+				var height_ok := pos.y > q.y - 1.0 and pos.y < q.y + RoadSegment.TUBE_APEX
+				result = Vector4(lateral.dot(left), along, 1.0 if height_ok else 0.0, segment.tube_half_width())
+	return result
+
+
+## Höhe zum Absetzen: höchste Fläche mit Kollision (Gelände, Straße, Tunnel-Deckel), mindestens
+## das natürliche Gelände (über einem Loch trifft der Strahl sonst erst die Straße in der Röhre)
+func _surface_at(p: Vector2) -> float:
+	var natural: float = (_game as Node).call("ground_height", p.x, p.y)
+	var query := PhysicsRayQueryParameters3D.create(Vector3(p.x, 4000.0, p.y), Vector3(p.x, -500.0, p.y))
+	query.exclude = [_game.car.get_rid()]
+	var hit := (_game as Node3D).get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return natural
+	return maxf((hit["position"] as Vector3).y, natural)
 
 
 func _physics_process(_delta: float) -> void:

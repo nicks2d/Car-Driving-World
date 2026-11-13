@@ -155,6 +155,8 @@ var bay_arrays: Array = []
 ## Stellen im Tunnel, an denen echte Lichter stehen können (Weltkoordinaten)
 var tunnel_lights: PackedVector3Array
 var collision_faces: PackedVector3Array
+## Bereich der Tunnel-Deckel in collision_faces (Anfang, Ende) für den Welt-Prüfer
+var shell_faces := Vector2i(0, 0)
 ## Mittelpunkt, auf den sich die Mesh-Koordinaten beziehen (für Genauigkeit)
 var origin: Vector3
 
@@ -1436,6 +1438,11 @@ func build_mesh(first: int, last: int) -> void:
 			_build_portal(r.x, -direction_at(r.x), lefts[r.x])
 		if r.y < n - 1:
 			_build_portal(r.y, direction_at(r.y), lefts[r.y])
+	# Deckel über jeder Röhre: von außen überall fest (keine Löcher, durch die man fällt)
+	var shell_start := collision_faces.size()
+	for r in tunnel_ranges:
+		TunnelShell.build(self, r, lefts)
+	shell_faces = Vector2i(shell_start, collision_faces.size())
 	tunnel_arrays = _take_quads()
 	for r in tunnel_ranges:
 		_build_lamps(r, lefts)
@@ -1698,6 +1705,9 @@ const COLLAR_WIDTH: float = 1.3
 const COLLAR_DEPTH: float = 1.0
 const HEADWALL_SIDE: float = 9.0
 const HEADWALL_TOP: float = 4.5
+## Betonsockel vor der Stirnwand neben der Fahrbahn: so weit reicht er nach vorn (Meter): Loch bis
+## 0,7 m vor dem Portal plus eine Rasterweite (2 m), dazu Reserve
+const APRON_DEPTH: float = 3.0
 
 
 ## Halbe Breite der Tunnelröhre (Fahrbahn, Bankett und etwas Abstand)
@@ -1826,13 +1836,36 @@ func _build_portal(p: int, outward: Vector3, left: Vector3) -> void:
 			at.call(Vector2(rect_w * sgn, rect_h), -1.5), at.call(Vector2(rect_w * sgn, -2.0), -1.5), side_normal, PORTAL_COLOR)
 	_tquad(at.call(Vector2(rect_w, rect_h), wall_plane), at.call(Vector2(-rect_w, rect_h), wall_plane),
 		at.call(Vector2(-rect_w, rect_h), -1.5), at.call(Vector2(rect_w, rect_h), -1.5), Vector3.UP, PORTAL_COLOR)
-	# Kollision: Stirnwand links und rechts der Öffnung (so fährt niemand in den Hang)
-	for sgn: float in [1.0, -1.0]:
-		var c0: Vector3 = at.call(Vector2(outer_w * sgn, -0.5), wall_plane) + origin
-		var c1: Vector3 = at.call(Vector2(rect_w * sgn, -0.5), wall_plane) + origin
-		var c2: Vector3 = at.call(Vector2(rect_w * sgn, 4.0), wall_plane) + origin
-		var c3: Vector3 = at.call(Vector2(outer_w * sgn, 4.0), wall_plane) + origin
+	# Kollision: die Stirnwand links, rechts und über der Öffnung und ihre Seiten bis zur Höhe des
+	# Tunnel-Deckels (so fährt niemand in den Hang und rutscht niemand neben der Röhre hinunter).
+	# Darüber nicht: Straßen kreuzen 9 m über einer Röhre, auch nah am Portal.
+	var top_h := TUBE_APEX + TunnelShell.COVER
+	var collision := func(q0: Vector2, q1: Vector2, q2: Vector2, q3: Vector2, d0: float, d1: float) -> void:
+		var c0: Vector3 = at.call(q0, d0) + origin
+		var c1: Vector3 = at.call(q1, d0) + origin
+		var c2: Vector3 = at.call(q2, d1) + origin
+		var c3: Vector3 = at.call(q3, d1) + origin
 		collision_faces.append_array([c0, c1, c2, c0, c2, c3])
+	for sgn: float in [1.0, -1.0]:
+		collision.call(Vector2(outer_w * sgn, -0.5), Vector2(rect_w * sgn, -0.5), Vector2(rect_w * sgn, top_h),
+			Vector2(outer_w * sgn, top_h), wall_plane, wall_plane)
+		# Seite der Stirnwand (1,5 m in den Berg hinein)
+		collision.call(Vector2(rect_w * sgn, -2.0), Vector2(rect_w * sgn, top_h), Vector2(rect_w * sgn, top_h),
+			Vector2(rect_w * sgn, -2.0), wall_plane, -1.5)
+	# Oberkante in Deckelhöhe hinter der Stirnwand: schließt an den Deckel an
+	collision.call(Vector2(rect_w, top_h), Vector2(-rect_w, top_h), Vector2(-rect_w, top_h),
+		Vector2(rect_w, top_h), wall_plane, -1.5)
+	# Sockel vor der Stirnwand neben der Fahrbahn: Die Löcher im Gelände hinter dem Portal reichen
+	# mit ihren Dreiecken eine Rasterweite nach vorn, darunter läge sonst nichts
+	var apron_in := road_width * 0.5 + shoulder_width
+	var apron_out := w + TunnelShell.REACH + 0.5
+	for sgn: float in [1.0, -1.0]:
+		var a0: Vector2 = Vector2(apron_in * sgn, -0.06)
+		var a1: Vector2 = Vector2(apron_out * sgn, -0.06)
+		# Beginnt 0,5 m hinter der Portal-Ebene (unter dem Deckel), sonst bliebe ein Spalt
+		_tquad(at.call(a0, -0.5), at.call(a1, -0.5), at.call(a1, APRON_DEPTH),
+			at.call(a0, APRON_DEPTH), Vector3.UP, PORTAL_COLOR)
+		collision.call(a0, a1, a1, a0, -0.5, APRON_DEPTH)
 
 
 ## Wohin ein Punkt des Kragen-Umrisses auf dem Rand der Stirnwand gehört: Wandteile seitlich

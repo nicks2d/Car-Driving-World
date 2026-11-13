@@ -39,6 +39,20 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
 - Ausgabe: Anzahl je Fehlerart, je 4 Beispiele mit Foto-Befehl (`--pos --cam --lookat`), alle
   Stellen in `screenshots/world_check.txt`.
 
+- Loch-Prüfung im Welt-Prüfer: Strahl von 30 m über dem Gelände nach unten. Landung auf dem
+  Tunnel-Deckel, dem Sockel oder der offenen Straße vor dem Portal ist in Ordnung (wie ein Sturz von
+  einer Böschung); Fehler sind „unter die Map“ (nichts darunter) und „in die Röhre“ (mindestens 1 m
+  hinter dem Portal zwischen den Wänden). Häuser „schweben“ erst ab 1,4 m Luft (so tief reicht der
+  Sockel). Über das Ende eines Abschnitts hinaus zählt nur 0,5 m Überstand.
+- Fehlersuche im Prüfer: `--info=X,Y,Z` (Angaben zu einem Abschnitt, Deckel-Flächen),
+  `--probe=X,Z,KX,KY,KZ` (Abstand zu den Leitplanken-Sperrzonen eines Abschnitts); wartet ein Feld
+  länger als 40 s auf Straßen, nennt er die unfertigen und laufenden Abschnitte.
+- Fallversuch: `-- --droptest=X,Z;X,Z;… --pos=X,Z` setzt das Auto an jeder Stelle 2 m über der
+  höchsten Fläche bzw. dem natürlichen Gelände ab und meldet nach 2,5 s „ok“, „DURCHGEFALLEN“ (nichts
+  darunter) oder „IN DIE RÖHRE GEFALLEN“ (mindestens zwischen den Röhrenwänden hinter dem Portal);
+  `--dropdrive=S` fährt danach S Sekunden geradeaus (`--heading`). Beispiel:
+  `--droptest=-1581,-8337;-1874,-8062 --pos=-1562,-8360`.
+
 ## Grundregeln
 
 - Godot im Projektordner: `/Applications/Godot.app/Contents/MacOS/Godot --path . -- ARGUMENTE`

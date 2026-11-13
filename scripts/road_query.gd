@@ -9,6 +9,8 @@ extends RefCounted
 const CELL: float = 24.0
 ## So weit hinter dem Portal hat das Gelände über der Röhre noch ein Loch (Meter)
 const PORTAL_HOLE: float = 4.0
+## So weit vor dem Portal darf das Gelände noch ein Loch haben (Meter)
+const PORTAL_FRONT_HOLE: float = 0.7
 ## Bis so weit hinter dem Portal wachsen über dem Tunnel keine Bäume (Meter)
 const PORTAL_KEEPOUT: float = 20.0
 ## Steigung der Felswand hinter dem Portal (Meter Höhe pro Meter in den Berg hinein)
@@ -336,6 +338,11 @@ func tunnel_hole(x: float, z: float, natural: float) -> bool:
 	for index: int in pieces:
 		var hit := _tunnel_hit(index, x, z)
 		if hit.x > _t_half[index] + 1.0:
+			continue
+		# Mehr als PORTAL_FRONT_HOLE vor der Portal-Ebene kein Loch (dort ist die offene Straße,
+		# kein Deckel darüber). Knapp davor schon: sonst ragt die Böschung in die Öffnung. Was dort
+		# offen ist, deckt der Sockel vor der Stirnwand ab (RoadSegment.APRON_DEPTH).
+		if _in_front_of_portal(index, x, z, INF) and not _in_front_of_portal(index, x, z, PORTAL_FRONT_HOLE):
 			continue
 		if hit.y < PORTAL_HOLE or natural < hit.z + RoadSegment.TUBE_APEX + 1.0:
 			return true
