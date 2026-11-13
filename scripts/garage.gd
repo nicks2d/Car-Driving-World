@@ -232,6 +232,10 @@ func _load_settings() -> void:
 
 
 func _save_settings() -> void:
+	# Testläufe (Argumente wie --selftest) speichern nichts, sonst wäre danach das Testauto gewählt
+	var debug_tools := get_node_or_null("../DebugTools")
+	if debug_tools and debug_tools.is_active():
+		return
 	var config := ConfigFile.new()
 	config.load(SETTINGS_PATH)
 	config.set_value("garage", "car", cars[_selected].id)

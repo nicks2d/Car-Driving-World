@@ -3,6 +3,42 @@
 Alle Startargumente stehen mit Erklärung im Kopf von `scripts/debug_tools.gd`. Testbefehle für
 einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter „Testen“.
 
+## Testlauf nach jedem Teil (Pflicht)
+
+- `tools/test.sh` (ca. 100 s): startet das Spiel mit `--selftest` (`scripts/self_test.gd`): 25 s
+  Autopilot auf der Landstraße, Sprung auf die Autobahn bei (1200, −4000) mit Ladebildschirm, 25 s
+  Autobahn, dann je 3,5 s Regen, Schnee (Winter), Nacht (23 Uhr), Garage (schließt mit „Losfahren“),
+  große Karte, Fotomodus, Pausemenü und 12 s Chill-Modus. Danach „SELFTEST ENDE“ und Beenden.
+- Ausgewertet werden Rückgabewert, die Zeile „SELFTEST ENDE“ (fehlt sie: stiller Absturz oder
+  Hänger; nach 300 s wird abgebrochen) und alle Zeilen mit ERROR, WARNING, Parse Error, leaked im
+  Log `screenshots/test.log` (auch aus dem vorherigen `--import`). Ist der Autopilot kaum gefahren
+  (Landstraße < 150 m, Autobahn < 300 m), ist das auch ein Fehler. Ergebnis: „OK“ (Rückgabe 0) oder
+  die Liste. Bekannte harmlose Meldungen stehen in `KNOWN` im Skript (mit Begründung).
+- `tools/test.sh --app` testet die exportierte App in /Applications (Log `screenshots/test_app.log`,
+  Fotos dort in `user://selftest/`), `--shots` macht ein Foto pro Schritt
+  (`screenshots/selftest_*.png`), weitere Argumente gehen ans Spiel (z. B. `--car=e92`).
+- Testläufe speichern nichts: Auch die Garage speichert beim Schließen nur ohne Testargument
+  (vorher hätte ein Test das gewählte Auto überschrieben).
+
+## Welt-Prüfer (nach Änderungen an Straßen, Gelände, Tunneln, Dörfern)
+
+- `Godot --headless --path . -s res://tools/world_check.gd -- [--size=40] [--center=X,Z] [--times]`:
+  rechnet die Straßen Feld für Feld (4 × 4 km, Schlangenlinie) und baut für jeden Abschnitt Mesh
+  und Kollision wie im Spiel, dazu Gelände-Kacheln Stufe 0 mit Bäumen entlang der Straßen.
+  Dauer: ein Feld ~20 s (das meiste sind die Gelände-Kacheln mit Bäumen), 12 × 12 km ~3 min,
+  40 × 40 km ~25 min.
+- Fehlerarten (Stelle = 40-m-Feld): Fahrbahnen überschneiden sich (Fahrstreifen von A liegt auf
+  der Fahrfläche von B, Höhenunterschied < 3,5 m; erlaubt an gemeinsamen Enden bis 60 m, nah an der
+  eigenen Kreuzung, Rampen auf ihrer Autobahn außerhalb der Hauptfahrbahn ab 9,6 m neben der Mitte),
+  Straße durch fremde Kreuzung, Leitplanke/Brüstung bzw. Tunnelwand/Portal in einer fremden
+  Fahrbahn (senkrechte Kollisionsflächen, keine Ausnahmen außer der Mittelleitplanke, die im
+  nächsten Autobahn-Abschnitt weiterläuft), Loch im Gelände (Dreieck mit NaN-Ecke; Strahl nach
+  unten: nichts = „Fall unter die Map“, mehr als 3 m tiefer = „Fall in die Röhre“), Baum/Busch/Fels
+  auf Straße oder schwebend (Fuß > 0,15 m über dem Gelände), Haus auf Straße oder schwebend (Ecke
+  > 0,6 m über dem Gelände), Straße im Wasser, Kreuzung mit Lücke oder Höhensprung (> 0,25 m) am Arm.
+- Ausgabe: Anzahl je Fehlerart, je 4 Beispiele mit Foto-Befehl (`--pos --cam --lookat`), alle
+  Stellen in `screenshots/world_check.txt`.
+
 ## Grundregeln
 
 - Godot im Projektordner: `/Applications/Godot.app/Contents/MacOS/Godot --path . -- ARGUMENTE`

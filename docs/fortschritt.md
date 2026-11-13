@@ -55,3 +55,4 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
 - [x] Meilenstein 8 (Pausemenü, Einstellungen mit 5 Reitern, Qualitätsstufen, Tastenbelegung, Audio-Busse)
 - [x] Meilenstein 9 (Dörfer mit Häusern, Ortsschildern, Laternen; Verkehr mit KI-Autos)
 - [x] Aufräumen: CLAUDE.md nach docs/ aufgeteilt (13.11.)
+- [x] Testlauf tools/test.sh (Selbsttest mit allen Modi) und Welt-Prüfer tools/world_check.gd (13.11.)

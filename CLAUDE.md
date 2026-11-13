@@ -100,6 +100,8 @@ $G --path . --always-on-top -- --shot=NAME --pos=X,Z --heading=G   # Foto nach s
 $G --path . -- --bench=30 --highway --full --quality=hoch          # FPS (docs/leistung.md)
 $G --headless --path . --import                                    # nach neuen class_name
 tools/build_mac_app.sh                                             # Mac-App (docs/mac-app.md)
+tools/test.sh [--app] [--shots]                                    # Testlauf: OK oder Fehlerliste
+$G --headless --path . -s res://tools/world_check.gd -- --size=12  # Welt-Prüfer (40 = alles, ~25 min)
 ```
 
 Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
@@ -117,4 +119,4 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Kennzeichen, Pfützen, Herbstlaub · Talsperren, Wasserfälle, Landmarken-Brücken, Seeleben ·
   Entdecker-Karte, Orte-Sammlung · Chill-Modus · Mac-App „Car Driving World“ · README auf
   Englisch, GitHub (nicks2d/Car-Driving-World)
-- [x] Aufräumen: CLAUDE.md nach `docs/` aufgeteilt
+- [x] Aufräumen: CLAUDE.md nach `docs/` aufgeteilt · Testlauf `tools/test.sh` und Welt-Prüfer

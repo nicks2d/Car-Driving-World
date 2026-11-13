@@ -78,6 +78,9 @@ extends Node
 ## --full        Randloses Fenster in Bildschirmgröße (so viele Bildpunkte wie im Vollbild). Echtes
 ##                Vollbild übergeht macOS beim Start oft und bremst es auf 60 FPS (V-Sync lässt
 ##                sich dort nicht abschalten). Der Benchmark beginnt erst, wenn die Größe stimmt.
+## --selftest     automatischer Testlauf (SelfTest): Landstraße, Autobahn, Wetter, Nacht, alle Menüs,
+##                Chill-Modus, am Ende „SELFTEST ENDE“ (tools/test.sh wertet das Log aus);
+##                --selftest=shots macht bei jedem Schritt ein Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
 ##                Audio, Spiel
 
@@ -204,6 +207,11 @@ var _exit_drive: bool = false
 var _on_exit_route: bool = false
 var _stuck_time: float = 0.0
 var _reverse_time: float = 0.0
+## Automatischer Testlauf (--selftest): steuert den Autopiloten selbst
+var _self_test: bool = false
+var _self_test_shots: bool = false
+## Fährt der Autopilot gerade? (Der Testlauf schaltet ihn für Menüs und Chill-Modus aus)
+var autopilot_enabled: bool = true
 
 
 func _ready() -> void:
@@ -255,6 +263,11 @@ func _ready() -> void:
 				_open_garage = true
 			"chill":
 				_chill = true
+			"selftest":
+				_self_test = true
+				_self_test_shots = value == "shots"
+				# Benchmark ohne Ende: der Testlauf beendet das Spiel selbst
+				_bench_seconds = 1.0e9
 			"quitafter":
 				_quit_after = float(value)
 				# Die Garage hält das Spiel beim Start an: trotzdem weiterzählen
@@ -434,6 +447,13 @@ func _start_bench() -> void:
 	if _chill:
 		(_game.get_node("ChillMode") as ChillMode).start()
 		return
+	if _self_test:
+		var test := SelfTest.new()
+		test.name = "SelfTest"
+		test.debug_tools = self
+		test.game = _game
+		test.shots = _self_test_shots
+		add_child(test)
 	_extend_route()
 	_last_position = _game.car.global_position
 	if _record_path != "":
@@ -563,9 +583,20 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if _state != "bench" or _chill:
+	if _state != "bench" or _chill or not autopilot_enabled:
 		return
 	_drive_autopilot()
+
+
+## Autopilot neu starten (z. B. nach einem Sprung): neue Route ab der jetzigen Stelle
+func restart_autopilot(highway: bool) -> void:
+	on_highway = highway
+	_stuck_time = 0.0
+	_reverse_time = 0.0
+	_lane_shift = 0.0
+	_lane_shift_target = 0.0
+	_last_position = _game.car.global_position
+	_extend_route()
 
 
 # ---------------------------------------------------------------------------
