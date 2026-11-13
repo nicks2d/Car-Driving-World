@@ -36,25 +36,25 @@ extends Resource
 ## Drehung um die Hochachse, damit die Nase nach +Z zeigt (Grad)
 @export var model_rotation_deg: float = 0.0
 ## Räder, die sich mitdrehen (Reifen, Felgen, Bremsscheiben)
-@export var wheel_parts: PackedStringArray = []
+@export var wheel_parts: PackedStringArray = PackedStringArray()
 ## Teile, die lenken und federn, sich aber nicht drehen (Bremssättel)
-@export var caliper_parts: PackedStringArray = []
+@export var caliper_parts: PackedStringArray = PackedStringArray()
 ## Teile, die man nicht sieht oder die stören (Motor, Hilfsobjekte)
-@export var hidden_parts: PackedStringArray = []
+@export var hidden_parts: PackedStringArray = PackedStringArray()
 ## Aufkleber (Taste K)
-@export var sticker_parts: PackedStringArray = []
+@export var sticker_parts: PackedStringArray = PackedStringArray()
 ## Materialien, die durch eigene ersetzt werden
-@export var paint_materials: PackedStringArray = []
-@export var glass_materials: PackedStringArray = []
-@export var tire_materials: PackedStringArray = []
-@export var rim_materials: PackedStringArray = []
-@export var exhaust_materials: PackedStringArray = []
-@export var headlight_materials: PackedStringArray = []
-@export var taillight_materials: PackedStringArray = []
+@export var paint_materials: PackedStringArray = PackedStringArray()
+@export var glass_materials: PackedStringArray = PackedStringArray()
+@export var tire_materials: PackedStringArray = PackedStringArray()
+@export var rim_materials: PackedStringArray = PackedStringArray()
+@export var exhaust_materials: PackedStringArray = PackedStringArray()
+@export var headlight_materials: PackedStringArray = PackedStringArray()
+@export var taillight_materials: PackedStringArray = PackedStringArray()
 ## Nur diese Teile werfen Schatten (große Karosserieteile, Reifen)
-@export var shadow_parts: PackedStringArray = []
+@export var shadow_parts: PackedStringArray = PackedStringArray()
 ## Diese Teile wechseln früher auf vereinfachte Versionen (Innenraum, Felgen)
-@export var low_detail_parts: PackedStringArray = []
+@export var low_detail_parts: PackedStringArray = PackedStringArray()
 ## Unbewegliche Teile pro Material zu einem Mesh zusammenfassen (weniger Draw Calls).
 ## Für Modelle mit sehr vielen Einzelteilen.
 @export var merge_static_parts: bool = false

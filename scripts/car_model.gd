@@ -194,6 +194,7 @@ func _check_loading() -> void:
 	# Inzwischen wurde vielleicht schon ein anderes Auto gewählt
 	if scene == null or path != model_path(_profile):
 		if scene == null:
+			push_warning("Automodell konnte nicht geladen werden (Status %d): %s" % [status, path])
 			_set_placeholder(true)
 			model_ready.emit()
 		return

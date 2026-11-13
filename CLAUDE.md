@@ -120,3 +120,5 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Entdecker-Karte, Orte-Sammlung · Chill-Modus · Mac-App „Car Driving World“ · README auf
   Englisch, GitHub (nicks2d/Car-Driving-World)
 - [x] Aufräumen: CLAUDE.md nach `docs/` aufgeteilt · Testlauf `tools/test.sh` und Welt-Prüfer
+- [x] Straßen-Bugs, breitere Rampen · Tunnel von außen dicht · Reset mit sicheren Stellen ·
+  Kennzeichen an der Stelle des Originals · Autos in der Mac-App sichtbar (Export-Einstellung)

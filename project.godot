@@ -233,3 +233,7 @@ textures/vram_compression/import_etc2_astc=true
 
 scaling_3d/mode=4
 scaling_3d/scale=0.75
+
+[editor]
+
+export/convert_text_resources_to_binary=false

@@ -676,6 +676,37 @@ func _print_mesh_check() -> void:
 			prepared.near_mesh.get_surface_count() if prepared and prepared.near_mesh else -1, near_points])
 	var traffic := _game.get_node("Traffic") as Traffic
 	print("MESHCHECK Verkehr: %d Autos unterwegs" % traffic.car_count())
+	# Die Modell-Szene des Spielerautos direkt laden und ihre Meshes zählen
+	var profile: CarProfile = _game.car.profile
+	var path := CarModel.model_path(profile)
+	var scene := load(path) as PackedScene if path != "" else null
+	var meshes := 0
+	var faces := 0
+	if scene:
+		var instance := scene.instantiate()
+		for node in instance.find_children("*", "", true, false):
+			if node is MeshInstance3D and (node as MeshInstance3D).mesh:
+				meshes += 1
+				faces += (node as MeshInstance3D).mesh.get_faces().size()
+		print("MESHCHECK Szene %s: Wurzel %s, %d Knoten, %d MeshInstance3D, %d Dreieck-Punkte" % [path,
+			instance.get_class(), instance.find_children("*", "", true, false).size(), meshes, faces])
+		print("MESHCHECK Muster Räder %s, Sättel %s, weg %s" % [profile.wheel_parts, profile.caliper_parts, profile.hidden_parts])
+		var shown := 0
+		for node in instance.find_children("*", "", true, false):
+			var hit := false
+			for pattern in profile.wheel_parts:
+				if String(node.name).matchn(pattern):
+					hit = true
+			if hit or shown < 4:
+				print("MESHCHECK   Knoten %s (%s) Rad-Muster: %s" % [node.name, node.get_class(), hit])
+				shown += 1
+			if shown >= 8:
+				break
+		instance.free()
+	else:
+		print("MESHCHECK Szene %s: lädt nicht (vorhanden laut ResourceLoader: %s)" % [path, ResourceLoader.exists(path)])
+	if model:
+		print("MESHCHECK Lader: lädt noch %s, Modell %s" % [model.is_loading(), model.get("_model")])
 
 
 ## Reset-Test: feste Abfolge nach der Zeit im Benchmark

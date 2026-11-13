@@ -50,3 +50,26 @@
   (Hängebrücke `--pos=-10183,-9442 --cam=-10183,-10100,30 --lookat=-10183,-9442,35`), bath, moon,
   dyno, rest-area, village (Buchhof nachts `--pos=-660,459 --heading=103 --time=22`), explorer-map
   (`--bench=60 --highway --map`), chill (`--bench=62 --chill --car=m4csl --pos=2400,4180`).
+
+## Autos unsichtbar in der App (behoben 13.11., Teil 7)
+
+- Befund: In der exportierten App waren Garage-Autos unsichtbar (nur das Kennzeichen schwebte über
+  der Straße), Log ohne Fehler. `--meshcheck` (Spielerauto, Verkehrsmodell, Tankstelle zählen) zeigte:
+  Modell geladen, 96 sichtbare Meshes statt 67 im Editor, und die Listen `wheel_parts`, `caliper_parts`,
+  `hidden_parts` des Profils waren leer (Editor: „wms13p*“ usw.).
+- Ursache: Godots Umwandlung der Text-Ressourcen (`.tres`) in Binärdateien beim Export
+  (`editor/export/convert_text_resources_to_binary`, Standard an) verliert die `PackedStringArray`-Werte
+  der Autoprofile. Ohne Rad-Muster findet `CarModel._build` keine Räder, der Radstand des Modells ist 0,
+  `_fit` skaliert mit unendlich → Auto unsichtbar. (Die Vorbelegung `= []` statt `PackedStringArray()`
+  war es nicht, getestet; die steht jetzt trotzdem sauber da.)
+- Lösung: `editor/export/convert_text_resources_to_binary=false` in project.godot. Danach in der App
+  wie im Editor 67 Meshes, Fotos aus der App: M4 CSL, Garage (SL 65), Audi S3 im Verkehr, Raststätte mit
+  Tankstelle. Verkehr und Tankstelle (vorbereitete `.res`, schon binär) waren nicht betroffen.
+- `CarModel` meldet jetzt eine Warnung, wenn ein Modell nicht geladen werden kann (vorher still
+  der Platzhalter).
+- Testen gegen die App: `tools/test.sh --app` (OK), Fotos aus der App landen in `user://screenshots`
+  (`~/Library/Application Support/Godot/app_userdata/Endlose Welt/screenshots`), z. B.
+  `"/Applications/Car Driving World.app/Contents/MacOS/Endlose Welt" --always-on-top -- --shot=NAME
+  --meshcheck --car=m2`.
+- Hinweis zur Messung vom 12.11. („App ~5 % langsamer“): Damals fehlten in der App die Automodelle
+  (unsichtbar), der Vergleich war also nicht fair.
