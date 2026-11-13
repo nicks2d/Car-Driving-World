@@ -22,6 +22,7 @@
 [ext_resource type="Script" path="res://scripts/lake_life.gd" id="92_lakelife"]
 [ext_resource type="Script" path="res://scripts/exploration.gd" id="93_explore"]
 [ext_resource type="Script" path="res://scripts/chill_mode.gd" id="94_chill"]
+[ext_resource type="Script" path="res://scripts/car_reset.gd" id="95_reset"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
@@ -653,6 +654,11 @@ script = ExtResource("93_explore")
 car = NodePath("../Car")
 roads = NodePath("../Roads")
 debug_tools = NodePath("../DebugTools")
+
+[node name="CarReset" type="Node" parent="." node_paths=PackedStringArray("car", "roads")]
+script = ExtResource("95_reset")
+car = NodePath("../Car")
+roads = NodePath("../Roads")
 
 [node name="ChillMode" type="CanvasLayer" parent="." node_paths=PackedStringArray("car", "camera", "roads", "traffic", "limits", "day_night", "hud", "messages", "debug_tools")]
 script = ExtResource("94_chill")

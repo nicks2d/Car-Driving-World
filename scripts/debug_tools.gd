@@ -85,6 +85,9 @@ extends Node
 ##                absetzen (auch über Löchern im Gelände an Tunneln), nach 2,5 s prüfen, ob es
 ##                durchgefallen ist (unter dem Gelände, nichts darunter), Ergebnis je Stelle, dann Ende.
 ##                Mit --dropdrive=S fährt es danach S Sekunden geradeaus (--heading) weiter.
+## --resettest   mit --bench: Reset prüfen (CarReset): nach 10 s Autopilot mit Vollgas in den Graben,
+##                R (Fotos reset_vorher/reset_nachher), noch einmal R in der Sperre, Überschlag auf der
+##                Straße (Aufrichten am Platz), Sturz unter das Gelände (Sicherheitsnetz)
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
 ##                Audio, Spiel
 
@@ -222,6 +225,10 @@ var _drop_index: int = -1
 var _drop_timer: float = 0.0
 var _drop_drive: float = 0.0
 var _drop_fallen: int = 0
+## Reset-Test (--resettest): nächster Schritt und gemerkte Lage
+var _reset_test: bool = false
+var _reset_step: int = 0
+var _reset_mark := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -277,6 +284,8 @@ func _ready() -> void:
 				for pair in value.split(";"):
 					var xz := pair.split(",")
 					_drop_points.append(Vector2(float(xz[0]), float(xz[1])))
+			"resettest":
+				_reset_test = true
 			"dropdrive":
 				_drop_drive = float(value)
 			"selftest":
@@ -580,6 +589,8 @@ func _process(delta: float) -> void:
 			if not _bench_shots.is_empty() and _timer >= _bench_shots[0]:
 				_bench_shots.remove_at(0)
 				_save_image("bench_%d" % int(_timer))
+			if _reset_test:
+				_update_reset_test()
 			if _windows_at >= 0.0 and _timer >= _windows_at:
 				_windows_at = -1.0
 				(_game.get_node("OpenWindows") as OpenWindows).open = true
@@ -601,6 +612,79 @@ func _process(delta: float) -> void:
 					print("Aufnahme gespeichert: ", _record_path)
 				_print_bench()
 				get_tree().quit()
+
+
+## Reset-Test: feste Abfolge nach der Zeit im Benchmark
+func _update_reset_test() -> void:
+	var car: Car = _game.car
+	var reset := _game.get_node("CarReset") as CarReset
+	var steps: Array[float] = [10.0, 12.5, 16.0, 16.2, 18.0, 19.0, 21.5, 22.0, 24.5, 25.0, 28.0]
+	if _reset_step >= steps.size() or _timer < steps[_reset_step]:
+		return
+	match _reset_step:
+		0:
+			# Autopilot aus, von der Straße abgekommen: 22 m daneben schräg in den Hang gesetzt
+			autopilot_enabled = false
+			for action: String in ["accelerate", "brake", "steer_left", "steer_right"]:
+				Input.action_release(action)
+			var right := -Vector3.UP.cross(car.global_basis.z).normalized()
+			var spot := car.global_position + right * 22.0
+			var query := PhysicsRayQueryParameters3D.create(spot + Vector3.UP * 60.0, spot - Vector3.UP * 60.0)
+			query.exclude = [car.get_rid()]
+			var hit := car.get_world_3d().direct_space_state.intersect_ray(query)
+			if not hit.is_empty():
+				spot = (hit["position"] as Vector3) + Vector3.UP * 1.0
+			print("Reset-Test: von der Straße bei %s neben die Straße nach %s" % [car.global_position.round(), spot.round()])
+			car.teleport(Transform3D(car.global_basis.rotated(Vector3.UP, 0.7), spot))
+		1:
+			pass
+		2:
+			Input.action_release("brake")
+			_reset_mark = car.global_position
+			print("Reset-Test: steht bei %s, %.0f km/h, auf der Straße: %s" % [car.global_position.round(),
+				car.linear_velocity.length() * 3.6, _on_road(car)])
+			_save_image("reset_vorher")
+		3:
+			reset.request_reset()
+			print("Reset-Test: R gedrückt -> %s, %.1f m versetzt, auf der Straße: %s" % [car.global_position.round(),
+				car.global_position.distance_to(_reset_mark), _on_road(car)])
+			var before := car.global_position
+			reset.request_reset()
+			print("Reset-Test: noch einmal R (Sperre %.1f s) -> %s" % [reset.cooldown_left,
+				"gesperrt" if car.global_position == before else "NICHT gesperrt"])
+		4:
+			_save_image("reset_nachher")
+			print("Reset-Test: nach dem Reset bei %s, %.0f km/h, aufrecht %.2f, auf der Straße: %s" % [
+				car.global_position.round(), car.linear_velocity.length() * 3.6, car.global_basis.y.y, _on_road(car)])
+		5:
+			# Überschlag auf der Straße: auf die Seite gelegt
+			_reset_mark = car.global_position
+			car.teleport(Transform3D(car.global_basis.rotated(car.global_basis.z.normalized(), PI), car.global_position + Vector3.UP * 2.0))
+		6:
+			print("Reset-Test: liegt auf dem Dach (aufrecht %.2f) bei %s" % [car.global_basis.y.y, car.global_position.round()])
+			reset.request_reset()
+		7:
+			print("Reset-Test: nach R aufrecht %.2f, %.1f m vom Unfallort, auf der Straße: %s" % [car.global_basis.y.y,
+				Vector2(car.global_position.x - _reset_mark.x, car.global_position.z - _reset_mark.z).length(), _on_road(car)])
+		8:
+			# Unter das Gelände: 40 m tiefer, nach unten unterwegs
+			_reset_mark = car.global_position
+			car.teleport(Transform3D(car.global_basis, car.global_position - Vector3.UP * 40.0))
+			car.linear_velocity = Vector3(0.0, -10.0, 0.0)
+		9:
+			pass
+		10:
+			print("Reset-Test: nach dem Sturz bei %s (%.1f m vom Absturzort), auf der Straße: %s" % [
+				car.global_position.round(), car.global_position.distance_to(_reset_mark), _on_road(car)])
+	_reset_step += 1
+
+
+## Steht das Auto auf einer Straße (Strahl nach unten trifft eine Fahrbahn oder Kreuzung)?
+func _on_road(car: Car) -> bool:
+	var query := PhysicsRayQueryParameters3D.create(car.global_position + Vector3.UP, car.global_position - Vector3.UP * 3.0)
+	query.exclude = [car.get_rid()]
+	var hit := car.get_world_3d().direct_space_state.intersect_ray(query)
+	return not hit.is_empty() and (hit["collider"].has_meta("road_segment") or hit["collider"].has_meta("junction"))
 
 
 ## Fallversuch: nächste Stelle

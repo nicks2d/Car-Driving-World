@@ -171,9 +171,15 @@ func _physics_process(delta: float) -> void:
 		_time_in_water += delta
 		if _time_in_water > reset_after_seconds:
 			_time_in_water = 0.0
-			var result := roads.nearest_road_transform(p, car.global_basis.z)
-			if result["found"]:
-				car.teleport(result["transform"])
+			# Zurück vor die Stelle, an der das Auto die Straße verlassen hat (wie Taste R)
+			var reset := get_node_or_null("../CarReset") as CarReset
+			if reset:
+				reset.back_to_road()
+				Toasts.post(get_tree(), "pin", "Zurück auf die Straße", "Aus dem Wasser geholt")
+			else:
+				var result := roads.nearest_road_transform(p, car.global_basis.z)
+				if result["found"]:
+					car.teleport(result["transform"])
 	else:
 		_time_in_water = 0.0
 

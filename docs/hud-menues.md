@@ -2,7 +2,7 @@
 
 ## Tasten
 
-- Tasten: WASD fahren, Leertaste Handbremse, R aufrichten, T Zeitraffer, F3 FPS,
+- Tasten: WASD fahren, Leertaste Handbremse, R Reset (aufrichten bzw. zurück auf die Straße, 3 s Sperre), T Zeitraffer, F3 FPS,
   C Lackfarbe, K Aufkleber, L Licht, G Garage (← → Auto, C Lack, Enter losfahren, Esc zurück),
   M große Karte (Linksklick Ziel, Rechtsklick
   Ziel löschen, Mausrad zoomen, ziehen verschiebt), F5 Wetter (Automatisch → Klar → Bewölkt →

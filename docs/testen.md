@@ -47,6 +47,7 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
 - Fehlersuche im Prüfer: `--info=X,Y,Z` (Angaben zu einem Abschnitt, Deckel-Flächen),
   `--probe=X,Z,KX,KY,KZ` (Abstand zu den Leitplanken-Sperrzonen eines Abschnitts); wartet ein Feld
   länger als 40 s auf Straßen, nennt er die unfertigen und laufenden Abschnitte.
+- Reset: `--bench=30 --resettest` (siehe `autos.md`, Reset).
 - Fallversuch: `-- --droptest=X,Z;X,Z;… --pos=X,Z` setzt das Auto an jeder Stelle 2 m über der
   höchsten Fläche bzw. dem natürlichen Gelände ab und meldet nach 2,5 s „ok“, „DURCHGEFALLEN“ (nichts
   darunter) oder „IN DIE RÖHRE GEFALLEN“ (mindestens zwischen den Röhrenwänden hinter dem Portal);

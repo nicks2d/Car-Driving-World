@@ -178,3 +178,22 @@
   Legende. Gespeichert pro Auto in `[pruefstand]`, Testläufe nur im Speicher.
 - Gemessen (Prüfstand): SL 65 670 PS bei 5400 / 1000 Nm ab 2200 (Lauf 14,3 s), M4 CSL 551 PS bei
   6200 / 650 Nm (7,5 s), C 63 517 PS bei 6800 / 620 Nm bei 5200 (14,1 s), M2 411 PS / 550 Nm (12,3 s).
+
+## Reset (Taste R) und Sicherheitsnetz (13.11.)
+
+- `car_reset.gd` (`CarReset`, Knoten „CarReset“ in main.tscn, übernimmt die Taste R von `car.gd`
+  über `Car.external_reset`). Merkt sich alle 0,1 s sichere Stellen (alle vier Räder auf einer
+  Straßen-Kollision mit Meta `road_segment`, Auto aufrecht, nicht im Portal: `tunnel_cover` 0,02–0,98
+  ausgeschlossen, innerhalb der Fahrbahn mit 0,6 m Rand, auf Brücken 1,2 m), alle 4 m eine, höchstens
+  80 (320 m). Ausrichtung = Richtung der Straße, wie das Auto fuhr.
+- R: Steht das Auto auf der Straße (Strahl 4 m nach unten trifft Straße oder Kreuzung) und fährt
+  langsamer als 3 m/s, wird es am Platz aufgerichtet (Blickrichtung bleibt). Sonst geht es zur neuesten
+  gemerkten Stelle, die mindestens 10 m (`back_distance`) vor der letzten sicheren liegt, ohne Tempo,
+  0,6 m darüber; neuere Stellen werden vergessen (ein zweiter Reset geht weiter zurück). Danach 3 s
+  Sperre (`cooldown`), Meldungen im HUD („Zurück auf die Straße“, „Aufgerichtet“, „Reset gesperrt“).
+- Sicherheitsnetz: alle 0,25 s, wenn das Auto mit mehr als 3 m/s fällt und ein Strahl 2,5 km nach unten
+  nichts trifft (unter das Gelände gefallen) → sofort zurück auf die Straße. Der Wasser-Manager nutzt
+  nach 3 s im Wasser ebenfalls `back_to_road()`. `fall_limit_y` in car.gd bleibt als letzte Reserve.
+- Test: `--bench=30 --resettest` (Fotos `reset_vorher`/`reset_nachher`). Ergebnis 13.11.: im Hang 22 m
+  neben der Straße → R → 14 m vor der Abkommstelle auf der Fahrspur, 0 km/h; R in der Sperre blockiert;
+  auf dem Dach → aufgerichtet am Platz; 40 m unter das Gelände → sofort zurück auf die Straße.

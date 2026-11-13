@@ -1789,6 +1789,8 @@ func _update_visuals() -> void:
 			entry.mesh_instance = null
 		if distance < collision_distance and entry.body == null:
 			entry.body = _make_body(segment.collision_faces)
+			# Für den Reset: auf welcher Straße stehen die Räder?
+			entry.body.set_meta("road_segment", segment)
 		elif distance > collision_distance + 100.0 and entry.body:
 			entry.body.queue_free()
 			entry.body = null
@@ -1821,6 +1823,7 @@ func _update_visuals() -> void:
 			if junction.mesh_arrays.is_empty():
 				junction.build()
 			junction.body = _make_body(junction.collision_faces)
+			junction.body.set_meta("junction", true)
 		elif distance > collision_distance + 100.0 and junction.body:
 			junction.body.queue_free()
 			junction.body = null

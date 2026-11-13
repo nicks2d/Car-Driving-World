@@ -103,6 +103,8 @@ var _shift_timer: float = 0.0
 ## Antriebskraft dieses Physik-Schritts (alle Räder zusammen, Newton)
 var _drive_force_now: float = 0.0
 var _spawn_transform: Transform3D
+## Kümmert sich ein CarReset um die Taste R? (Dann nicht hier, siehe car_reset.gd)
+var external_reset: bool = false
 
 @onready var _front_left: VehicleWheel3D = $WheelFrontLeft
 @onready var _front_right: VehicleWheel3D = $WheelFrontRight
@@ -200,7 +202,7 @@ func _physics_process(delta: float) -> void:
 	_apply_stability(delta)
 	_apply_aerodynamics(forward_speed)
 
-	if Input.is_action_just_pressed("reset_car"):
+	if Input.is_action_just_pressed("reset_car") and not external_reset:
 		_place_car(_upright_transform())
 	if global_position.y < fall_limit_y:
 		_place_car(_spawn_transform)
