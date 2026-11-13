@@ -47,6 +47,10 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
 - Fehlersuche im Prüfer: `--info=X,Y,Z` (Angaben zu einem Abschnitt, Deckel-Flächen),
   `--probe=X,Z,KX,KY,KZ` (Abstand zu den Leitplanken-Sperrzonen eines Abschnitts); wartet ein Feld
   länger als 40 s auf Straßen, nennt er die unfertigen und laufenden Abschnitte.
+- Kennzeichen: `--car=ID --carview=0|180 --carzoom=4.2` (Nahaufnahme vorne/hinten),
+  `--trafficview=s3|accord|id_buzz|aztek|lc500,0|180` (ein Verkehrsauto), `--noplate` (ohne
+  Kennzeichen). Werkzeuge: `tools/plate_measure.gd` (`--dry`, `--list`, `--cars=`),
+  `tools/plate_scan.gd` (Teile mit Kennzeichen-Namen in allen Modellen).
 - Reset: `--bench=30 --resettest` (siehe `autos.md`, Reset).
 - Fallversuch: `-- --droptest=X,Z;X,Z;… --pos=X,Z` setzt das Auto an jeder Stelle 2 m über der
   höchsten Fläche bzw. dem natürlichen Gelände ab und meldet nach 2,5 s „ok“, „DURCHGEFALLEN“ (nichts

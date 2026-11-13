@@ -15,6 +15,14 @@ extends Node
 ## --lookat=X,Z   Überblicks-Kamera schaut auf diesen Punkt (statt in Fahrtrichtung)
 ## --carview=G    Kamera neben dem Auto, Blick aufs Auto (0 = von vorne, 90 = von links,
 ##                180 = von hinten), z. B. um das Automodell anzuschauen
+## --trafficview=TYP,G  ein stehendes Verkehrsauto dieses Typs (s3, accord, id_buzz, aztek, lc500)
+##                vor den Spieler stellen und die Kamera wie --carview (Winkel G) auf Kennzeichenhöhe
+##                darauf richten (Kennzeichen der Verkehrsautos prüfen)
+## --meshcheck    nach dem Laden ausgeben, wie viele Punkte die Meshes von Spielerauto, einem
+##                Verkehrsmodell und der Tankstelle haben (direkt und über surface_get_arrays), um
+##                Unterschiede zwischen Editor und exportierter App zu finden
+## --carzoom=D    Abstand dieser Kamera von der Auto-Mitte (Standard 5,5); dann waagerecht auf Höhe der
+##                Kennzeichen (z. B. 4.6 für Nahaufnahmen vorne und hinten)
 ## --steer=left   beim Screenshot nach links (oder right) lenken, um die Vorderräder zu prüfen
 ## --target=X,Z   vor dem Foto ein Navi-Ziel setzen (Route und Hinweis im HUD prüfen)
 ## --photo        Foto im Fotomodus machen (mit Bedienfeld), --filter=N wählt den Filter (0–3)
@@ -88,6 +96,7 @@ extends Node
 ## --resettest   mit --bench: Reset prüfen (CarReset): nach 10 s Autopilot mit Vollgas in den Graben,
 ##                R (Fotos reset_vorher/reset_nachher), noch einmal R in der Sperre, Überschlag auf der
 ##                Straße (Aufrichten am Platz), Sturz unter das Gelände (Sicherheitsnetz)
+## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
 ##                Audio, Spiel
 
@@ -119,6 +128,12 @@ var _cam := Vector3.ZERO
 var _has_cam: bool = false
 var _look_height: float = 1.0
 var _car_view: float = -1.0
+## Abstand der Kamera bei --carview (--carzoom=D, z. B. 2.2 für Nahaufnahmen der Kennzeichen)
+var _car_view_distance: float = 5.5
+## --trafficview: Typ und Blickwinkel
+var _traffic_view_type: String = ""
+var _traffic_view_angle: float = 0.0
+var _mesh_check: bool = false
 var _steer: String = ""
 var _photo: bool = false
 var _open_map: bool = false
@@ -267,6 +282,14 @@ func _ready() -> void:
 				_has_cam = true
 			"carview":
 				_car_view = float(value)
+			"carzoom":
+				_car_view_distance = float(value)
+			"meshcheck":
+				_mesh_check = true
+			"trafficview":
+				var parts_tv := value.split(",")
+				_traffic_view_type = parts_tv[0]
+				_traffic_view_angle = float(parts_tv[1]) if parts_tv.size() > 1 else 0.0
 			"steer":
 				_steer = value
 			"photo":
@@ -286,6 +309,8 @@ func _ready() -> void:
 					_drop_points.append(Vector2(float(xz[0]), float(xz[1])))
 			"resettest":
 				_reset_test = true
+			"noplate":
+				CarModel.test_no_plates = true
 			"dropdrive":
 				_drop_drive = float(value)
 			"selftest":
@@ -418,6 +443,8 @@ func on_world_ready(game: Node3D) -> void:
 	if not _drop_points.is_empty():
 		_state = "droptest"
 		_next_drop()
+	if _mesh_check:
+		_print_mesh_check.call_deferred()
 	if _windows_at >= 0.0 and _bench_seconds <= 0.0:
 		(game.get_node("OpenWindows") as OpenWindows).open = true
 		game.car.windows_open = 1.0
@@ -536,6 +563,8 @@ func _process(delta: float) -> void:
 				camera.reset_physics_interpolation()
 			if _has_cam:
 				_place_free_camera()
+			if _traffic_view_type != "":
+				_place_traffic_view_camera()
 			if _timer <= 0.0:
 				_state = "done"
 				_take_screenshot()
@@ -612,6 +641,41 @@ func _process(delta: float) -> void:
 					print("Aufnahme gespeichert: ", _record_path)
 				_print_bench()
 				get_tree().quit()
+
+
+## --meshcheck: Meshes zählen (Editor und exportierte App vergleichen)
+func _print_mesh_check() -> void:
+	await get_tree().create_timer(3.0, true).timeout
+	var model := _game.car.get_node_or_null("Model") as CarModel
+	var visible := 0
+	var points := 0
+	var array_points := 0
+	if model:
+		for node in model.find_children("*", "MeshInstance3D", true, false):
+			var mi := node as MeshInstance3D
+			if mi.mesh == null:
+				continue
+			if mi.is_visible_in_tree():
+				visible += 1
+			for s in mi.mesh.get_surface_count():
+				var arrays := mi.mesh.surface_get_arrays(s)
+				array_points += (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() if arrays.size() > 0 and arrays[0] != null else 0
+			points += mi.mesh.get_faces().size()
+	print("MESHCHECK Spielerauto: Modell %s, %d sichtbare Meshes, %d Dreieck-Punkte, %d Punkte über surface_get_arrays, Platzhalter sichtbar: %s" % [
+		model != null and model.get("_root") != null, visible, points, array_points,
+		(_game.car.get_node("BodyMesh") as Node3D).visible])
+	for path: String in ["res://assets/models/verkehr/2014_audi_s3_limousine/prepared/model.res",
+			"res://assets/models/raststaette/small_red_gas_station/prepared/model.res"]:
+		var exists := ResourceLoader.exists(path)
+		var prepared := load(path) as PreparedModel if exists else null
+		var near_points := 0
+		if prepared and prepared.near_mesh:
+			for s in prepared.near_mesh.get_surface_count():
+				near_points += (prepared.near_mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+		print("MESHCHECK %s: vorhanden %s, geladen %s, nah %d Flächen, %d Punkte" % [path.get_file(), exists, prepared != null,
+			prepared.near_mesh.get_surface_count() if prepared and prepared.near_mesh else -1, near_points])
+	var traffic := _game.get_node("Traffic") as Traffic
+	print("MESHCHECK Verkehr: %d Autos unterwegs" % traffic.car_count())
 
 
 ## Reset-Test: feste Abfolge nach der Zeit im Benchmark
@@ -1051,6 +1115,8 @@ func _prepare_shot() -> void:
 		(_game.get_node("Navigation") as Navigation).set_target(Vector3(_target.x, 0.0, _target.y))
 	if _lineup >= 0.0:
 		(_game.get_node("Traffic") as Traffic).spawn_lineup(_lineup)
+	if _traffic_view_type != "":
+		(_game.get_node("Traffic") as Traffic).spawn_lineup(14.0, _traffic_view_type)
 	# Fotomodus und große Karte halten das Spiel an, das Foto muss trotzdem ausgelöst werden
 	if _photo or _open_map or _open_garage or _pause_page >= 0:
 		process_mode = Node.PROCESS_MODE_ALWAYS
@@ -1116,7 +1182,28 @@ func _place_car_view_camera() -> void:
 	forward.y = 0.0
 	var direction := forward.normalized().rotated(Vector3.UP, deg_to_rad(_car_view))
 	var target := car.global_position + Vector3.UP * 0.3
-	var eye := target + direction * 5.5 + Vector3.UP * 0.9
+	var eye := target + direction * _car_view_distance + Vector3.UP * 0.9
+	# Nahaufnahme (--carzoom): auf Höhe der Kennzeichen, waagerecht
+	if _car_view_distance != 5.5:
+		target = car.global_position + Vector3.UP * 0.15
+		eye = target + direction * _car_view_distance
+	camera.global_transform = Transform3D(Basis.looking_at(target - eye), eye)
+	camera.reset_physics_interpolation()
+
+
+## Kamera auf das aufgestellte Verkehrsauto (--trafficview): Kennzeichenhöhe, 4,2 m Abstand
+func _place_traffic_view_camera() -> void:
+	var traffic := _game.get_node("Traffic") as Traffic
+	var cars: Array = traffic.get("_cars")
+	if cars.is_empty():
+		return
+	var node: Node3D = cars.back().node
+	camera.set_physics_process(false)
+	var forward := node.global_basis.z
+	forward.y = 0.0
+	var direction := forward.normalized().rotated(Vector3.UP, deg_to_rad(_traffic_view_angle))
+	var target := node.global_position + Vector3.UP * 0.6
+	var eye := target + direction * 4.2
 	camera.global_transform = Transform3D(Basis.looking_at(target - eye), eye)
 	camera.reset_physics_interpolation()
 
@@ -1135,7 +1222,8 @@ func _open_garage_now() -> void:
 
 func _save_image(file_name: String) -> void:
 	await RenderingServer.frame_post_draw
-	var folder := ProjectSettings.globalize_path("res://screenshots")
+	# In der exportierten App liegt res:// im App-Paket (dort nichts schreiben): user://screenshots
+	var folder := ProjectSettings.globalize_path("user://screenshots" if OS.has_feature("template") else "res://screenshots")
 	DirAccess.make_dir_recursive_absolute(folder)
 	# .gdignore: Godot soll die Bilder nicht als Spiel-Assets importieren
 	if not FileAccess.file_exists(folder.path_join(".gdignore")):

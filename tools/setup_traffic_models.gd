@@ -65,12 +65,12 @@ const MODELS := {
 		"remove": ["intplastic", "intcrom", "plasticwheel", "plasticshine", "plasticint2", "windows_int",
 			"teto", "mirror_symbol", "wheel"],
 		"paint": ["carpaint"], "glass": ["vidros", "blackglass", "redclear"], "head": ["flights"], "tail": ["red2"],
-		"tire": ["tyre"], "rim": ["material_23", "rimlogo"]},
+		"tire": ["tyre"], "rim": ["material_23", "rimlogo"], "plate": ["ext_plate"]},
 	"2021_honda_accord": {"length": 4.88,
 		"remove": ["chrome_int", "seat_b", "wood", "panels", "red_plas", "indi", "phong15", "costura_tim",
 			"int_glass", "phong19", "rubber"],
 		"paint": ["paint"], "glass": ["glass"], "head": [], "tail": ["rear_light", "red_glass"],
-		"tire": ["tyre_1", "tyre_2"], "rim": ["rim"]},
+		"tire": ["tyre_1", "tyre_2"], "rim": ["rim"], "plate": ["plate_phong9"]},
 	# Weggelassen: Rennversion mit Überrollkäfig ohne Seitenscheiben, nach dem Vereinfachen fehlen
 	# Teile der hinteren Tür (Stand 5.11.). Nick sucht ein anderes Modell.
 	"kia_stinger": {"length": 4.83, "skip": true,
@@ -81,17 +81,19 @@ const MODELS := {
 	"2005_pontiac_aztek": {"length": 4.63,
 		"remove": ["interior_", "gray_011", "white_057", "blue_053"],
 		"paint": ["carpaint"], "glass": ["windowglass"], "head": ["clearglass"], "tail": ["redglass", "red_057"],
-		"tire": ["tire"], "rim": ["rim", "brakedisk"]},
+		"tire": ["tire"], "rim": ["rim", "brakedisk"], "plate": ["licplate"]},
 	"2023_volkswagen_id_buzz_gtx": {"length": 4.71,
 		"remove": [],
 		"paint": ["material__2125713589"], "glass": ["glasss"], "head": ["front_light"],
 		"tail": ["red_light", "glassred1"], "tire": ["rubber_rough"], "rim": ["steel2"],
+		# Kein eigenes Kennzeichen, vorne aber eine Mulde in der Karosserie (Foto): Höhe und Breite
+		"plate_front_height": 0.51, "plate_front_width": 0.45,
 		# Reifen-Material steckt auch in Dichtungen: nur Teile in Radgröße sind Räder
 		"wheel_part_max": 0.9},
 	"2017_lexus_lc_500": {"length": 4.77,
 		"remove": ["tela", "interiora", "interiortilling", "seatbelt", "carbon1"],
 		"paint": ["painttnr"], "glass": ["window_material"], "head": ["lighta"], "tail": ["red_glass"],
-		"tire": ["phong7", "phong6"], "rim": ["phong9", "phong8"]},
+		"tire": ["phong7", "phong6"], "rim": ["phong9", "phong8"], "plate": ["manufacturerplate"]},
 }
 
 var _only: String = ""
@@ -218,6 +220,19 @@ func _prepare_vehicle(model_name: String, folder: String, glb: String, config: D
 	prepared.size = _arrays_bounds(all).size
 	prepared.front_corner = _corner(groups["head"], true, prepared.size)
 	prepared.rear_corner = _corner(groups["tail"], false, prepared.size)
+	prepared.plate_spots = _plate_spots(_merge(parts, ["plate"]))
+	# Mulde ohne eigenes Teil (Höhe aus MODELS): vorderste Stelle der Karosserie in dieser Höhe
+	if config.has("plate_front_height") and (prepared.plate_spots[0] as Dictionary).is_empty():
+		var height: float = config["plate_front_height"]
+		var shell: Array = _merge(parts, ["body", "paint"])
+		var front := -INF
+		for v: Vector3 in shell[0] as PackedVector3Array:
+			if absf(v.x) < 0.2 and absf(v.y - height) < 0.04:
+				front = maxf(front, v.z)
+		if not is_inf(front):
+			prepared.plate_spots[0] = {"center": Vector3(0.0, height, front),
+				"size": LicensePlate.fit_size(Vector2(config.get("plate_front_width", 0.52), 0.11)), "tilt": 0.0}
+			print("   Kennzeichen vorne (Mulde): Mitte %s" % Vector3(0.0, height, front).snapped(Vector3.ONE * 0.01))
 	# Räder je Ecke
 	var corners := _split_corners(wheel_data)
 	var near_wheel_tris := 0
@@ -271,6 +286,40 @@ func _prepare_vehicle(model_name: String, folder: String, glb: String, config: D
 		print("   %-36s %8d Dr.  %-10s  Treffer %d" % [material_name.substr(0, 36), line[0], line[1], line[2]])
 
 
+## Lage der Original-Kennzeichen [vorne, hinten]: Mitte, Größe (Breite, Höhe) und Neigung in Grad
+## aus den Punkten und Normalen der Kennzeichen-Teile, leeres Dictionary = keins
+func _plate_spots(data: Array) -> Array:
+	var verts: PackedVector3Array = data[0]
+	var normals: PackedVector3Array = data[1]
+	var result: Array = [{}, {}]
+	for side in 2:
+		var facing := 1.0 if side == 0 else -1.0
+		var box := AABB()
+		var count := 0
+		var normal := Vector3.ZERO
+		for k in verts.size():
+			if verts[k].z * facing <= 0.0:
+				continue
+			box = AABB(verts[k], Vector3.ZERO) if count == 0 else box.expand(verts[k])
+			count += 1
+			if normals[k].z * facing > 0.3:
+				normal += normals[k]
+		if count < 3:
+			continue
+		var tilt := 0.0
+		if normal.length() > 0.01:
+			normal = normal.normalized()
+			tilt = rad_to_deg(atan2(normal.y, absf(normal.z)))
+		var height := box.size.y / maxf(cos(deg_to_rad(tilt)), 0.5)
+		# Auf die Außenfläche des Originals (Ränder einer Mulde verdecken es sonst)
+		var center := box.get_center()
+		center.z = box.end.z if side == 0 else box.position.z
+		result[side] = {"center": center, "size": LicensePlate.fit_size(Vector2(box.size.x, height)), "tilt": tilt}
+		print("   Kennzeichen %s: Mitte %s, Größe %s, Neigung %.0f°" % ["vorne" if side == 0 else "hinten",
+			box.get_center().snapped(Vector3.ONE * 0.01), Vector2(box.size.x, height).snapped(Vector2.ONE * 0.01), tilt])
+	return result
+
+
 ## Rolle eines Teils nach Material- und Knotennamen
 func _role(material_name: String, node_name: String, material: Material, config: Dictionary) -> String:
 	var names := (material_name + " " + node_name).to_lower()
@@ -279,7 +328,8 @@ func _role(material_name: String, node_name: String, material: Material, config:
 	if standard and standard.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED and standard.albedo_color.a < 0.05 \
 			and not config.get("keep_transparent", false):
 		return "remove"
-	for role: String in ["remove", "paint", "glass", "head", "tail", "tire", "rim"]:
+	# Kennzeichen zuerst: Sie werden vermessen und dann weggelassen (das Spiel setzt sein eigenes)
+	for role: String in ["plate", "remove", "paint", "glass", "head", "tail", "tire", "rim"]:
 		for word: String in config.get(role, []):
 			if word in names:
 				return role

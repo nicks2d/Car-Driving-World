@@ -1605,21 +1605,26 @@ func _add_model(c: TrafficCar, model: PreparedModel, paint: Color) -> void:
 	var text := LicensePlate.random(_rng, place)
 	var spots := _plate_spots_of(model)
 	for k in 2:
-		var spot: Vector3 = spots[k]
-		if is_nan(spot.z):
+		var spot: Dictionary = spots[k]
+		if spot.is_empty():
 			continue
-		var plate := LicensePlate.make_mesh(text)
-		plate.position = spot
-		plate.rotation.y = 0.0 if k == 0 else PI
+		var plate := LicensePlate.make_mesh(text, spot["size"])
+		# 1,2 cm vor die Fläche des Original-Kennzeichens (entlang seiner Normale)
+		var tilt := deg_to_rad(spot["tilt"])
+		var normal := Vector3(0.0, sin(tilt), cos(tilt) * (1.0 if k == 0 else -1.0))
+		LicensePlate.place(plate, (spot["center"] as Vector3) + normal * 0.012, k == 0, spot["tilt"])
 		plate.visibility_range_end = near_distance
 		c.node.add_child(plate)
 
 
-## Wo am Modell die Kennzeichen hingehören: vorderster bzw. hinterster Punkt in der Mitte auf
-## Höhe der Stoßstange (vorne 0,40 m, hinten 0,55 m), einmal pro Modell gemessen
+## Wo am Modell die Kennzeichen hingehören: dort, wo das Original-Kennzeichen war
+## (PreparedModel.plate_spots, gleiche Größe und Neigung), sonst vorderster bzw. hinterster Punkt in
+## der Mitte auf Höhe der Stoßstange (vorne 0,40 m, hinten 0,55 m). Einmal pro Modell.
+## Ergebnis: [vorne, hinten] als {"center", "size", "tilt"}, leer = keins
 func _plate_spots_of(model: PreparedModel) -> Array:
 	if _plate_spots.has(model):
 		return _plate_spots[model]
+	var stored: Array = model.plate_spots if model.plate_spots.size() == 2 else [{}, {}]
 	var front := -INF
 	var rear := INF
 	for i in model.near_mesh.get_surface_count():
@@ -1631,8 +1636,11 @@ func _plate_spots_of(model: PreparedModel) -> Array:
 				front = maxf(front, p.z)
 			if absf(p.y - 0.55) < 0.07:
 				rear = minf(rear, p.z)
-	var result: Array = [Vector3(0.0, 0.40, front + 0.012) if not is_inf(front) else Vector3(0, 0, NAN),
-		Vector3(0.0, 0.55, rear - 0.012) if not is_inf(rear) else Vector3(0, 0, NAN)]
+	var result: Array = [stored[0], stored[1]]
+	if (result[0] as Dictionary).is_empty() and not is_inf(front):
+		result[0] = {"center": Vector3(0.0, 0.40, front), "size": LicensePlate.SIZE, "tilt": 0.0}
+	if (result[1] as Dictionary).is_empty() and not is_inf(rear):
+		result[1] = {"center": Vector3(0.0, 0.55, rear), "size": LicensePlate.SIZE, "tilt": 0.0}
 	_plate_spots[model] = result
 	return result
 

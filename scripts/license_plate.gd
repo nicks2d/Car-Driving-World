@@ -9,6 +9,8 @@ const WIDTH: int = 520
 const HEIGHT: int = 112
 ## Mesh-Größe in Metern (echtes Kennzeichen 520 × 110 mm)
 const SIZE := Vector2(0.52, 0.11)
+## So schmal darf unser Schild höchstens werden (passt in US-Mulden von 305 mm Breite)
+const SHORT_WIDTH: float = 0.28
 
 ## Striche je Zeichen: Liste von Linienzügen, Punkte auf dem Raster 4 × 8
 const GLYPHS := {
@@ -92,10 +94,13 @@ static func random(rng: RandomNumberGenerator, place: String) -> String:
 
 
 ## Bild des Kennzeichens (WIDTH × HEIGHT)
-static func make_texture(text: String) -> ImageTexture:
-	var image := Image.create(WIDTH, HEIGHT, false, Image.FORMAT_RGB8)
+## Bild des Kennzeichens; pixel_width < WIDTH für kürzere Schilder (gleiche Höhe, Schrift wird
+## nicht verzerrt, bei Bedarf etwas kleiner)
+static func make_texture(text: String, pixel_width: int = WIDTH) -> ImageTexture:
+	var w := clampi(pixel_width, 300, WIDTH)
+	var image := Image.create(w, HEIGHT, false, Image.FORMAT_RGB8)
 	image.fill(Color.BLACK)
-	image.fill_rect(Rect2i(4, 4, WIDTH - 8, HEIGHT - 8), Color(0.96, 0.96, 0.94))
+	image.fill_rect(Rect2i(4, 4, w - 8, HEIGHT - 8), Color(0.96, 0.96, 0.94))
 	# EU-Feld: blau, Kreis aus 12 gelben Sternen (als Punkte), darunter „D“
 	image.fill_rect(Rect2i(4, 4, 46, HEIGHT - 8), Color(0.0, 0.2, 0.6))
 	for k in 12:
@@ -104,12 +109,13 @@ static func make_texture(text: String) -> ImageTexture:
 		image.fill_rect(Rect2i(roundi(star.x) - 2, roundi(star.y) - 2, 4, 4), Color(1.0, 0.85, 0.0))
 	_draw_text(image, "D", Vector2(20, 66), 4.0, 3, Color.WHITE)
 	# Schrift: Höhe 64 px, schmal; Bindestrich und Leerzeichen etwas schmaler
-	var scale := 8.0
-	var width := 0.0
+	var units := 0.0
 	for ch in text:
-		width += (3.0 if ch == " " else (5.5 if ch == "-" else 6.2)) * scale
-	var x := 50.0 + maxf((WIDTH - 58.0 - width) * 0.5, 4.0)
-	_draw_text(image, text, Vector2(x, 24), scale, 4, Color.BLACK)
+		units += 3.0 if ch == " " else (5.5 if ch == "-" else 6.2)
+	var scale := minf(8.0, (w - 66.0) / maxf(units, 1.0))
+	var width := units * scale
+	var x := 50.0 + maxf((w - 58.0 - width) * 0.5, 4.0)
+	_draw_text(image, text, Vector2(x, 24 + (8.0 - scale) * 4.0), scale, 4, Color.BLACK)
 	image.generate_mipmaps()
 	return ImageTexture.create_from_image(image)
 
@@ -132,11 +138,11 @@ static func _draw_text(image: Image, text: String, origin: Vector2, scale: float
 
 
 ## Kennzeichen als Fläche (Mitte bei 0, Vorderseite nach +Z)
-static func make_mesh(text: String) -> MeshInstance3D:
+static func make_mesh(text: String, size: Vector2 = SIZE) -> MeshInstance3D:
 	var quad := QuadMesh.new()
-	quad.size = SIZE
+	quad.size = size if size.x > 0.05 and size.y > 0.02 else SIZE
 	var material := StandardMaterial3D.new()
-	material.albedo_texture = make_texture(text)
+	material.albedo_texture = make_texture(text, pixels_for(quad.size))
 	material.roughness = 0.5
 	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	quad.material = material
@@ -144,3 +150,25 @@ static func make_mesh(text: String) -> MeshInstance3D:
 	instance.mesh = quad
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return instance
+
+
+## Bildbreite (Pixel) für ein Schild dieser Größe (Höhe immer HEIGHT)
+static func pixels_for(size: Vector2) -> int:
+	return roundi(HEIGHT * size.x / maxf(size.y, 0.01))
+
+
+## Größe unseres Schilds für ein gemessenes Original-Kennzeichen bzw. eine Mulde: so breit wie das
+## Original (1 cm Rand), 280–520 mm, immer 110 mm hoch wie ein deutsches Kennzeichen. US-Mulden
+## (305 × 152 mm) bekommen ein kurzes Schild, das in die Mulde passt; die Schrift bleibt unverzerrt
+## (bei Bedarf kleiner).
+static func fit_size(measured: Vector2) -> Vector2:
+	if measured.x <= 0.0:
+		return SIZE
+	return Vector2(clampf(measured.x - 0.01, SHORT_WIDTH, SIZE.x), SIZE.y)
+
+
+## Schild an eine Stelle setzen: Mitte, vorne (Blick nach +Z) oder hinten, Neigung in Grad
+## (positiv = oben nach hinten geneigt, die Fläche schaut etwas nach oben)
+static func place(plate: MeshInstance3D, center: Vector3, front: bool, tilt_degrees: float) -> void:
+	plate.position = center
+	plate.rotation = Vector3(-deg_to_rad(tilt_degrees), 0.0 if front else PI, 0.0)

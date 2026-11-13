@@ -22,6 +22,10 @@ extends Resource
 @export var rear_corner: Vector3 = Vector3.ZERO
 ## Tankstelle: einfache Kollisionsformen [Mitte, Größe] in Modell-Koordinaten
 @export var collision_boxes: Array[AABB] = []
+## Kennzeichen des Original-Modells (vorne, hinten): {"center": Vector3, "size": Vector2 (Breite,
+## Höhe), "tilt": Grad (positiv = oben nach hinten)} oder leer. Das Original ist aus den Meshes
+## entfernt, das Spiel setzt sein eigenes Schild genau dorthin.
+@export var plate_spots: Array = []
 ## Freie Angaben (z. B. lichte Höhe unter dem Dach)
 @export var info: Dictionary = {}
 

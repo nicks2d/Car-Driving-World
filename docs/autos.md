@@ -160,10 +160,34 @@
 - Kennzeichen (`license_plate.gd`, `LicensePlate`): eigene Strich-Schrift (4 × 8-Raster, an die
   FE-Schrift angelehnt, keine Schriftdatei), EU-Feld mit Sternen und „D“, Format 1–3 Buchstaben, 1–2
   Buchstaben, 1–4 Ziffern (`normalize`). Garage: Eingabefeld, pro Auto gespeichert (`[kennzeichen]`).
-  Lage: Modelle mit eigenem Kennzeichenfeld (Material „manufacturerplate“: M2, M5 G90, SL 65, C 63)
-  bekommen das Schild genau dorthin, das Original wird unsichtbar; sonst gemessen (Stoßstange vorne
-  0,40 m, hinten 0,55 m über dem Boden). KI: zufällige Kennzeichen mit erfundenen Kürzeln aus den
-  Ortsnamen, nur am nahen Modell.
+  KI: zufällige Kennzeichen mit erfundenen Kürzeln aus den Ortsnamen, nur am nahen Modell.
+- Kennzeichen-Lage (seit 13.11., Teil 6): pro Auto im Profil (`CarProfile` Gruppe „Kennzeichen“:
+  `plate_front/rear_position`, `_size`, `_tilt` in Grad), gemessen mit `tools/plate_measure.gd` und per
+  Foto geprüft. Gemessen wird an den eigenen Kennzeichen-Teilen des Modells (`plate_hide`: Material-
+  oder Teilname enthält „manufacturerpla“ – bei C 63 ist der Name abgeschnitten,
+  „…ManufacturerPla_0c896ed1“ –, „=Object_60“ = genau dieser Teilname, E92-Mulde), sonst an der
+  Stoßstange (vorne 0,40 m, hinten 0,55 m). Die Original-Teile sind immer unsichtbar, nie doppelt.
+  Vorher doppelt: C 63 hinten (weißes AMG-Schild im Kofferraumdeckel), E92 hinten (leere Mulde oben,
+  unser Schild unten an der Stoßstange).
+- Größe (`LicensePlate.fit_size`): Höhe immer 11 cm wie ein deutsches Kennzeichen, Breite wie das
+  Original minus 1 cm, zwischen 28 und 52 cm. US-Mulden (30,5 × 15 cm: M2, M5 G90, SL 65, C 63 hinten)
+  bekommen ein 29,5-cm-Schild, die E92-Mulde ein 43-cm-Schild. Die Textur wird für die Breite neu
+  gezeichnet (`make_texture(text, pixel_width)`), die Schrift nie verzerrt (bei Bedarf kleiner). Lage
+  auf der Außenfläche des Originals (nicht in seiner Mitte: ein 34-cm-Schild in der Mitte einer 30,5-cm-
+  Mulde verschwand mit den Rändern in den Muldenwänden, „1-EW“ statt „M-EW“), Neigung wie das
+  Original (10–17° hinten), `LicensePlate.place`.
+- Gemessen (Profile, Höhe über der Auto-Mitte): vorne alle an der Stoßstange (keins der Modelle hat
+  vorne ein eigenes Schild); hinten M2 0,245 m / 10°, M5 G90 0,279 / 13°, SL 65 0,234 / 17°, C 63 0,332 /
+  13°, E92 0,362 / 14°, E30, M5 F90, M4 CSL an der Stoßstange.
+- „Kein Kennzeichen“ (Garage, Schalter „KEINS“ neben dem Eingabefeld, pro Auto in `[kennzeichen_aus]`):
+  dann auch keins vom Modell. `CarModel.plates_enabled`, Test `--noplate`.
+- Verkehr: `tools/setup_traffic_models.gd` hat die Rolle „plate“ (Audi S3 „ext_plate“, Accord
+  „plate_phong9“, Aztek „licplate“ (vier Farbvarianten übereinander), LC 500 „manufacturerplate“): Diese
+  Teile fliegen aus den Meshes, ihre Lage steht in `PreparedModel.plate_spots`, das Spiel setzt sein
+  Schild genau dorthin (`Traffic._plate_spots_of`, gleiche Regel für die Größe). ID. Buzz hat kein eigenes Kennzeichen, vorne aber eine Mulde in der
+  Karosserie: `plate_front_height` 0,51 m / `plate_front_width` 0,45 m in MODELS (vorderste Stelle der
+  Karosserie in dieser Höhe), hinten Stoßstange. Nach Änderungen am Werkzeug die Modelle neu vorbereiten
+  (`--only=NAME`).
 
 ## Prüfstand
 

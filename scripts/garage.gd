@@ -71,6 +71,8 @@ var _bars: Array = []  # [Name-Label, Wert-Label, Bar]
 var _paint_row: HBoxContainer
 var _accent_row: HBoxContainer
 var _exhaust_toggle: Toggle
+## „Kein Kennzeichen“ (pro Auto): dann auch keins vom Modell selbst
+var _no_plate_toggle: Toggle
 var _plate_edit: LineEdit
 var _plate_hint: Label
 var _time_buttons: Array[Button] = []
@@ -447,6 +449,20 @@ func _set_plate(text: String) -> void:
 		model.refresh_plates()
 
 
+## „Kein Kennzeichen“ für das gewählte Auto (gespeichert in [kennzeichen_aus])
+func _set_no_plate(on: bool) -> void:
+	_plate_edit.editable = not on
+	var debug_tools := get_node_or_null("../DebugTools")
+	if not (debug_tools and debug_tools.is_active()):
+		var config := ConfigFile.new()
+		config.load(SETTINGS_PATH)
+		config.set_value("kennzeichen_aus", cars[_selected].id, on)
+		config.save(SETTINGS_PATH)
+	var model := car.get_node_or_null("Model") as CarModel if car else null
+	if model:
+		model.refresh_plates()
+
+
 func _set_paint(index: int) -> void:
 	var count := cars[_selected].paint_colors.size()
 	if count == 0:
@@ -519,6 +535,10 @@ func _refresh_all() -> void:
 	if _plate_edit and not _plate_edit.has_focus():
 		_plate_edit.text = CarModel.plate_text(p.id)
 		_plate_hint.text = ""
+	if _no_plate_toggle:
+		_no_plate_toggle.on = not CarModel.plates_enabled(p.id)
+		_no_plate_toggle.queue_redraw()
+		_plate_edit.editable = _no_plate_toggle.on == false
 	_fill_bars(p)
 	_fill_paint()
 	_fill_accents()
@@ -751,6 +771,15 @@ func _build_panel() -> void:
 	_plate_edit.text_submitted.connect(_set_plate)
 	_plate_edit.focus_exited.connect(func() -> void: _set_plate(_plate_edit.text))
 	plate_row.add_child(_plate_edit)
+	var no_plate_label := UiStyle.label("KEINS", 12, "semibold", UiStyle.TEXT_DIM, 2)
+	no_plate_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	no_plate_label.tooltip_text = "Kein Kennzeichen"
+	plate_row.add_child(no_plate_label)
+	_no_plate_toggle = Toggle.new()
+	_no_plate_toggle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_no_plate_toggle.tooltip_text = "Kein Kennzeichen"
+	_no_plate_toggle.toggled.connect(_set_no_plate)
+	plate_row.add_child(_no_plate_toggle)
 	_plate_hint = UiStyle.label("", 13, "regular", UiStyle.TEXT_DIM)
 	_plate_hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	plate_row.add_child(_plate_hint)

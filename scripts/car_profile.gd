@@ -161,3 +161,19 @@ extends Resource
 ## Mitte der Endrohre im Auto (Nase zeigt nach +Z), am Modell gemessen. Dort entstehen die
 ## kleinen Flammen.
 @export var exhaust_tips: PackedVector3Array = PackedVector3Array()
+
+@export_group("Kennzeichen")
+## Teile des Modells, die ein eigenes Kennzeichen zeigen (Material- oder Teilname enthält einen dieser
+## Begriffe; mit „=“ davor muss der Teilname genau so heißen, z. B. „=Object_60“): Sie werden immer
+## ausgeblendet, unser Schild kommt an ihre Stelle. „manufacturerpla“, weil manche Materialnamen
+## abgeschnitten sind (C 63: „…ManufacturerPla_0c896ed1“).
+@export var plate_hide: PackedStringArray = PackedStringArray(["manufacturerpla"])
+## Lage der Kennzeichen im Auto (Mitte, Nase zeigt nach +Z), Größe (Breite × Höhe in Metern) und
+## Neigung (Grad, positiv = oben nach hinten geneigt). Gemessen mit tools/plate_measure.gd und per
+## Foto geprüft. Position (0, 0, 0) = beim Laden aus dem Modell messen.
+@export var plate_front_position: Vector3 = Vector3.ZERO
+@export var plate_front_size: Vector2 = Vector2(0.52, 0.11)
+@export var plate_front_tilt: float = 0.0
+@export var plate_rear_position: Vector3 = Vector3.ZERO
+@export var plate_rear_size: Vector2 = Vector2(0.52, 0.11)
+@export var plate_rear_tilt: float = 0.0

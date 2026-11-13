@@ -344,72 +344,83 @@ func _build(scene: PackedScene) -> void:
 	_place_plates(body)
 
 
-## Kennzeichen vorne und hinten: Text aus der Garage (pro Auto gespeichert). Hat das Modell ein
-## eigenes Kennzeichenfeld (Material „manufacturerplate“), kommt das Schild dorthin und das Original
-## wird ausgeblendet. Sonst wird die Stelle gemessen: der vorderste bzw. hinterste Punkt der
-## Karosserie in der Mitte (|x| < 0,3 m) auf Höhe der Stoßstange (vorne 0,40 m, hinten 0,55 m).
+## Kennzeichen vorne und hinten: Text aus der Garage (pro Auto gespeichert). Lage, Größe und Neigung
+## stehen im Profil (gemessen mit tools/plate_measure.gd, per Foto geprüft). Fehlt die Lage dort,
+## wird sie hier gemessen: an den eigenen Kennzeichen-Teilen des Modells (Profil plate_hide), sonst
+## an der Stoßstange (vorderster bzw. hinterster Punkt in der Mitte auf 0,40 m bzw. 0,55 m Höhe).
+## Die Original-Kennzeichen sind immer unsichtbar (nie doppelt). „Kein Kennzeichen“ (Garage)
+## blendet auch unser Schild aus.
 func _place_plates(body: Array) -> void:
 	if _car == null:
 		return
-	var to_car := _car.global_transform.affine_inverse()
-	var floor_y := Car.resting_wheel_center(_profile, 0).y - _profile.wheel_radius
-	var front := -INF
-	var rear := INF
-	for mi: MeshInstance3D in body:
-		if not is_instance_valid(mi) or mi.mesh == null:
-			continue
-		var xform := to_car * mi.global_transform
-		for s in mi.mesh.get_surface_count():
-			var verts: PackedVector3Array = mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
-			for k in range(0, verts.size(), 3):
-				var p := xform * verts[k]
-				if absf(p.x) > 0.3:
-					continue
-				var height := p.y - floor_y
-				if absf(height - 0.40) < 0.07:
-					front = maxf(front, p.z)
-				if absf(height - 0.55) < 0.07:
-					rear = minf(rear, p.z)
-	# Mitte des Schilds je Seite (vorne/hinten), aus dem Modell oder gemessen
-	var spots: Array = [Vector3(0.0, floor_y + 0.40, front), Vector3(0.0, floor_y + 0.55, rear)]
-	var own := _model_plate_spots(body, to_car)
-	for side in 2:
-		if own[side] != null:
-			spots[side] = own[side]
+	measured_plates = _measure_plates(body)
 	var text := plate_text(_profile.id)
 	_plates.clear()
 	for side in 2:
-		var spot: Vector3 = spots[side]
-		if is_inf(spot.z):
+		var spot: Variant = measured_plates[side]
+		var stored := _profile.plate_front_position if side == 0 else _profile.plate_rear_position
+		if stored != Vector3.ZERO:
+			spot = {"center": stored, "size": _profile.plate_front_size if side == 0 else _profile.plate_rear_size,
+				"tilt": _profile.plate_front_tilt if side == 0 else _profile.plate_rear_tilt}
+		if spot == null:
 			continue
-		var plate := LicensePlate.make_mesh(text)
+		var plate := LicensePlate.make_mesh(text, spot["size"])
 		_car.add_child(plate)
-		var outward := 0.012 if side == 0 else -0.012
-		plate.position = spot + Vector3(0.0, 0.0, outward)
-		plate.rotation = Vector3(0.0, 0.0 if side == 0 else PI, 0.0)
+		# 1,2 cm vor die Fläche (entlang ihrer Normale), damit nichts flimmert
+		var tilt := deg_to_rad(spot["tilt"])
+		var normal := Vector3(0.0, sin(tilt), cos(tilt) * (1.0 if side == 0 else -1.0))
+		LicensePlate.place(plate, (spot["center"] as Vector3) + normal * 0.012, side == 0, spot["tilt"])
+		plate.visible = plates_enabled(_profile.id)
 		_extra_nodes.append(plate)
 		_plates.append(plate)
 
 
-## Eigene Kennzeichenfelder des Modells: [vorne, hinten] = äußerste Mitte in Auto-Koordinaten oder
-## null. Die Originalflächen werden unsichtbar (unser Schild ersetzt sie).
-func _model_plate_spots(body: Array, to_car: Transform3D) -> Array:
-	var boxes: Array = [null, null]
+## Gemessene Kennzeichen-Stellen [vorne, hinten]: {"center", "size", "tilt"} oder null (für das
+## Messwerkzeug, das die Werte ins Profil schreibt)
+var measured_plates: Array = [null, null]
+
+
+## Kennzeichen am Modell messen (Auto-Koordinaten) und die Original-Teile ausblenden
+func _measure_plates(body: Array) -> Array:
+	var to_car := _car.global_transform.affine_inverse()
+	var words: PackedStringArray = _profile.plate_hide
+	# Zwei einzelne Listen: Packed-Arrays sind Werte, append() auf ein Element eines Arrays
+	# verändert nur eine Kopie
+	var front_points := PackedVector3Array()
+	var rear_points := PackedVector3Array()
+	var normals: Array = [Vector3.ZERO, Vector3.ZERO]
 	for mi: MeshInstance3D in body:
 		if not is_instance_valid(mi) or mi.mesh == null:
 			continue
 		var xform := to_car * mi.global_transform
 		for s in mi.mesh.get_surface_count():
 			var material := mi.mesh.surface_get_material(s)
-			if material == null or not material.resource_name.to_lower().contains("manufacturerplate"):
+			var names := ((material.resource_name if material else "") + " " + String(mi.name)).to_lower()
+			var is_plate := false
+			for word in words:
+				if word.begins_with("="):
+					# Genau dieser Teilname (Teile mit allgemeinem Material, z. B. „plaste“)
+					if String(mi.name).to_lower() == word.substr(1).to_lower():
+						is_plate = true
+				elif word != "" and names.contains(word.to_lower()):
+					is_plate = true
+			if not is_plate:
 				continue
-			for p0 in mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX] as PackedVector3Array:
-				var p := xform * p0
+			var arrays := mi.mesh.surface_get_arrays(s)
+			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var vertex_normals: Variant = arrays[Mesh.ARRAY_NORMAL]
+			for k in verts.size():
+				var p := xform * verts[k]
 				var side := 0 if p.z > 0.0 else 1
-				if boxes[side] == null:
-					boxes[side] = AABB(p, Vector3.ZERO)
+				if side == 0:
+					front_points.append(p)
 				else:
-					boxes[side] = (boxes[side] as AABB).expand(p)
+					rear_points.append(p)
+				if vertex_normals != null:
+					var n: Vector3 = (xform.basis * (vertex_normals as PackedVector3Array)[k]).normalized()
+					# Nur Normalen, die nach außen zeigen (Vorderseite des Schilds)
+					if n.z * (1.0 if side == 0 else -1.0) > 0.3:
+						normals[side] += n
 			if _hidden_material == null:
 				_hidden_material = StandardMaterial3D.new()
 				_hidden_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -417,19 +428,59 @@ func _model_plate_spots(body: Array, to_car: Transform3D) -> Array:
 			mi.set_surface_override_material(s, _hidden_material)
 	var result: Array = [null, null]
 	for side in 2:
-		if boxes[side] != null:
-			var box: AABB = boxes[side]
-			var center := box.get_center()
-			result[side] = Vector3(center.x, center.y, box.end.z if side == 0 else box.position.z)
+		var list := front_points if side == 0 else rear_points
+		if list.size() < 3:
+			continue
+		var box := AABB(list[0], Vector3.ZERO)
+		for p in list:
+			box = box.expand(p)
+		var n: Vector3 = normals[side]
+		var tilt := 0.0
+		if n.length() > 0.01:
+			n = n.normalized()
+			tilt = rad_to_deg(atan2(n.y, absf(n.z)))
+		var height := box.size.y / maxf(cos(deg_to_rad(tilt)), 0.5)
+		# Auf die Außenfläche des Originals (nicht in seine Mitte, sonst verdecken die Ränder einer
+		# Mulde das Schild)
+		var center := box.get_center()
+		center.z = box.end.z if side == 0 else box.position.z
+		result[side] = {"center": center, "size": LicensePlate.fit_size(Vector2(box.size.x, height)), "tilt": tilt}
+	# Ohne eigenes Kennzeichen: an der Stoßstange messen
+	if result[0] == null or result[1] == null:
+		var floor_y := Car.resting_wheel_center(_profile, 0).y - _profile.wheel_radius
+		var front := -INF
+		var rear := INF
+		for mi: MeshInstance3D in body:
+			if not is_instance_valid(mi) or mi.mesh == null:
+				continue
+			var xform := to_car * mi.global_transform
+			for s in mi.mesh.get_surface_count():
+				var verts: PackedVector3Array = mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+				for k in range(0, verts.size(), 3):
+					var p := xform * verts[k]
+					if absf(p.x) > 0.3:
+						continue
+					var height := p.y - floor_y
+					if absf(height - 0.40) < 0.07:
+						front = maxf(front, p.z)
+					if absf(height - 0.55) < 0.07:
+						rear = minf(rear, p.z)
+		if result[0] == null and not is_inf(front):
+			result[0] = {"center": Vector3(0.0, floor_y + 0.40, front), "size": LicensePlate.SIZE, "tilt": 0.0}
+		if result[1] == null and not is_inf(rear):
+			result[1] = {"center": Vector3(0.0, floor_y + 0.55, rear), "size": LicensePlate.SIZE, "tilt": 0.0}
 	return result
 
 
-## Neues Kennzeichen (Garage) an beide Schilder
+## Neues Kennzeichen oder „Kein Kennzeichen“ (Garage) an beide Schilder
 func refresh_plates() -> void:
-	var texture := LicensePlate.make_texture(plate_text(_profile.id))
+	var shown := plates_enabled(_profile.id)
 	for plate in _plates:
 		if is_instance_valid(plate):
-			((plate.mesh as QuadMesh).material as StandardMaterial3D).albedo_texture = texture
+			var quad := plate.mesh as QuadMesh
+			(quad.material as StandardMaterial3D).albedo_texture = LicensePlate.make_texture(plate_text(_profile.id),
+				LicensePlate.pixels_for(quad.size))
+			plate.visible = shown
 
 
 ## Gespeichertes Kennzeichen eines Autos (Garage), sonst „M-EW 2026“
@@ -437,6 +488,19 @@ static func plate_text(car_id: String) -> String:
 	var config := ConfigFile.new()
 	config.load("user://einstellungen.cfg")
 	return config.get_value("kennzeichen", car_id, "M-EW 2026")
+
+
+## Testlauf --noplate: alle Autos ohne Kennzeichen (nur im Speicher)
+static var test_no_plates: bool = false
+
+
+## Hat dieses Auto ein Kennzeichen? (Garage: „Kein Kennzeichen“ schaltet es pro Auto ab)
+static func plates_enabled(car_id: String) -> bool:
+	if test_no_plates:
+		return false
+	var config := ConfigFile.new()
+	config.load("user://einstellungen.cfg")
+	return not bool(config.get_value("kennzeichen_aus", car_id, false))
 
 
 func _meshes_under(node: Node) -> Array[MeshInstance3D]:
