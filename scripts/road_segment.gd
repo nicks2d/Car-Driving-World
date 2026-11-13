@@ -88,6 +88,9 @@ var _bound_low := PackedFloat32Array()
 var _bound_high := PackedFloat32Array()
 ## Stellen (x, z, Radius) ohne äußere Leitplanke (Anschlussstellen)
 var rail_gaps: PackedVector3Array
+## Fremde Fahrbahnen, auf denen keine Leitplanke, Brüstung und kein Leitpfosten stehen darf
+## (Rampen an der Autobahn und umgekehrt, Zubringer): [Linie x/z, halbe Breite, Rechteck]
+var rail_keepout: Array = []
 ## Leitpfosten (nur Autobahn), in Weltkoordinaten
 var posts: Array[Transform3D] = []
 ## Zusatzfahrstreifen der Autobahn (Verzögerungs- und Beschleunigungsstreifen), setzt RoadNetwork
@@ -188,10 +191,12 @@ const TUBE_CLEARANCE: float = 0.4
 const LAMP_EVERY: int = 2
 const LIGHT_EVERY: int = 4
 ## Zusatzfahrstreifen: So viel breiter wird die Fahrbahn (aus dem 2,5-m-Standstreifen wird ein
-## 3,5-m-Fahrstreifen mit Randlinie), Länge der Verziehung und des parallelen Teils. An der
+## 4,5-m-Fahrstreifen wie auf der Rampe, außen 1,25 m Randstreifen bis zur eigenen Randlinie,
+## AUX_EDGE), Länge der Verziehung und des parallelen Teils. An der
 ## Rampe bleibt die Breite noch AUX_GORE_HOLD m, verschwindet über AUX_GORE_TAPER m unter der
 ## abschwenkenden Rampe, die Sperrfläche reicht AUX_GORE_TAIL m weiter.
-const AUX_EXTRA: float = 1.65
+const AUX_EXTRA: float = 3.25
+const AUX_EDGE: float = 1.25
 const AUX_TAPER: float = 60.0
 const AUX_PARALLEL: float = 250.0
 const AUX_GORE_HOLD: float = 25.0
@@ -1152,6 +1157,12 @@ func _apply_crossings(smooth: PackedFloat32Array, max_step: float) -> void:
 			if in_tunnel:
 				under = smooth[hit["index"]] < h_other
 			var where: Vector2 = hit["position"]
+			# Unter einer Brücke über Wasser hindurch hieße: durch den See. Dann lieber darüber.
+			if under and not in_tunnel:
+				var lakes: Array = world_gen.lakes_near(Rect2(where - Vector2.ONE, Vector2.ONE * 2.0))
+				var water := world_gen.water_level_at(where.x, where.y, lakes)
+				if water > WorldGen.NO_WATER and h_other - 7.0 < water + 4.5:
+					under = false
 			no_pillars.append(Vector3(where.x, where.y, other_half + 2.0))
 			# Alle Punkte, die über der anderen Straße liegen
 			for k in range(maxi(hit["index"] - 30, 0), mini(hit["index"] + 31, n)):
@@ -1264,6 +1275,12 @@ func _find_tunnels(smooth: PackedFloat32Array, over_water: PackedByteArray) -> b
 		for j in range(a, b + 1):
 			tunnel[j] = 1
 		i = next
+	# Autobahn: an Anschlussstellen und Raststätten (rail_gaps, dort setzen die Rampen an) nie
+	# ein Tunnel, sonst stehen Röhre und Portal mitten in den Rampen. Dort bleibt ein Einschnitt.
+	if kind == Kind.HIGHWAY and not rail_gaps.is_empty():
+		for j in n:
+			if tunnel[j] == 1 and _in_zone(points[j], rail_gaps):
+				tunnel[j] = 0
 	# Kurze Lücken (bis 32 m) zwischen zwei Tunneln schließen
 	var last_end := -100
 	for j in n:
@@ -1524,6 +1541,10 @@ func _build_bridges(lefts: PackedVector3Array) -> void:
 				var o1 := side_point(k + 1, lefts[k + 1], out1 * sgn, 0.0) - origin
 				var w0 := side_point(k, lefts[k], (out0 - WALL_THICKNESS) * sgn, 0.0) - origin
 				var w1 := side_point(k + 1, lefts[k + 1], (out1 - WALL_THICKNESS) * sgn, 0.0) - origin
+				# Liegt hier eine fremde Fahrbahn (Rampe zweigt ab): nur die Plattenkante, keine Brüstung
+				if not rail_keepout.is_empty() and (_in_keepout(o0 + origin) or _in_keepout(o1 + origin)):
+					_quad(o0 + down, o1 + down, o1 + top, o0 + top, normal)
+					continue
 				# Außenseite: Platte und Brüstung in einem Stück
 				_quad(o0 + down, o1 + down, o1 + wall, o0 + wall, normal)
 				# Oberkante und Innenseite der Brüstung
@@ -1572,6 +1593,30 @@ func _take_quads() -> Array:
 # 6. Leitplanken: an hohen Dämmen und außen in engen Kurven (Brücken haben Brüstungen)
 # ---------------------------------------------------------------------------
 
+## Liegt der Punkt auf einer fremden Fahrbahn aus rail_keepout?
+func _in_keepout(p: Vector3) -> bool:
+	var q := Vector2(p.x, p.z)
+	for zone: Array in rail_keepout:
+		if not (zone[2] as Rect2).has_point(q):
+			continue
+		var line: PackedVector2Array = zone[0]
+		var half: float = zone[1]
+		for k in line.size() - 1:
+			if Geometry2D.get_closest_point_to_segment(q, line[k], line[k + 1]).distance_squared_to(q) < half * half:
+				return true
+	return false
+
+
+## Sperrzone für Leitplanken eintragen: Linie und halbe Breite der fremden Fahrbahn
+func add_rail_keepout(line: PackedVector2Array, half: float) -> void:
+	if line.size() < 2:
+		return
+	var rect := Rect2(line[0], Vector2.ZERO)
+	for q in line:
+		rect = rect.expand(q)
+	rail_keepout.append([line, half, rect.grow(half)])
+
+
 ## Liegt der Punkt in einer der Zonen (x, z, Radius)?
 func _in_zone(p: Vector3, zones: PackedVector3Array) -> bool:
 	for zone in zones:
@@ -1608,6 +1653,11 @@ func _build_rails(first: int, last: int, lefts: PackedVector3Array) -> void:
 			if outside or drop > RAIL_DROP:
 				need[i] = 1
 		_close_gaps(need, 4)
+		# Nie auf einer fremden Fahrbahn (z. B. dort, wo eine Rampe abzweigt)
+		if not rail_keepout.is_empty():
+			for i in range(first, last + 1):
+				if need[i] == 1 and _in_keepout(side_point(i, lefts[i], side * (offset + extra_at(i, side)), 0.0)):
+					need[i] = 0
 		_drop_short(need, 6)
 		# 2. Pfosten an jedem Punkt, dazwischen das Stahlband. An den Enden taucht es ab.
 		for i in range(first, last + 1):
@@ -1852,6 +1902,8 @@ func _place_posts(first: int, last: int, lefts: PackedVector3Array) -> void:
 		var forward := direction_at(i)
 		for side: float in [1.0, -1.0]:
 			var base := side_point(i, lefts[i], side * (offset + extra_at(i, side)), -0.1)
+			if not rail_keepout.is_empty() and _in_keepout(base):
+				continue
 			posts.append(Transform3D(Basis.looking_at(forward), base))
 
 

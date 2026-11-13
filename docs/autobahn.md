@@ -45,7 +45,9 @@
   (`RoadSegment.aux_lanes`, gesetzt von `RoadNetwork._aux_lanes_at` für jede Rampe der
   Anschlussstellen und Raststätten). Je Punkt `extra_left/right` (Meter) und `marks_left/right`
   (`RoadSegment.Mark`: Blockmarkierung, Sperrfläche, Verziehung). Aus dem 2,5-m-Standstreifen wird
-  mit 1,65 m mehr (`AUX_EXTRA`) ein 3,5-m-Fahrstreifen mit eigener Randlinie. Ausfahrt (in
+  mit 3,25 m mehr (`AUX_EXTRA`, bis 13.11. 1,65 m) ein 4,5-m-Fahrstreifen (so breit wie auf der
+  Rampe) mit eigener, 25 cm breiter Randlinie 1,25 m innen vom Rand (`AUX_EDGE`, Shader
+  `aux_edge_inset`). Ausfahrt (in
   Fahrtrichtung): 60 m Verziehung (`AUX_TAPER`), 250 m parallel (`AUX_PARALLEL`), Blockmarkierung
   (Breitstrich 6 m/6 m), ab dem Rampenbeginn Sperrfläche (schräg schraffiert): Breite noch 25 m,
   dann über 30 m weg (unter der abschwenkenden Rampe), Schraffur 20 m weiter. Einfahrt gespiegelt,
@@ -53,9 +55,37 @@
   bekommt das als Punktfarbe (COLOR.r/g = Breite/10, b/a = Markierung/3; andere Straßen haben
   keine Punktfarbe, dann wird sie ignoriert). Mesh, Kollision, Brücken, Leitplanken, Leitpfosten
   und die Gelände-Anpassung (`road_query.gd`, flacher Teil breiter) rechnen die Zusatzbreite mit.
-- Rampen beginnen/enden jetzt im Zusatzstreifen (`RAMP_LATERAL` 12,45 m statt 15,55 m neben der
-  Mitte: ihre innere Randlinie liegt auf der Randlinie der Autobahn) und dort 4 cm höher
-  (`RAMP_LIFT`, sonst flimmern die übereinander liegenden Flächen).
+- Rampen beginnen/enden im Zusatzstreifen und dort 4 cm höher (`RAMP_LIFT`, sonst flimmern die
+  übereinander liegenden Flächen). Ihre innere Randlinie liegt auf der Randlinie der Autobahn
+  (10,25 m neben der Mitte), ihr Fahrstreifen genau auf dem Zusatzfahrstreifen.
+- Rampenquerschnitt (seit 13.11., vorher 5 m mit 4,4 m zwischen den Linien): `RAMP_WIDTH` 6,5 m =
+  0,75 m Randstreifen links (`RAMP_EDGE_LEFT`, zur Autobahn hin) + 4,5 m Fahrstreifen + 1,25 m
+  rechts (`RAMP_EDGE_RIGHT`), Randlinien 25 cm, Bankett 1 m. Die Punkte einer Rampe laufen immer in
+  Fahrtrichtung, links liegt die Autobahn. `RAMP_LATERAL` = 12,75 m (Mitte der Rampe am Anfang),
+  Fahrstreifenmitte `RAMP_LATERAL + RAMP_LANE_SHIFT` = 12,5 m (Navi-Route, Verkehr `HW_RAMP`; auf der
+  Rampe fährt der Verkehr 0,25 m links der Mitte). Shader: `edge_line_inset` / `edge_line_inset_right`
+  setzt RoadNetwork am Rampen-Material.
+- Leitplanken, Brüstungen und Leitpfosten nie auf einer fremden Fahrbahn (`RoadSegment.rail_keepout`,
+  `add_rail_keepout`): Die Linien von Rampen, Zubringer und Raststätten-Teilen stehen vor dem Bau
+  fest (`RoadNetwork.ramp_path`, `rest_path`, `connector_path_of`). Die Autobahn bekommt die Rampen und
+  Raststätten-Rampen an ihren Stützpunkten als Sperrzone, Rampen die Autobahn (mit Zusatzstreifen),
+  den Zubringer und die anderen Rampen, der Zubringer die Rampen. Auf Brücken bleibt dort nur die
+  Plattenkante. Vorher stand z. B. die Brüstung einer Autobahnbrücke quer in der Ausfahrt und die
+  Leitplanke einer Auffahrt auf der Hauptfahrbahn (Welt-Prüfer).
+- Kein Autobahn-Tunnel im Bereich von Anschlussstellen und Raststätten (`rail_gaps`, 330 m um den
+  Stützpunkt): Dort reichten an Abschnittsenden 12 m Gelände für einen Tunnel, dann stand die Röhre
+  mitten in den Rampen (z. B. bei (3200, −4060)). Jetzt bleibt dort ein Einschnitt.
+- Stützpunkte liegen nie unter Wasser (`HighwayLayout._water_floor`): Das flache Stück am Stützpunkt
+  (±350 m) liegt mindestens 4,5 m über jedem See oder Fluss (`WATER_CLEARANCE`, wie in
+  RoadSegment). Vorher lag die Autobahn bei (−11.420, −11.200) bis zu 4 m unter einem Seespiegel.
+- Anschlussstellen und Raststätten mindestens 900 m von einer kreuzenden Autobahn entfernt
+  (`CROSSING_FREE`, `_near_other_axis`). Vorher lagen dort Rampen, Zubringer und die Überführung
+  ineinander (Zubringer ebenerdig über die andere Autobahn).
+- Unterqueren einer Brücke über Wasser geht nicht (`RoadSegment._apply_crossings`): Läge die untere
+  Straße dann unter Wasserspiegel + 4,5 m, führt sie stattdessen darüber.
+- Zubringer reichen bis gut 1 km von der Autobahn weg (`CONNECTOR_REACH`): `_edges_touching` sucht
+  ihre Anschlussstellen jetzt auch bei Autobahn-Abschnitten, die selbst nicht in der Nähe liegen.
+  Vorher kannte das Gelände weiter draußen den Zubringer nicht (keine Böschung, Bäume darauf).
 - Ausstattung (`_add_signs`): Ankündigungsbaken 300/200/100 m vor dem Rampenbeginn (weiße Tafel mit
   3/2/1 roten Schrägstreifen), an der Spitze der Sperrfläche (`_gore_nose`: wo zwischen Fahrbahnrand
   und Rampe 0,6 m Platz ist, rechnet die Bezier-Kurve der Rampe nach) ein gelber Anpralldämpfer,

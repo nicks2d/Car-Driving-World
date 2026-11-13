@@ -60,7 +60,7 @@ extends Node3D
 const ROAD_LANE: float = 2.25
 const HW_RIGHT: float = 8.375
 const HW_LEFT: float = 4.625
-const HW_RAMP: float = 12.3
+const HW_RAMP: float = RoadNetwork.RAMP_LATERAL + RoadNetwork.RAMP_LANE_SHIFT
 const LOT_LANE: float = -18.5
 ## Tempo in Orten und Kurven
 const VILLAGE_SPEED: float = 50.0 / 3.6
@@ -750,7 +750,8 @@ func _ramp_leg(key: Vector3i, segment: RoadSegment) -> Leg:
 	leg.forward = true
 	leg.from = 0.0
 	leg.to = segment.total_length()
-	leg.lateral = 0.0
+	# Mitte des Fahrstreifens (rechts ist der Randstreifen breiter)
+	leg.lateral = RoadNetwork.RAMP_LANE_SHIFT
 	return leg
 
 

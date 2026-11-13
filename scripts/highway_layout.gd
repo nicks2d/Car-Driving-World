@@ -30,6 +30,11 @@ const MAX_ABOVE_FLOOR: float = 50.0
 ## Ein Stützpunkt liegt höchstens so viel über oder unter der Mitte seiner Nachbarn (sonst
 ## wird es zwischen zwei Stützpunkten zu steil)
 const HEIGHT_SMOOTHING: float = 15.0
+## Anschlussstellen und Raststätten nur so weit weg von einer kreuzenden Autobahn (sonst liegen
+## Rampen, Zubringer und die Überführung der anderen Autobahn ineinander)
+const CROSSING_FREE: float = 900.0
+## Über Wasser (See, Fluss) liegt die Fahrbahn am Stützpunkt mindestens so hoch (wie RoadSegment)
+const WATER_CLEARANCE: float = 4.5
 ## An jedem Stützpunkt kann eine Anschlussstelle liegen (also höchstens alle 1,6 km)
 const INTERCHANGE_EVERY: int = 1
 ## Abstand Ort–Autobahn an einer Anschlussstelle (Länge des Zubringers bis zur Autobahn)
@@ -117,6 +122,9 @@ func control_point(axis: int, line: int, k: int) -> Vector3:
 		var spot := _spot(axis, line, k)
 		var middle := (_spot(axis, line, k - 1).y + _spot(axis, line, k + 1).y) * 0.5
 		spot.y = clampf(spot.y, middle - HEIGHT_SMOOTHING, middle + HEIGHT_SMOOTHING)
+		# Das flache Stück am Stützpunkt (bis 310 m davor und dahinter) nie unter Wasser: sonst lag
+		# die Autobahn dort auf dem Grund eines Sees (die Abschnitte halten sie an den Enden flach)
+		spot.y = maxf(spot.y, _water_floor(axis, Vector2(spot.x, spot.z)))
 		_points[id] = spot
 	return _points[id]
 
@@ -235,6 +243,42 @@ func _best_spot(axis: int, line: int, k: int) -> Vector3:
 	return Vector3(best.x, _road_height(best), best.y)
 
 
+## Höchster Wasserspiegel (+ WATER_CLEARANCE) entlang des flachen Stücks am Stützpunkt, -INF = kein Wasser
+func _water_floor(axis: int, p: Vector2) -> float:
+	var along := Vector2(1.0, 0.0) if axis == 0 else Vector2(0.0, 1.0)
+	var side := Vector2(-along.y, along.x)
+	var reach := RoadNetwork.RAMP_LENGTH + 70.0
+	var lakes: Array = world_gen.lakes_near(Rect2(p - Vector2.ONE * (reach + 60.0), Vector2.ONE * (reach + 60.0) * 2.0))
+	var result := -INF
+	var t := -reach
+	while t <= reach:
+		for lateral: float in [-20.0, 0.0, 20.0]:
+			var q := p + along * t + side * lateral
+			var water := world_gen.water_level_at(q.x, q.y, lakes)
+			if water > WorldGen.NO_WATER:
+				result = maxf(result, water + WATER_CLEARANCE)
+		t += 25.0
+	return result
+
+
+## Liegt eine Autobahn der anderen Achse näher als distance an p?
+func _near_other_axis(axis: int, p: Vector2, distance: float) -> bool:
+	var other := 1 - axis
+	var reach := CONTROL_WANDER + LOCAL_SEARCH + distance + 100.0
+	var across_position := p.y if other == 0 else p.x
+	var along_position := p.x if other == 0 else p.y
+	for line in range(floori((across_position - reach) / LINE_SPACING - 0.25), ceili((across_position + reach) / LINE_SPACING + 0.25) + 1):
+		if not line_exists(other, line) or absf(line_position(other, line) - across_position) > reach:
+			continue
+		var k := floori(along_position / CONTROL_SPACING)
+		for section in [k - 1, k]:
+			var path := centerline(other, line, section)
+			for i in path.size() - 1:
+				if Geometry2D.get_closest_point_to_segment(p, path[i], path[i + 1]).distance_squared_to(p) < distance * distance:
+					return true
+	return false
+
+
 ## Höhe der Fahrbahn am Stützpunkt: das Gelände (gemittelt), aber nahe am Talboden. So liegen
 ## benachbarte Stützpunkte nie weit übereinander; Berge dazwischen bekommen Tunnel.
 func _road_height(p: Vector2) -> float:
@@ -287,7 +331,9 @@ func interchange_at(axis: int, line: int, k: int) -> Dictionary:
 	# Wo eine Raststätte liegt, ist kein Platz für eine Anschlussstelle
 	if posmod(k, INTERCHANGE_EVERY) == 0 and line_exists(axis, line) \
 			and rest_area_at(axis, line, k, 1).is_empty() and rest_area_at(axis, line, k, -1).is_empty():
-		result = _find_interchange(axis, line, k)
+		var point := control_point(axis, line, k)
+		if not _near_other_axis(axis, Vector2(point.x, point.z), CROSSING_FREE):
+			result = _find_interchange(axis, line, k)
 	_interchanges[id] = result
 	return result
 
@@ -342,6 +388,8 @@ func _find_rest_choice(axis: int, line: int, first: int, dir: int) -> int:
 func _rest_fits(axis: int, line: int, k: int, dir: int) -> bool:
 	var point := control_point(axis, line, k)
 	var q := Vector2(point.x, point.z)
+	if _near_other_axis(axis, q, CROSSING_FREE):
+		return false
 	var travel := direction_at(axis, line, k) * float(dir)
 	var along_offset := -(RoadNetwork.RAMP_LENGTH + 60.0)
 	while along_offset <= RoadNetwork.RAMP_LENGTH + 60.0:

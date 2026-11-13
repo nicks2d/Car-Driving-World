@@ -32,8 +32,13 @@ uniform float dash_length = 6.0;
 uniform float dash_gap = 12.0;
 uniform float center_line_width = 0.12;
 uniform float edge_line_width = 0.15;
-// So weit sind die Randlinien vom Fahrbahnrand entfernt
+// So weit sind die Randlinien vom Fahrbahnrand entfernt (Rampen: rechts weiter, siehe unten)
 uniform float edge_line_inset = 0.3;
+// Rampe: Abstand der rechten Randlinie (links 0,75 m, rechts 1,25 m, Fahrstreifen 4,5 m);
+// negativ = wie links
+uniform float edge_line_inset_right = -1.0;
+// Zusatzfahrstreifen der Autobahn: so weit liegt seine Randlinie innen vom Fahrbahnrand
+uniform float aux_edge_inset = 1.25;
 uniform int lane_profile = 0;
 // Autobahn (je Seite von außen nach innen): Standstreifen, zwei Fahrstreifen, innerer Rand,
 // dahinter der Mittelstreifen. Die Linien sind 30 cm (außen) bzw. 15 cm breit.
@@ -96,8 +101,11 @@ void fragment() {
 			wheel_tracks += smoothstep(0.5, 0.0, abs(side - c + 0.9)) + smoothstep(0.5, 0.0, abs(side - c - 0.9));
 		}
 	} else if (lane_profile == 2) {
-		wheel_tracks = smoothstep(0.5, 0.0, abs(across - road_width * 0.5 + 0.9))
-			+ smoothstep(0.5, 0.0, abs(across - road_width * 0.5 - 0.9));
+		// Mitte des Fahrstreifens zwischen den beiden Randlinien
+		float inset_r = edge_line_inset_right < 0.0 ? edge_line_inset : edge_line_inset_right;
+		float lane_mid = (edge_line_inset + road_width - inset_r) * 0.5;
+		wheel_tracks = smoothstep(0.5, 0.0, abs(across - lane_mid + 0.9))
+			+ smoothstep(0.5, 0.0, abs(across - lane_mid - 0.9));
 	} else if (lane_profile == 3) {
 		// Parkplatz: Fahrspuren nur in der Fahrgasse am autobahnseitigen Rand
 		wheel_tracks = smoothstep(0.5, 0.0, abs(across - 3.1)) + smoothstep(0.5, 0.0, abs(across - 4.9));
@@ -111,7 +119,8 @@ void fragment() {
 	float center_distance = abs(across - road_width * 0.5);
 	float center = 1.0 - smoothstep(center_line_width * 0.5 - aa, center_line_width * 0.5 + aa, center_distance);
 	float dash = step(fract(along / (dash_length + dash_gap)), dash_length / (dash_length + dash_gap));
-	float edge_distance = min(abs(across - edge_line_inset), abs(across - (road_width - edge_line_inset)));
+	float inset_right = edge_line_inset_right < 0.0 ? edge_line_inset : edge_line_inset_right;
+	float edge_distance = min(abs(across - edge_line_inset), abs(across - (road_width - inset_right)));
 	float edge = 1.0 - smoothstep(edge_line_width * 0.5 - aa, edge_line_width * 0.5 + aa, edge_distance);
 	if (lane_profile == 1) {
 		// Autobahn: Randlinie (breit), gestrichelte Linie zwischen den Fahrstreifen, innere Linie
@@ -123,8 +132,8 @@ void fragment() {
 		float outside = 1.0 - step(hw_shoulder, side);
 		if (mark == 1.0 || mark == 3.0) {
 			edge_line *= step(fract(along / 12.0), 0.5);
-			if (mark == 1.0 && extra > 0.6) {
-				edge_line = max(edge_line, 1.0 - smoothstep(0.075 - aa, 0.075 + aa, abs(side + extra - 0.45)));
+			if (mark == 1.0 && extra > aux_edge_inset + 0.2) {
+				edge_line = max(edge_line, 1.0 - smoothstep(0.125 - aa, 0.125 + aa, abs(side + extra - aux_edge_inset)));
 			}
 		}
 		if (mark >= 2.0) {

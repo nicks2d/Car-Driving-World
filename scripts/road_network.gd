@@ -96,24 +96,37 @@ const JUNCTION_CLEARANCE: float = 20.0
 const MIN_DEPARTURE_ANGLE: float = deg_to_rad(80.0)
 ## Ab dieser Entfernung wird ein Abschnitt ganz vergessen (wird bei Bedarf neu berechnet)
 const FORGET_DISTANCE: float = 5300.0
-## Autobahn: Breite (beide Richtungen mit Stand- und Mittelstreifen) und Breite der Rampen
+## Autobahn: Breite (beide Richtungen mit Stand- und Mittelstreifen) und Breite der Rampen:
+## 4,5 m Fahrstreifen, links 0,75 m und rechts 1,25 m Randstreifen bis zur Randlinie (wie eine
+## einstreifige Rampe an einer echten Autobahn). Links liegt immer die Autobahn (die Punkte einer
+## Rampe laufen in Fahrtrichtung).
 const HIGHWAY_WIDTH: float = 25.5
-const RAMP_WIDTH: float = 5.0
+const RAMP_WIDTH: float = 6.5
+const RAMP_EDGE_LEFT: float = 0.75
+const RAMP_EDGE_RIGHT: float = 1.25
+## Mitte des Fahrstreifens einer Rampe, von ihrer Mittellinie aus (negativ = links)
+const RAMP_LANE_SHIFT: float = (RAMP_EDGE_LEFT - RAMP_EDGE_RIGHT) * 0.5
 ## Rampen: so lang (Meter entlang der Autobahn) und so weit von der Autobahnmitte treffen sie
 ## auf den Zubringer
 const RAMP_LENGTH: float = 280.0
 const RAMP_JOIN: float = 55.0
 ## Rampen beginnen bzw. enden im Zusatzfahrstreifen (Verzögerungs-/Beschleunigungsstreifen):
-## Ihre innere Randlinie liegt dort auf der Randlinie der Autobahn (2,5 m Standstreifen).
+## Ihre innere Randlinie liegt dort auf der Randlinie der Autobahn (2,5 m Standstreifen), ihr
+## Fahrstreifen genau auf dem Zusatzfahrstreifen (beide 4,5 m, RoadSegment.AUX_EXTRA).
 ## Sie liegen RAMP_LIFT höher, damit sich die Flächen dort nicht flimmernd überdecken.
-const RAMP_LATERAL: float = HIGHWAY_WIDTH * 0.5 - 2.5 - 0.3 + RAMP_WIDTH * 0.5
+const RAMP_LATERAL: float = HIGHWAY_WIDTH * 0.5 - 2.5 - RAMP_EDGE_LEFT + RAMP_WIDTH * 0.5
 const RAMP_LIFT: float = 0.04
 ## Der Zubringer endet so weit hinter der Autobahn
 const CONNECTOR_BEYOND: float = 150.0
+## So weit von der Autobahn kann ein Zubringer (mit Böschung) höchstens reichen: Ort bis 1100 m
+## daneben, dazu der Rand aus _edge_area
+const CONNECTOR_REACH: float = 1100.0 + RAMP_LENGTH + 150.0
 ## Höhenunterschied, ab dem sich kreuzende Straßen nicht stören (Brücke darüber)
 const CROSSING_CLEARANCE: float = 6.0
 ## Autobahn-Abschnitte werden erst so viel weiter weg vergessen als Landstraßen
 const HIGHWAY_FORGET_EXTRA: float = 4500.0
+## Ein Abschnitt, den in dieser Zeit (ms) noch etwas angefordert hat, wird nicht vergessen
+const WANTED_KEEP_MSEC: int = 5000
 ## Auf der Autobahn fährt man rechts: Mitte des rechten Fahrstreifens, Abstand zur Mittellinie
 const HIGHWAY_LANE_OFFSET: float = 8.1
 
@@ -163,6 +176,8 @@ class Entry:
 	## Bogen bzw. Pylone und Seile einer Landmarken-Brücke (von weitem sichtbar)
 	var landmark_instance: Node3D
 	var body: StaticBody3D
+	## Wann ihn zuletzt etwas angefordert hat (ms): so lange wird er nicht vergessen
+	var wanted_msec: int = 0
 
 
 ## Hintergrund-Auftrag: Kommt ein Abschnitt einem wichtigeren Abschnitt zu nahe?
@@ -197,6 +212,9 @@ func start(gen: WorldGen, follow: Node3D) -> void:
 		(highway_material as ShaderMaterial).set_shader_parameter("road_width", HIGHWAY_WIDTH)
 	if ramp_material is ShaderMaterial:
 		(ramp_material as ShaderMaterial).set_shader_parameter("road_width", RAMP_WIDTH)
+		(ramp_material as ShaderMaterial).set_shader_parameter("edge_line_inset", RAMP_EDGE_LEFT)
+		(ramp_material as ShaderMaterial).set_shader_parameter("edge_line_inset_right", RAMP_EDGE_RIGHT)
+		(ramp_material as ShaderMaterial).set_shader_parameter("edge_line_width", 0.25)
 	if parking_material is ShaderMaterial:
 		(parking_material as ShaderMaterial).set_shader_parameter("road_width", HighwayLayout.REST_WIDTH)
 
@@ -291,6 +309,11 @@ func _exit_tree() -> void:
 		if entry.task_id != -1:
 			WorkerThreadPool.wait_for_task_completion(entry.task_id)
 			entry.task_id = -1
+	# Auch Dörfer, die gerade geplant werden (sonst bleibt beim Beenden ein Village übrig)
+	for village: Village in _villages.values():
+		if village.task_id != -1:
+			WorkerThreadPool.wait_for_task_completion(village.task_id)
+			village.task_id = -1
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +466,7 @@ func _priority(key: Vector3i) -> int:
 func _want(key: Vector3i, level: int) -> void:
 	var entry: Entry = _entries.get(key)
 	if entry:
+		entry.wanted_msec = Time.get_ticks_msec()
 		if level >= 2:
 			entry.needed = true
 	else:
@@ -506,6 +530,16 @@ func _edges_touching(rect: Rect2) -> Array[Vector3i]:
 					var key := interchange_key(axis, line, at, part)
 					if not result.has(key) and _edge_area(key).intersects(rect):
 						result.append(key)
+		# Zubringer reichen bis gut 1 km von der Autobahn weg: auch Anschlussstellen von
+		# Abschnitten, die selbst nicht in der Nähe liegen (sonst kennt das Gelände dort den
+		# Zubringer nicht: keine Böschung, Bäume auf der Fahrbahn)
+		for section: Array in highways.sections_touching(rect.grow(CONNECTOR_REACH)):
+			for at: int in [section[2], section[2] + 1]:
+				if highways.interchange_at(section[0], section[1], at).is_empty():
+					continue
+				var connector := interchange_key(section[0], section[1], at, 0)
+				if not result.has(connector) and _edge_area(connector).intersects(rect):
+					result.append(connector)
 	return result
 
 
@@ -744,7 +778,7 @@ func exit_route(near: Vector3, forward: Vector3) -> PackedVector3Array:
 				while i != gore_index:
 					var to_gore := (gore_index - i) * dir * RoadSegment.POINT_SPACING
 					var blend := clampf((RoadSegment.AUX_PARALLEL + 40.0 - to_gore) / 100.0, 0.0, 1.0)
-					route.append(_lane_point(segment, i, dir, lerpf(HIGHWAY_LANE_OFFSET, RAMP_LATERAL - 0.2, blend)))
+					route.append(_lane_point(segment, i, dir, lerpf(HIGHWAY_LANE_OFFSET, RAMP_LATERAL + RAMP_LANE_SHIFT, blend)))
 					i += dir
 				# 2. Ausfahrt, Zubringer (über die Brücke), Einfahrt
 				var exit_points := exit_entry.segment.points
@@ -773,7 +807,7 @@ func exit_route(near: Vector3, forward: Vector3) -> PackedVector3Array:
 					if j < 0 or j >= back.points.size():
 						break
 					var blend := clampf((n * RoadSegment.POINT_SPACING - 120.0) / 80.0, 0.0, 1.0)
-					route.append(_lane_point(back, j, back_dir, lerpf(RAMP_LATERAL - 0.2, HIGHWAY_LANE_OFFSET, blend)))
+					route.append(_lane_point(back, j, back_dir, lerpf(RAMP_LATERAL + RAMP_LANE_SHIFT, HIGHWAY_LANE_OFFSET, blend)))
 				return route
 		# Weiter zum nächsten Abschnitt (bis dahin rechte Spur)
 		var last := segment.points.size() - 1 if going_forward else 0
@@ -1148,6 +1182,7 @@ func _dispatch() -> void:
 		var entry := Entry.new()
 		entry.segment = segment
 		entry.needed = level >= 2
+		entry.wanted_msec = Time.get_ticks_msec()
 		entry.task_id = WorkerThreadPool.add_task(segment.build, false, "Straße")
 		_entries[key] = entry
 		_running += 1
@@ -1262,6 +1297,14 @@ func _make_highway_segment(key: Vector3i) -> RoadSegment:
 		if not interchange.is_empty() or has_rest:
 			var point := highways.control_point(axis, key.y, at)
 			segment.rail_gaps.append(Vector3(point.x, point.z, RAMP_LENGTH + 50.0))
+			# Auch Brüstungen (Brücke) und Leitpfosten nicht dort, wo Rampen auf der Fahrbahn liegen
+			if not interchange.is_empty():
+				for part: int in [1, 2, 3, 4]:
+					segment.add_rail_keepout(ramp_path(axis, key.y, at, part), RAMP_WIDTH * 0.5 + 1.0)
+			for dir: int in [1, -1]:
+				if not highways.rest_area_at(axis, key.y, at, dir).is_empty():
+					for part: int in [1, 2]:
+						segment.add_rail_keepout(rest_path(axis, key.y, at, dir, part), RAMP_WIDTH * 0.5 + 1.0)
 			if at == key.x:
 				segment.lead = RAMP_LENGTH + 30.0
 				segment.flat_points = 80
@@ -1316,7 +1359,6 @@ func _make_interchange_segment(key: Vector3i) -> RoadSegment:
 	var interchange := highways.interchange_at(axis, key.y, key.x)
 	var place: Vector3 = interchange["place"]
 	var point: Vector3 = interchange["point"]
-	var d := highways.direction_at(axis, key.y, key.x)
 	var x := Vector2(point.x, point.z)
 	var cross: Vector2 = interchange["side"]
 	# Andere Autobahnen in der Nähe: Zubringer und Rampen führen per Brücke darüber
@@ -1332,14 +1374,11 @@ func _make_interchange_segment(key: Vector3i) -> RoadSegment:
 	if part == 0:
 		# Zubringer: verlässt den Ort in einer freien Richtung (leave), schwenkt im Bogen auf
 		# die Autobahn zu, überquert sie rechtwinklig (Brücke) und endet CONNECTOR_BEYOND dahinter
-		var p := Vector2(place.x, place.z)
-		var leave: Vector2 = interchange["leave"]
-		var reach := p.distance_to(x)
 		var far := x + cross * CONNECTOR_BEYOND
-		var connector_path := PackedVector2Array()
-		for i in 81:
-			connector_path.append(_bezier(p, p + leave * reach * 0.4, x - cross * reach * 0.4, x, i / 80.0))
-		connector_path.append_array(_dense_line(PackedVector2Array([x, far])).slice(1))
+		var connector_path := connector_path_of(axis, key.y, key.x)
+		# Keine Leitplanke und keine Brüstung dort, wo die Rampen ansetzen
+		for ramp_part: int in [1, 2, 3, 4]:
+			segment.add_rail_keepout(ramp_path(axis, key.y, key.x, ramp_part), RAMP_WIDTH * 0.5 + 1.0)
 		segment.kind = RoadSegment.Kind.ROAD
 		segment.road_width = road_width
 		segment.max_grade = 0.08
@@ -1355,17 +1394,18 @@ func _make_interchange_segment(key: Vector3i) -> RoadSegment:
 	if connector == null or connector.state == State.BUILDING:
 		_want(interchange_key(axis, key.y, key.x, 0), 1)
 		return null
-	var side := 1.0 if part <= 2 else -1.0
 	var exit := part == 1 or part == 3
-	var travel := d * -side
 	var ends := ramp_ends(axis, key.y, key.x, part)
 	var a := ends[0]
 	var b := ends[1]
-	var path := PackedVector2Array()
-	for i in 101:
-		var t := i / 100.0
-		path.append(_bezier(a, a + travel * RAMP_LENGTH * 0.45, b - travel * RAMP_LENGTH * 0.45, b, t))
+	var path := ramp_path(axis, key.y, key.x, part)
 	var connector_height := _height_on(connector.segment, b if exit else a)
+	# Keine Leitplanke auf der Autobahn (mit Zusatzfahrstreifen), dem Zubringer und den anderen Rampen
+	_add_highway_keepout(segment, axis, key.y, key.x)
+	segment.add_rail_keepout(connector_path_of(axis, key.y, key.x), road_width * 0.5 + shoulder_width)
+	for other_part: int in [1, 2, 3, 4]:
+		if other_part != part:
+			segment.add_rail_keepout(ramp_path(axis, key.y, key.x, other_part), RAMP_WIDTH * 0.5 + 1.0)
 	segment.kind = RoadSegment.Kind.RAMP
 	segment.road_width = RAMP_WIDTH
 	segment.shoulder_width = 1.0
@@ -1391,21 +1431,20 @@ func _make_rest_segment(key: Vector3i) -> RoadSegment:
 	var dir := rest_dir(key)
 	var part := rest_part(key)
 	var rest := highways.rest_area_at(axis, key.y, key.x, dir)
-	var travel: Vector2 = rest["travel"]
 	var ends := rest_ends(axis, key.y, key.x, dir, part)
 	var a := ends[0]
 	var b := ends[1]
-	var path := PackedVector2Array()
-	if part == 0:
-		path = _dense_line(PackedVector2Array([a, b]))
-	else:
-		var length := a.distance_to(b)
-		for i in 81:
-			path.append(_bezier(a, a + travel * length * 0.45, b - travel * length * 0.45, b, i / 80.0))
+	var path := rest_path(axis, key.y, key.x, dir, part)
 	var height: float = (rest["point"] as Vector3).y
 	var segment := RoadSegment.new()
 	segment.world_gen = world_gen
 	segment.key = key
+	# Keine Leitplanke auf der Autobahn und auf den anderen Teilen der Raststätte
+	_add_highway_keepout(segment, axis, key.y, key.x)
+	for other_part in 3:
+		if other_part != part:
+			var other_half := HighwayLayout.REST_WIDTH * 0.5 if other_part == 0 else RAMP_WIDTH * 0.5 + 1.0
+			segment.add_rail_keepout(rest_path(axis, key.y, key.x, dir, other_part), other_half)
 	segment.kind = RoadSegment.Kind.RAMP
 	segment.road_width = HighwayLayout.REST_WIDTH if part == 0 else RAMP_WIDTH
 	segment.square_ends = part == 0
@@ -1460,6 +1499,62 @@ func ramp_ends(axis: int, line: int, k: int, part: int) -> PackedVector2Array:
 	if part == 1 or part == 3:
 		return PackedVector2Array([on_highway - travel * RAMP_LENGTH, join - travel * (road_width * 0.5 + 1.5)])
 	return PackedVector2Array([join + travel * (road_width * 0.5 + 1.5), on_highway + travel * RAMP_LENGTH])
+
+
+## Linie einer Rampe (x/z, in Fahrtrichtung), wie sie gebaut wird
+func ramp_path(axis: int, line: int, k: int, part: int) -> PackedVector2Array:
+	var d := highways.direction_at(axis, line, k)
+	var side := 1.0 if part <= 2 else -1.0
+	var travel := d * -side
+	var ends := ramp_ends(axis, line, k, part)
+	var a := ends[0]
+	var b := ends[1]
+	var path := PackedVector2Array()
+	for i in 101:
+		path.append(_bezier(a, a + travel * RAMP_LENGTH * 0.45, b - travel * RAMP_LENGTH * 0.45, b, i / 100.0))
+	return path
+
+
+## Linie eines Raststätten-Teils (Parkplatz, Ausfahrt, Einfahrt), wie er gebaut wird
+func rest_path(axis: int, line: int, k: int, dir: int, part: int) -> PackedVector2Array:
+	var rest := highways.rest_area_at(axis, line, k, dir)
+	var travel: Vector2 = rest["travel"]
+	var ends := rest_ends(axis, line, k, dir, part)
+	var a := ends[0]
+	var b := ends[1]
+	if part == 0:
+		return _dense_line(PackedVector2Array([a, b]))
+	var path := PackedVector2Array()
+	var length := a.distance_to(b)
+	for i in 81:
+		path.append(_bezier(a, a + travel * length * 0.45, b - travel * length * 0.45, b, i / 80.0))
+	return path
+
+
+## Linie des Zubringers einer Anschlussstelle: vom Ort im Bogen zur Autobahn, rechtwinklig darüber
+func connector_path_of(axis: int, line: int, k: int) -> PackedVector2Array:
+	var interchange := highways.interchange_at(axis, line, k)
+	var place: Vector3 = interchange["place"]
+	var point: Vector3 = interchange["point"]
+	var x := Vector2(point.x, point.z)
+	var cross: Vector2 = interchange["side"]
+	var p := Vector2(place.x, place.z)
+	var leave: Vector2 = interchange["leave"]
+	var reach := p.distance_to(x)
+	var far := x + cross * CONNECTOR_BEYOND
+	var path := PackedVector2Array()
+	for i in 81:
+		path.append(_bezier(p, p + leave * reach * 0.4, x - cross * reach * 0.4, x, i / 80.0))
+	path.append_array(_dense_line(PackedVector2Array([x, far])).slice(1))
+	return path
+
+
+## Die Autobahn um Stützpunkt k (beide angrenzenden Abschnitte, mit Zusatzfahrstreifen) als
+## Sperrzone für Leitplanken einer Rampe
+func _add_highway_keepout(segment: RoadSegment, axis: int, line: int, k: int) -> void:
+	for section: int in [k - 1, k]:
+		segment.add_rail_keepout(highways.centerline(axis, line, section),
+			HIGHWAY_WIDTH * 0.5 + RoadSegment.AUX_EXTRA + 0.3)
 
 
 static func _bezier(a: Vector2, b: Vector2, c: Vector2, d: Vector2, t: float) -> Vector2:
@@ -1611,7 +1706,10 @@ func _update_visuals() -> void:
 		# Autobahnen erst viel weiter weg: Landstraßen und Nord-Süd-Autobahnen warten auf sie
 		# (Kreuzungen), sonst würden sie berechnet, vergessen, wieder angefordert und so fort.
 		var forget := FORGET_DISTANCE + (0.0 if is_road_key(key) else HIGHWAY_FORGET_EXTRA)
-		if _distance_to_rect(p, _edge_area(key)) > forget:
+		# Was gerade noch angefordert wird (z. B. eine Kreuzung wartet darauf), bleibt: sonst
+		# entsteht eine Schleife aus Berechnen, Vergessen und neu Anfordern (Ladebildschirm ohne Ende)
+		var wanted_recently := Time.get_ticks_msec() - entry.wanted_msec < WANTED_KEEP_MSEC
+		if _distance_to_rect(p, _edge_area(key)) > forget and not wanted_recently:
 			_free_visuals(entry)
 			_entries.erase(key)
 			continue

@@ -91,7 +91,34 @@ func _process(delta: float) -> bool:
 				_next_tile()
 			elif fmod(wait_time, 15.0) < delta:
 				print("  Feld %d: warte auf Straßen (%.0f s)" % [tile_index + 1, wait_time])
+				if wait_time > 40.0:
+					_print_missing(tile.grow(80.0))
 	return false
+
+
+## Fehlersuche: welche Abschnitte bzw. Kreuzungen fehlen noch?
+func _print_missing(rect: Rect2) -> void:
+	var entries: Dictionary = roads.get("_entries")
+	var wanted: Dictionary = roads.get("_wanted")
+	var shown := 0
+	for key: Vector3i in roads.call("_edges_touching", rect):
+		var entry: Variant = entries.get(key)
+		var state: int = entry.state if entry != null else -1
+		if state >= 3:
+			continue
+		shown += 1
+		if shown <= 8:
+			print("    fehlt %s: Zustand %d, gewollt %s, laufend %s" % [key, state, wanted.get(key, "-"),
+				entry != null and entry.task_id != -1])
+	print("    %d Abschnitte unfertig, %d gewollt, %d laufen" % [shown, wanted.size(), roads.get("_running")])
+	for key: Vector3i in entries:
+		var entry: Variant = entries[key]
+		if entry.task_id != -1:
+			print("    läuft: %s Zustand %d, von %s nach %s" % [key, entry.state, entry.segment.start.round(), entry.segment.end.round()])
+	var villages: Dictionary = roads.get("_villages")
+	for cell: Vector2i in villages:
+		if villages[cell].task_id != -1:
+			print("    Dorf plant noch: %s" % cell)
 
 
 ## Nur noch Straßen berechnen: Gelände, Gras, Verkehr, Wasser stehen still
@@ -134,6 +161,18 @@ func _check_tile(tile: Rect2) -> void:
 		segments.append(pair[1])
 	var times := PackedInt32Array([Time.get_ticks_msec()])
 	_build_meshes(keys, segments)
+	# --info=X,Y,Z: Angaben zu einem Abschnitt (Fehlersuche)
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--info="):
+			var v := arg.trim_prefix("--info=").split(",")
+			var wanted := Vector3i(int(v[0]), int(v[1]), int(v[2]))
+			for k in keys.size():
+				if keys[k] == wanted:
+					var seg := segments[k]
+					print("INFO %s: %d Punkte, Start %s, Ende %s, Tunnel %s, Brücken %d, rail_gaps %s, keepout %d, extra_r max %.2f" % [
+						wanted, seg.points.size(), seg.points[0].round(), seg.points[-1].round(), seg.tunnel_ranges,
+						seg.bridge.count(1), seg.rail_gaps, seg.rail_keepout.size(),
+						Array(seg.extra_right).max() if not seg.extra_right.is_empty() else 0.0])
 	var junctions := _junctions_in(area)
 	var index := _point_index(segments)
 	times.append(Time.get_ticks_msec())
@@ -244,7 +283,8 @@ func _surface_hits(q: Vector3, index: Dictionary, segments: Array[RoadSegment], 
 		var side := 1.0 if lateral.x > 0.0 else -1.0
 		var half := segment.road_width * 0.5 + segment.shoulder_width + segment.extra_at(j, side) - shrink
 		if segment.tunnel[j] == 1:
-			half = segment.tube_half_width()
+			# Im Tunnel reicht die Fahrfläche bis an die Wand (Wände liegen genau dort)
+			half = segment.tube_half_width() - maxf(shrink, 0.3)
 		if absf(lateral.x) > half or lateral.y > RoadSegment.POINT_SPACING:
 			continue
 		var y := segment.points[j].y
@@ -320,8 +360,9 @@ func _own_lateral(index: Dictionary, segments: Array[RoadSegment], a: int, q: Ve
 
 
 func _is_arm(junction: RoadJunction, segment: RoadSegment) -> bool:
+	# Nach Schlüssel vergleichen: vergessene Abschnitte werden als neue Objekte neu berechnet
 	for arm: Array in junction.arms:
-		if arm[0] == segment:
+		if (arm[0] as RoadSegment).key == segment.key:
 			return true
 	return false
 

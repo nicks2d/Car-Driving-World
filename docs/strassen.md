@@ -81,3 +81,12 @@
   Argumenten speichern nichts). Große Karte: entdeckte mit Kamera, übrige bis 6 km als „?“
   (noch nicht berechnete Straße: ungefähr in der Mitte zwischen den Orten). Garage →
   Sammlung: Liste mit Foto (das letzte Foto bis 150 m am Punkt).
+
+## Laden und Vergessen
+
+- Ein Abschnitt, den in den letzten 5 s noch etwas angefordert hat (`Entry.wanted_msec`,
+  `WANTED_KEEP_MSEC`), wird nicht vergessen, auch wenn er weiter als `FORGET_DISTANCE` weg ist.
+  Vorher gab es eine Endlosschleife (berechnen, vergessen, neu anfordern), z. B. als der Welt-Prüfer
+  direkt nach (−16.000, 11.000) sprang: Landstraßen bei x ≈ −10.000 wurden immer wieder neu
+  berechnet, die Straßen am Ziel nie fertig (im Spiel: Ladebildschirm ohne Ende nach einem Sprung).
+- Beim Beenden wartet das Straßennetz auch auf Dörfer, die gerade geplant werden.
