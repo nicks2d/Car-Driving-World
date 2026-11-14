@@ -52,3 +52,8 @@ mindestens 60. Einzelne Kosten (SSR, Glas, Modelle …) stehen auch bei ihrem Th
   knapp; der Sprung Mittel → Hoch kommt von Render-Auflösung 65 → 75 % und SSAO.
 - Ausgangswert 13.11. (Netzteil, Mac kühl, Hoch, `--full`): 60,1 / 59,7 FPS (gebremst, 1%-Low
   45), dritter Lauf ungebremst 65,7 FPS (1%-Low 48), GPU-Auslastung 93 %: Hoch ist GPU-begrenzt.
+- Nach Teil 3–7 (14.11., Mac nach vielen Stunden Dauerlast heiß, Akku 10 % am Netzteil, `--full`,
+  Hoch): 58,2 / 60,2 FPS (1%-Low 34,8 / 34,1), GPU-Auslastung 90 / 91 %. GPU-Last also nicht höher als
+  vorher (93 %), aber die Ruckler (1%-Low) sind deutlich schlechter als am Anfang (45). Ob das an der
+  Wärme liegt oder an Teil 3–7 (Tunnel-Deckel, breitere Rampen, mehr Kollision), ist offen: mit kühlem
+  Mac abwechselnd gegen den Stand vor Teil 3 (Commit c71aa75) messen.
