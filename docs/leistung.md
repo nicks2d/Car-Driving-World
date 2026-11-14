@@ -24,6 +24,11 @@ mindestens 60. Einzelne Kosten (SSR, Glas, Modelle …) stehen auch bei ihrem Th
   schwankt dann stark (gleicher Code 6,7 s / 13 s), und nach Shader-Änderungen dauert der erste
   Start länger (Shader werden neu übersetzt).
 
+- Zwei Stände vergleichen: `tools/bench_compare.sh [REF] [RUNDEN] [QUALITÄT]` misst abwechselnd alt
+  und neu (Autobahn-Benchmark, `--full`, mit GPU-Auslastung) und gibt eine Tabelle aus. Der alte Stand
+  wird als git worktree neben dem Projekt angelegt (Automodelle per Verknüpfung), `… REF 0` bereitet
+  nur vor. Aufräumen: `git worktree remove ~/Godot-Projekte/.endlose-welt-vergleich-REF`.
+
 ## Einstellungen, die Leistung kosten
 
 - Render-Skalierung: MetalFX Temporal mit 75 % (Projekteinstellungen > Rendering >
@@ -56,4 +61,5 @@ mindestens 60. Einzelne Kosten (SSR, Glas, Modelle …) stehen auch bei ihrem Th
   Hoch): 58,2 / 60,2 FPS (1%-Low 34,8 / 34,1), GPU-Auslastung 90 / 91 %. GPU-Last also nicht höher als
   vorher (93 %), aber die Ruckler (1%-Low) sind deutlich schlechter als am Anfang (45). Ob das an der
   Wärme liegt oder an Teil 3–7 (Tunnel-Deckel, breitere Rampen, mehr Kollision), ist offen: mit kühlem
-  Mac abwechselnd gegen den Stand vor Teil 3 (Commit c71aa75) messen.
+  Mac abwechselnd gegen den Stand vor Teil 3 (Commit c71aa75) messen: `tools/bench_compare.sh`
+  (vorbereitet, der alte Stand liegt importiert in `~/Godot-Projekte/.endlose-welt-vergleich-c71aa75`).
