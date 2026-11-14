@@ -126,7 +126,7 @@ func _print_missing(rect: Rect2) -> void:
 func _take_over() -> void:
 	roads = main.roads
 	world_gen = main.world_gen
-	for name: String in ["Terrain", "Grass", "Traffic", "Water", "HorizonRing", "Waterfalls"]:
+	for name: String in ["Terrain", "Grass", "Traffic", "Water", "HorizonRing", "Waterfalls", "CarReset"]:
 		var node := main.get_node_or_null(name)
 		if node:
 			node.process_mode = Node.PROCESS_MODE_DISABLED

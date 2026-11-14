@@ -1865,7 +1865,10 @@ func _build_portal(p: int, outward: Vector3, left: Vector3) -> void:
 		# Beginnt 0,5 m hinter der Portal-Ebene (unter dem Deckel), sonst bliebe ein Spalt
 		_tquad(at.call(a0, -0.5), at.call(a1, -0.5), at.call(a1, APRON_DEPTH),
 			at.call(a0, APRON_DEPTH), Vector3.UP, PORTAL_COLOR)
-		collision.call(a0, a1, a1, a0, -0.5, APRON_DEPTH)
+		# Kollision 30 cm unter die Fahrbahn hinein (sonst bleibt genau an der Kante ein Spalt);
+		# sichtbar nicht, sonst flimmern die beiden Flächen
+		var c0: Vector2 = Vector2((apron_in - 0.3) * sgn, -0.06)
+		collision.call(c0, a1, a1, c0, -0.5, APRON_DEPTH)
 
 
 ## Wohin ein Punkt des Kragen-Umrisses auf dem Rand der Stirnwand gehört: Wandteile seitlich

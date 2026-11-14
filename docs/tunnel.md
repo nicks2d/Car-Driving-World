@@ -98,7 +98,9 @@
 - Stirnwand: Kollision links, rechts und über der Öffnung bis Deckelhöhe, ihre Seiten 1,5 m in den
   Berg und eine Oberkante in Deckelhöhe (vorher nur seitlich bis 4 m).
 - Sockel vor der Stirnwand neben der Fahrbahn (`APRON_DEPTH` 3 m, von 0,5 m hinter der Portal-Ebene,
-  seitlich bis Deckelbreite + 0,5 m) mit Kollision: deckt den Rand der Löcher vor dem Portal ab.
+  seitlich bis Deckelbreite + 0,5 m) mit Kollision: deckt den Rand der Löcher vor dem Portal ab. Seine
+  Kollision reicht 30 cm unter die Fahrbahn (sichtbar nicht, sonst flimmert es): genau an der Kante
+  Fahrbahn/Sockel (6,0 m neben der Mitte) fiel man sonst durch (5 Stellen auf 40 × 40 km).
 - Löcher vor der Portal-Ebene nur bis 0,7 m (`PORTAL_FRONT_HOLE`, vorher durch die Überlappung der
   Stücke unbegrenzt): sonst ragt die Böschung in die Öffnung (Tunnel-Prüfwerkzeug), weiter vorn
   ist die offene Straße.
@@ -112,3 +114,8 @@
   sich manchmal mit nur ~4 m Höhenunterschied, wenn die Kreuzung nah (~180 m) hinter einem
   Stützpunkt liegt (flaches Stück + 4 % Steigung reichen nicht für 9 m), z. B. bei (−11.127, −4621)
   und (−16.916, −4976). Welt-Prüfer: „Tunnelwand/Portal in Fahrbahn“.
+- Welt-Prüfer auf 40 × 40 km (13./14.11.): vorher 2262 Stellen, nach Teil 3 1383 (fast nur noch Löcher),
+  nach Teil 3–7 17, nach dem Sockel-Fix 12: 9 × Tunnelwand/Portal in Fahrbahn (Autobahn-
+  Tunnelkreuzungen, siehe oben, und ein Portal an einer Landstraße), 1 Höhensprung an einer Kreuzung
+  (0,3 m bei (−11.510, −4070)), 1 Zubringer durch eine Kreuzung (−16.307, −1385), 1 Landstraße 0,3 m
+  unter Wasser (5231, −512).
