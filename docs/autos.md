@@ -115,6 +115,20 @@
 
 - Licht: zwei SpotLight3D (nur eins mit Schatten), an bei Sonne unter 4° oder per L.
   Rücklicht-Emission wird beim Bremsen heller (`Car.braking`).
+- Scheinwerfer mit Projektor-Bild (16.11., `CarModel._beam_texture`, 128 × 128, im Code gezeichnet):
+  Abblendlicht hell unter einer scharfen Hell-Dunkel-Grenze knapp über der Achse, die rechts mit 15°
+  ansteigt (Fahrbahnrand weiter ausgeleuchtet), heller Kern knapp unter der Grenze, breite Streuung
+  zur Seite, außerhalb nur 3 %. Lichtkegel 2° nach unten, Helligkeit 16 (vorher 10 ohne Bild),
+  Reichweite 95 m: die Straße ist etwa 40–50 m weit hell, dann kommt die Grenze. Erster Versuch mit dem
+  hellsten Bereich weiter unten gab nur einen Fleck 15 m vor dem Auto. Fernlicht (Lichthupe F): eigenes Bild ohne
+  Grenze, waagerecht, 2,2-mal heller und 1,8-mal weiter. Weiterhin wirft nur ein Scheinwerfer Schatten.
+- Leuchten-Material (`shaders/car_lamp.gdshader`) für Scheinwerfer- und Rücklichtglas: Leuchtstärke
+  per Parameter, dazu der Blinkerbereich (siehe unten). Tagfahrlicht: Scheinwerferglas leuchtet tags
+  schwach (0,6), nachts voll.
+- Begrüßungslicht in der Garage (`CarModel.play_welcome`, beim Öffnen und bei jeder Auswahl): nach
+  0,25 s Tagfahrlicht, nach 0,9 s Scheinwerfer, nach 1,4 s Rücklicht, nach 1,9 s Motorstart (im Code
+  berechnet: Anlasser, Zündungen nach Zylinderzahl, Drehzahl schießt hoch und fällt auf Leerlauf).
+  Licht bleibt an, bis die Garage zugeht. Foto: `--garage --car=m2 --time=20 --wait=1.2`.
 - Reifenspuren: MultiMesh-Ringpuffer mit 3000 Stücken, Rauch: GPUParticles3D pro Hinterrad.
   Rutschen pro Rad = `Car.wheel_slip()` (get_skidinfo + Driftwinkel).
 
@@ -140,10 +154,16 @@
 ## Blinker, Hupe, Lichthupe
 
 - Blinker (`car_signals.gd`, Knoten „Signals“ im Auto): Zustand am Auto (`turn_signal` 1 links /
-  -1 rechts, `hazard`, `signal_lit`), Takt 1,5 Hz. Leuchten = kleine orange Kästchen an den
-  Punkten aus `indicator_points` (links gemessen, rechts gespiegelt: äußere Ecke der Scheinwerfer
-  bzw. Rückleuchten, breitester Punkt oben vor der A-Säule = Spiegel), nachts je Seite zwei
-  OmniLights ohne Schatten. Aus nach der Kurve: Lenkrad erst über 0,35, dann unter 0,08.
+  -1 rechts, `hazard`, `signal_lit`), Takt 1,5 Hz. Punkte aus `indicator_points` (links gemessen,
+  rechts gespiegelt: äußere Ecke der Scheinwerfer bzw. Rückleuchten, Spiegel). Seit 16.11. leuchtet
+  CarModel den Blinker im Glas des Modells: ein Bereich (Radius `indicator_radius`, 9 cm) um den Punkt
+  im Scheinwerfer- bzw. Rücklichtglas, leicht orange getönt, beim Blinken orange leuchtend. Liegt der
+  Punkt knapp daneben (bis 25 cm, C 63 vorne, M4 CSL vorne, G90/M2/SL 65/M4 CSL hinten), rückt der
+  Bereich auf die nächste Stelle des Glases. Eigene Blinkergläser (`indicator_materials`: F90
+  „blinkerfront“, M4 CSL „M4xNME_signal_L/R“ mit Spiegelblinkern, SL 65 „orange_glass“) leuchten ganz.
+  Kästchen gibt es nur noch, wo nichts davon passt (derzeit keins); Spiegelblinker nur bei F90 und
+  M4 CSL. Nachts je Seite zwei OmniLights ohne Schatten. Verkehrsautos: weiter leuchtende Kästchen an
+  den äußeren Lampenecken (ihre Lichtmaterialien sind für alle Autos gemeinsam). Aus nach der Kurve: Lenkrad erst über 0,35, dann unter 0,08.
   Vollbremsung (Bremse ≥ 0,8 über 100 km/h) → Warnblinker, aus nach Stillstand und
   Wiederanfahren über 20 km/h. Klicken = zwei kurze im Code erzeugte WAVs, Hupe =
   AudioStreamGenerator mit zwei Tönen je Auto (`horn_tones`, z. B. M2 410/505 Hz) plus

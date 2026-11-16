@@ -61,3 +61,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
   Rückspiegeln mit Kamera, Kopfbewegung, Innenraum, Regentropfen auf den Scheiben
 - [x] Teil 2 (16.11.): Verfolger-Kamera mit Feder und Blick in die Kurve, Sichtfeld 65–75°, Karosserie
   nickt und wankt, Kollisionen mit Funken, Schleifen, Schlag und Kamera-Ruck
+- [x] Teil 3 (16.11.): Blinker im Glas der Modelle (Spiegelblinker bei F90 und M4 CSL), Begrüßungslicht
+  mit Motorstart in der Garage, Scheinwerfer mit Projektor-Bild (Abblend- und Fernlicht)

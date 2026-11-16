@@ -263,6 +263,7 @@ func open() -> void:
 	_open_selected = _selected
 	_open_paint = _paint
 	_rest_wheels()
+	_welcome()
 	_credits.visible = false
 	_collection.visible = false
 	_refresh_all()
@@ -280,6 +281,9 @@ func close(drive: bool) -> void:
 	is_open = false
 	visible = false
 	_has_driven = true
+	var model := car.get_node_or_null("Model") as CarModel if car else null
+	if model:
+		model.end_welcome()
 	_camera.current = false
 	if hud:
 		hud.visible = _hud_was_visible
@@ -301,6 +305,13 @@ func _rest_wheels() -> void:
 	var wheels := car.corner_wheels()
 	for i in wheels.size():
 		wheels[i].transform = Transform3D(Basis(), Car.resting_wheel_center(car.profile, i))
+
+
+## Begrüßungslicht: Tagfahrlicht, Scheinwerfer, Rücklicht, Motorstart (CarModel.play_welcome)
+func _welcome() -> void:
+	var model := car.get_node_or_null("Model") as CarModel if car else null
+	if model:
+		model.play_welcome()
 
 
 func _apply_paint_to_car() -> void:
@@ -428,6 +439,7 @@ func _pick_car(index: int) -> void:
 	car.apply_profile(cars[index])
 	_rest_wheels()
 	_apply_paint_to_car()
+	_welcome()
 	_refresh_all()
 
 

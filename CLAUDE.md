@@ -125,4 +125,5 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
 - [x] Straßen-Bugs, breitere Rampen · Tunnel von außen dicht · Reset mit sicheren Stellen ·
   Kennzeichen an der Stelle des Originals · Autos in der Mac-App sichtbar (Export-Einstellung)
 - [x] Cockpit- und Ego-Sicht (Tab): Lenkrad 14:1, Kombiinstrument, Spiegel, Kopfbewegung ·
-  Kamera mit Feder, Karosserie nickt und wankt, Kollisionen mit Funken und Schleifen
+  Kamera mit Feder, Karosserie nickt und wankt, Kollisionen mit Funken und Schleifen ·
+  Blinker im Lampenglas, Begrüßungslicht, Scheinwerfer mit Hell-Dunkel-Grenze

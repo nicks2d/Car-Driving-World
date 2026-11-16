@@ -2,9 +2,11 @@ extends Node3D
 ## Blinker, Warnblinker und Hupe des eigenen Autos.
 ## Q/E blinken links/rechts (noch mal drücken = aus; nach einer Kurve geht der Blinker von
 ## selbst aus, wenn das Lenkrad zurückgeht), X Warnblinker, H Hupe (solange gedrückt).
-## Orange Leuchten vorne, hinten und an den Spiegeln (Lage im Profil: indicator_points),
-## Takt 1,5 Hz, nachts mit kleinem Lichtschein. Die Leuchten sind nur zu sehen, solange sie
-## leuchten (aus: sieht man das Modell). Klicken und Hupe entstehen im Code.
+## Takt 1,5 Hz (setzt car.signal_lit), nachts mit kleinem Lichtschein vorne und hinten. Die Blinker
+## selbst leuchtet CarModel im Glas des Modells auf (Scheinwerfer, Rücklicht, eigene Blinkergläser).
+## Nur wo das Modell an einem Blinkerpunkt (indicator_points) kein passendes Glas hat, setzt dieses
+## Skript ein oranges Kästchen hin, das nur beim Leuchten zu sehen ist. Spiegelblinker gibt es nur,
+## wo das Modell eigene hat. Klicken und Hupe entstehen im Code.
 ## Bei einer Vollbremsung über 100 km/h geht der Warnblinker an und nach dem
 ## Wiederanfahren wieder aus (wie bei BMW).
 
@@ -44,6 +46,7 @@ var _horn_playback: AudioStreamGeneratorPlayback
 var _horn_level: float = 0.0
 var _horn_phase := Vector2.ZERO
 var _day_night: DayNight
+var _model: CarModel
 
 
 func _ready() -> void:
@@ -55,7 +58,9 @@ func _ready() -> void:
 		material.emission = ORANGE
 		material.emission_energy_multiplier = 0.0
 		_materials.append(material)
-	_car.profile_changed.connect(_build)
+	# Erst wenn das Modell steht, ist bekannt, welche Blinkerpunkte es selbst abdeckt
+	_model = _car.get_node("Model") as CarModel
+	_model.model_ready.connect(func() -> void: _build(_car.profile))
 	if _car.profile:
 		_build(_car.profile)
 	# Klicken: zwei kurze Geräusche (an/aus), im Code erzeugt
@@ -95,6 +100,11 @@ func _build(profile: CarProfile) -> void:
 		var mirror := 1.0 if side == 0 else -1.0
 		for k in points.size():
 			var p := points[k] * Vector3(mirror, 1.0, 1.0)
+			_add_light(k, p, mirror, side)
+			# Kästchen nur, wo das Modell kein Glas hat; am Spiegel nie (dort nur eigene Blinker des Modells)
+			var covered: bool = k < _model.indicator_covered.size() and _model.indicator_covered[k]
+			if k >= 2 or covered:
+				continue
 			var lamp := MeshInstance3D.new()
 			var box := BoxMesh.new()
 			box.size = lamp_size if k != 2 else Vector3(lamp_size.z, lamp_size.y, lamp_size.x * 1.2)
@@ -108,18 +118,22 @@ func _build(profile: CarProfile) -> void:
 			lamp.set_meta("side", side)
 			add_child(lamp)
 			_lamps.append(lamp)
-			# Lichtschein nur vorne und hinten (Spiegel ohne)
-			if k < 2:
-				var light := OmniLight3D.new()
-				light.light_color = ORANGE
-				light.omni_range = light_range
-				light.light_energy = 0.0
-				light.shadow_enabled = false
-				light.visible = false
-				light.position = p + Vector3(mirror * 0.15, 0.0, 0.25 if k == 0 else -0.25)
-				light.set_meta("side", side)
-				add_child(light)
-				_lights.append(light)
+
+
+## Lichtschein nachts (nur vorne und hinten, Spiegel ohne)
+func _add_light(k: int, p: Vector3, mirror: float, side: int) -> void:
+	if k >= 2:
+		return
+	var light := OmniLight3D.new()
+	light.light_color = ORANGE
+	light.omni_range = light_range
+	light.light_energy = 0.0
+	light.shadow_enabled = false
+	light.visible = false
+	light.position = p + Vector3(mirror * 0.15, 0.0, 0.25 if k == 0 else -0.25)
+	light.set_meta("side", side)
+	add_child(light)
+	_lights.append(light)
 
 
 func _process(delta: float) -> void:

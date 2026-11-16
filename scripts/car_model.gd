@@ -10,6 +10,10 @@ extends Node3D
 ##  - eigene Materialien (Lack, Glas, Felgen, Reifen, Lichter), Schatten nur für große Teile
 ##  - Lenkrad an einen drehbaren Halter hängen (eigene Teile oder aus dem Innenraum geschnitten)
 ##  - Innenraum-Teile nur in der Cockpit-Sicht zeigen (set_cockpit_view)
+##  - Leuchten (shaders/car_lamp.gdshader): Blinker leuchten im Scheinwerfer- und Rücklichtglas bzw. in
+##    eigenen Blinkergläsern; nur wo das nicht geht, setzt CarSignals Kästchen (indicator_covered)
+##  - Scheinwerfer mit Projektor-Bild: Abblendlicht mit scharfer Hell-Dunkel-Grenze, Fernlicht
+##  - Begrüßungslicht in der Garage (play_welcome): Tagfahrlicht, Scheinwerfer, Rücklicht, Motorstart
 ##  - Karosserie nickt und wankt mit der Beschleunigung (nur das Modell, die Physik bleibt gleich).
 ##    Kennzeichen, Scheinwerfer und Lenkrad hängen deshalb am Modell, die Räder an den Physik-Rädern.
 ## Ohne Modell bleibt die Platzhalter-Box. Als Kind eines Car fährt es mit; sonst (Vorschau
@@ -29,8 +33,8 @@ signal model_ready
 
 @export_group("Licht")
 ## Helligkeit der Scheinwerfer (SpotLight3D) und wie weit sie reichen
-@export var headlight_energy: float = 10.0
-@export var headlight_range: float = 80.0
+@export var headlight_energy: float = 16.0
+@export var headlight_range: float = 95.0
 @export_range(5.0, 80.0) var headlight_angle: float = 32.0
 ## Leuchtstärke der Lampen selbst (Emission): Scheinwerfer, Rücklicht, Bremslicht
 @export var headlight_glow: float = 6.0
@@ -38,6 +42,12 @@ signal model_ready
 @export var brake_glow: float = 6.0
 ## Licht geht automatisch an, wenn die Sonne tiefer als so viele Grad steht
 @export var lights_on_below_sun_degrees: float = 4.0
+## Fernlicht (Lichthupe): so viel heller und weiter als das Abblendlicht
+@export var high_beam_energy: float = 2.2
+@export var high_beam_range: float = 1.8
+## Begrüßungslicht: Sekunden bis Tagfahrlicht, Scheinwerfer, Rücklicht und Motorstart
+@export var welcome_steps := Vector4(0.25, 0.9, 1.4, 1.9)
+@export var welcome_volume_db: float = -6.0
 ## Diese Teile wechseln früher auf vereinfachte Versionen (LOD), Wert < 1 = früher
 @export var low_detail_lod_bias: float = 0.35
 
@@ -73,8 +83,19 @@ var _pivot: Node3D
 var _model: Node3D
 var _paint: StandardMaterial3D
 var _stickers: Array[Node3D] = []
-var _head_glow: StandardMaterial3D
-var _tail_glow: StandardMaterial3D
+var _head_glow: ShaderMaterial
+var _tail_glow: ShaderMaterial
+## Eigene Blinkergläser des Modells (leuchten ganz)
+var _indicator_glass: ShaderMaterial
+## Sind die Blinkerpunkte (vorne, hinten, Spiegel) durch Glas des Modells abgedeckt? Sonst Kästchen
+## (CarSignals). Spiegel ohne eigenes Glas: kein Spiegelblinker.
+var indicator_covered: Array[bool] = [false, false, false]
+## Projektor-Bilder der Scheinwerfer (einmal berechnet)
+static var _low_beam: ImageTexture
+static var _high_beam: ImageTexture
+## Begrüßungslicht: Sekunden seit dem Start (negativ = aus), Spieler für den Motorstart
+var _welcome_time: float = -1.0
+var _welcome_sound: AudioStreamPlayer
 var _spots: Array[SpotLight3D] = []
 ## Unsichtbares Material für die Original-Kennzeichen des Modells
 var _hidden_material: StandardMaterial3D
@@ -215,16 +236,38 @@ func _process(_delta: float) -> void:
 		if _glass_box.size != Vector3.ZERO:
 			_glass.set_shader_parameter("top_y", _glass_box.end.y)
 			_glass.set_shader_parameter("belt_y", _glass_box.position.y + _glass_box.size.y * 0.35)
-	# Lichthupe: Fernlicht kurz an (heller und weiter), auch tagsüber gut zu sehen
+	# Lichthupe: Fernlicht kurz an (heller, weiter, eigenes Projektor-Bild), auch tagsüber gut zu sehen
 	var flash := _car.flash_time > 0.0
+	var head := _lights_on
+	var tail := _lights_on
+	var drl := true
+	if _welcome_time >= 0.0:
+		# Begrüßungslicht: nacheinander Tagfahrlicht, Scheinwerfer, Rücklicht, dann der Motor
+		var before := _welcome_time
+		_welcome_time += _delta
+		drl = _welcome_time >= welcome_steps.x
+		head = _welcome_time >= welcome_steps.y
+		tail = _welcome_time >= welcome_steps.z
+		if before < welcome_steps.w and _welcome_time >= welcome_steps.w:
+			_play_engine_start()
 	for spot in _spots:
-		spot.visible = _lights_on or flash
-		spot.light_energy = headlight_energy * (2.5 if flash else 1.0)
-		spot.spot_range = headlight_range * (1.6 if flash else 1.0)
-		# Fernlicht leuchtet waagerecht (Abblendlicht 3° nach unten)
-		spot.basis = Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, deg_to_rad(0.5 if flash else -3.0))
-	_head_glow.emission_energy_multiplier = headlight_glow * 3.0 if flash else (headlight_glow if _lights_on else 0.15)
-	_tail_glow.emission_energy_multiplier = brake_glow if _car.braking else (taillight_glow if _lights_on else 0.1)
+		spot.visible = head or flash
+		spot.light_energy = headlight_energy * (high_beam_energy if flash else 1.0)
+		spot.spot_range = headlight_range * (high_beam_range if flash else 1.0)
+		spot.light_projector = _high_beam if flash else _low_beam
+		# Fernlicht leuchtet waagerecht (Abblendlicht 2° nach unten, die Grenze steckt im Bild)
+		spot.basis = Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, deg_to_rad(0.5 if flash else -2.0))
+	var head_glow := headlight_glow * 3.0 if flash else (headlight_glow if head else (0.6 if drl else 0.05))
+	_head_glow.set_shader_parameter("glow", head_glow)
+	_tail_glow.set_shader_parameter("glow", brake_glow if _car.braking else (taillight_glow if tail else 0.1))
+	# Blinker im Glas
+	var to_car := Projection(global_transform.affine_inverse())
+	var left := 1.0 if _car.signal_lit and (_car.hazard or _car.turn_signal == 1) else 0.0
+	var right := 1.0 if _car.signal_lit and (_car.hazard or _car.turn_signal == -1) else 0.0
+	for material in [_head_glow, _tail_glow, _indicator_glass]:
+		material.set_shader_parameter("car_inverse", to_car)
+		material.set_shader_parameter("left_lit", left)
+		material.set_shader_parameter("right_lit", right)
 
 
 func _check_loading() -> void:
@@ -317,6 +360,7 @@ func _set_placeholder(on: bool) -> void:
 # ---------------------------------------------------------------------------
 
 func _build(scene: PackedScene) -> void:
+	build_report = {}
 	# Messen und Einpassen im ruhenden Auto
 	transform = Transform3D.IDENTITY
 	_body_angles = Vector2.ZERO
@@ -394,6 +438,7 @@ func _build(scene: PackedScene) -> void:
 	for mi in body + wheels + calipers + steering_parts:
 		_setup_mesh(mi)
 	_setup_headlights()
+	_measure_indicators()
 	_set_stickers(stickers_visible)
 	_set_placeholder(false)
 	_place_plates(body)
@@ -883,14 +928,12 @@ func _make_materials() -> void:
 	_paint.clearcoat_enabled = true
 	_paint.clearcoat = clearcoat
 	_paint.clearcoat_roughness = clearcoat_roughness
-	_head_glow = StandardMaterial3D.new()
-	_head_glow.albedo_color = Color(0.9, 0.92, 0.95)
-	_head_glow.emission_enabled = true
-	_head_glow.emission = Color(1.0, 0.96, 0.88)
-	_tail_glow = StandardMaterial3D.new()
-	_tail_glow.albedo_color = Color(0.5, 0.02, 0.02)
-	_tail_glow.emission_enabled = true
-	_tail_glow.emission = Color(1.0, 0.05, 0.03)
+	var points := _profile.indicator_points
+	_head_glow = _lamp_material(Color(0.9, 0.92, 0.95), Color(1.0, 0.96, 0.88), points[0] if points.size() > 0 else Vector3.DOWN * 100.0)
+	_tail_glow = _lamp_material(Color(0.5, 0.02, 0.02), Color(1.0, 0.05, 0.03), points[1] if points.size() > 1 else Vector3.DOWN * 100.0)
+	_indicator_glass = _lamp_material(Color(0.55, 0.3, 0.08), Color.BLACK, Vector3.ZERO)
+	_indicator_glass.set_shader_parameter("whole_part", 1.0)
+	_indicator_glass.set_shader_parameter("glow", 0.0)
 
 
 var _glass: ShaderMaterial
@@ -911,6 +954,8 @@ func _replacement_for(material: Material, front: bool) -> Material:
 	var material_name := material.resource_name
 	if _any_match(material_name, _profile.paint_materials):
 		return _paint
+	if _any_match(material_name, _profile.indicator_materials):
+		return _indicator_glass
 	if _any_match(material_name, _profile.headlight_materials):
 		return _head_glow if front else null
 	if _any_match(material_name, _profile.taillight_materials):
@@ -1011,6 +1056,9 @@ func _setup_headlights() -> void:
 		for s in mi.mesh.get_surface_count():
 			if mi.get_surface_override_material(s) == _head_glow:
 				lamps.append(mi)
+	if _low_beam == null:
+		_low_beam = _beam_texture(true)
+		_high_beam = _beam_texture(false)
 	var box := _box_of(lamps) if not lamps.is_empty() else AABB(Vector3(-0.7, 0.6, 2.1), Vector3(1.4, 0.1, 0.1))
 	var spacing := box.size.x * 0.5 * 0.75
 	for side: float in [1.0, -1.0]:
@@ -1019,7 +1067,8 @@ func _setup_headlights() -> void:
 		spot.light_energy = headlight_energy
 		spot.spot_range = headlight_range
 		spot.spot_angle = headlight_angle
-		spot.spot_attenuation = 0.6
+		spot.spot_attenuation = 0.35
+		spot.light_projector = _low_beam
 		spot.shadow_enabled = side > 0.0
 		# SpotLight3D leuchtet entlang -Z: umdrehen, damit es nach vorne (+Z) zeigt, etwas
 		# nach unten neigen und vor das Auto setzen (nicht ins eigene Gehäuse)
@@ -1140,4 +1189,154 @@ func _update_body_motion(delta: float) -> void:
 	# Um die Fahrtrichtung (z) wanken, um die Querachse (x) nicken (positiv = Nase runter)
 	var rotation_basis := Basis(Vector3.BACK, deg_to_rad(_body_angles.x)) * Basis(Vector3.RIGHT, deg_to_rad(_body_angles.y))
 	transform = Transform3D(rotation_basis, body_pivot - rotation_basis * body_pivot)
+
+
+# ---------------------------------------------------------------------------
+# Leuchten, Blinker, Scheinwerfer-Bild, Begrüßungslicht
+# ---------------------------------------------------------------------------
+
+func _lamp_material(albedo: Color, glow_color: Color, indicator_point: Vector3) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/car_lamp.gdshader")
+	material.set_shader_parameter("albedo_color", albedo)
+	material.set_shader_parameter("glow_color", glow_color)
+	material.set_shader_parameter("indicator_point", indicator_point)
+	material.set_shader_parameter("indicator_radius", _profile.indicator_radius)
+	return material
+
+
+## Welche Blinkerpunkte (vorne, hinten, Spiegel) liegen auf Glas des Modells? Vorne und hinten: ein Punkt
+## des Scheinwerfer- bzw. Rücklichtglases oder eines eigenen Blinkerglases im Radius. Liegt der gemessene
+## Punkt knapp daneben (bis 25 cm), rückt der leuchtende Bereich auf die nächste Stelle des Glases.
+## Spiegel: ein eigenes Blinkerglas in 25 cm Umkreis.
+func _measure_indicators() -> void:
+	indicator_covered = [false, false, false]
+	var points := _profile.indicator_points
+	if _car == null or points.size() < 3:
+		return
+	var radius := _profile.indicator_radius
+	# Nächster Punkt des Scheinwerfer- bzw. Rücklichtglases zum Blinkerpunkt vorne und hinten
+	var nearest: Array[float] = [INF, INF]
+	var nearest_point: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
+	for mi in _meshes_under(self):
+		for s in mi.mesh.get_surface_count():
+			var material := mi.get_surface_override_material(s)
+			if material != _head_glow and material != _tail_glow and material != _indicator_glass:
+				continue
+			var to_root := _to_root(mi)
+			for v: Vector3 in mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]:
+				var p := to_root * v
+				p.x = absf(p.x)
+				for k in 2:
+					if material == (_tail_glow if k == 0 else _head_glow):
+						continue
+					var distance := p.distance_to(points[k])
+					if distance < radius:
+						indicator_covered[k] = true
+					if material != _indicator_glass and distance < nearest[k]:
+						nearest[k] = distance
+						nearest_point[k] = p
+				if material == _indicator_glass and p.distance_to(points[2]) < 0.25:
+					indicator_covered[2] = true
+	for k in 2:
+		if not indicator_covered[k] and nearest[k] < 0.25:
+			# Etwas zur Mitte des Autos hin, damit der Bereich nicht nur die Kante trifft
+			var moved := nearest_point[k] + Vector3(-radius * 0.4, 0.0, 0.0)
+			(_head_glow if k == 0 else _tail_glow).set_shader_parameter("indicator_point", moved)
+			indicator_covered[k] = true
+			build_report["indicator_moved_%d" % k] = snappedf(nearest[k], 0.01)
+	build_report["indicators"] = indicator_covered
+
+
+## Projektor-Bild eines Scheinwerfers (Mitte = Achse des Lichts, oben = oben). Abblendlicht: hell unter
+## einer scharfen Hell-Dunkel-Grenze, die rechts (Fahrbahnrand) ansteigt, breit zur Seite, helle Mitte
+## knapp unter der Grenze. Fernlicht: ohne Grenze, heller Kern.
+static func _beam_texture(low: bool) -> ImageTexture:
+	var size := 128
+	var image := Image.create(size, size, false, Image.FORMAT_RGB8)
+	for py in size:
+		for px in size:
+			var x := (px + 0.5) / size * 2.0 - 1.0
+			var y := 1.0 - (py + 0.5) / size * 2.0
+			var value := 0.0
+			if low:
+				# Grenze waagerecht knapp über der Achse, rechts mit 15° ansteigend
+				var cutoff := 0.04 + maxf(x - 0.08, 0.0) * tan(deg_to_rad(15.0))
+				var below := clampf((cutoff - y) / 0.025, 0.0, 1.0)
+				# Hellster Bereich knapp unter der Grenze (reicht weit), breite Streuung darunter (Rand, nah)
+				var core := exp(-pow(x / 0.36, 2.0) - pow((y + 0.03) / 0.08, 2.0))
+				var spread := exp(-pow(x / 0.95, 2.0) - pow((y + 0.15) / 0.35, 2.0))
+				value = below * (0.55 * spread + 0.9 * core + 0.15) + (1.0 - below) * 0.03
+			else:
+				var core := exp(-pow(x / 0.3, 2.0) - pow(y / 0.18, 2.0))
+				var spread := exp(-pow(x / 0.85, 2.0) - pow(y / 0.5, 2.0))
+				value = 0.9 * core + 0.4 * spread + 0.06
+			# Zum Rand des Kegels weich ausblenden
+			value *= clampf((1.0 - Vector2(x, y).length()) / 0.12, 0.0, 1.0)
+			var c := clampf(value, 0.0, 1.0)
+			image.set_pixel(px, py, Color(c, c, c))
+	return ImageTexture.create_from_image(image)
+
+
+## Begrüßungslicht in der Garage starten (beim Auswählen eines Autos): nacheinander Tagfahrlicht,
+## Scheinwerfer, Rücklicht, dann der Motorstart. Läuft, bis end_welcome() kommt.
+func play_welcome() -> void:
+	_welcome_time = 0.0
+
+
+func end_welcome() -> void:
+	_welcome_time = -1.0
+
+
+## Motorstart: Anlasser (surrendes Brummen), dann zünden die Zylinder, die Drehzahl schießt hoch und
+## fällt auf Leerlauf. Im Code berechnet, Zündfolge nach Zylinderzahl des Profils.
+func _play_engine_start() -> void:
+	if _profile == null:
+		return
+	if _welcome_sound == null:
+		_welcome_sound = AudioStreamPlayer.new()
+		_welcome_sound.bus = &"Motor"
+		add_child(_welcome_sound)
+	var rate := 22050
+	var length := int(rate * 2.2)
+	var samples := PackedFloat32Array()
+	samples.resize(length)
+	var phase := 0.0
+	var crank := 0.0
+	var low := 0.0
+	var idle := _profile.idle_rpm
+	for i in length:
+		var t := float(i) / rate
+		# Drehzahl: Anlasser 250/min, ab 0,55 s zünden, Spitze bei 0,8 s, dann Leerlauf
+		var rpm := 250.0
+		if t > 0.55:
+			rpm = lerpf(idle * 2.1, idle, clampf((t - 0.8) / 0.9, 0.0, 1.0)) if t > 0.8 else lerpf(250.0, idle * 2.1, (t - 0.55) / 0.25)
+		var firing := rpm / 120.0 * maxf(_profile.cylinders, 1)
+		phase = fmod(phase + firing / rate, 1.0)
+		crank = fmod(crank + 11.0 * rpm / 250.0 / rate, 1.0)
+		var value := 0.0
+		if t < 0.6:
+			# Anlasser: gepulstes Surren
+			value += (sin(TAU * 180.0 * t) * 0.3 + randf_range(-0.2, 0.2)) * (0.6 + 0.4 * sin(TAU * crank))
+		if t > 0.5:
+			# Zündungen als kurze Druckstöße, tiefpassgefiltert
+			var pulse := exp(-phase * 9.0) * (1.0 + _profile.sound_rumble)
+			low = lerpf(low, pulse + randf_range(-0.08, 0.08), 0.25)
+			value += low * clampf((t - 0.5) / 0.08, 0.0, 1.0) * 1.6
+		value *= clampf((2.2 - t) / 0.3, 0.0, 1.0)
+		samples[i] = value
+	var peak := 0.001
+	for v in samples:
+		peak = maxf(peak, absf(v))
+	var data := PackedByteArray()
+	data.resize(length * 2)
+	for i in length:
+		data.encode_s16(i * 2, int(clampf(samples[i] / peak, -1.0, 1.0) * 28000.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = rate
+	wav.data = data
+	_welcome_sound.stream = wav
+	_welcome_sound.volume_db = welcome_volume_db
+	_welcome_sound.play()
 

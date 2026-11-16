@@ -181,8 +181,13 @@ extends Resource
 @export var mirror_side_size: Vector2 = Vector2(0.15, 0.08)
 
 @export_group("Blinker und Hupe")
-## Blinker auf der linken Seite: vorne, hinten, Spiegel (rechts gespiegelt), am Modell gemessen
+## Blinker auf der linken Seite: vorne, hinten, Spiegel (rechts gespiegelt), am Modell gemessen. Vorne und
+## hinten leuchtet ein Bereich (indicator_radius) im Scheinwerfer- bzw. Rücklichtglas, sonst ein Kästchen.
 @export var indicator_points: PackedVector3Array = PackedVector3Array()
+@export var indicator_radius: float = 0.09
+## Eigene Blinkergläser im Modell (Materialnamen, Muster wie oben): leuchten ganz, Seite nach x.
+## Spiegelblinker gibt es nur, wo das Modell eigene hat.
+@export var indicator_materials: PackedStringArray = PackedStringArray()
 ## Hupe: zwei Töne in Hz
 @export var horn_tones: Vector2 = Vector2(410.0, 510.0)
 
