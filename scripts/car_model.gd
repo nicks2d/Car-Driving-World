@@ -8,6 +8,8 @@ extends Node3D
 ##  - Räder an die Physik-Räder hängen (drehen, lenken, federn), Bremssättel nur lenken lassen
 ##  - unbewegliche Teile pro Material zusammenfassen (weniger Draw Calls, wenn gewünscht)
 ##  - eigene Materialien (Lack, Glas, Felgen, Reifen, Lichter), Schatten nur für große Teile
+##  - Lenkrad an einen drehbaren Halter hängen (eigene Teile oder aus dem Innenraum geschnitten)
+##  - Innenraum-Teile nur in der Cockpit-Sicht zeigen (set_cockpit_view)
 ## Ohne Modell bleibt die Platzhalter-Box. Als Kind eines Car fährt es mit; sonst (Vorschau
 ## in der Garage) stellt es die Räder einfach an ihre Plätze.
 ##
@@ -39,6 +41,11 @@ signal model_ready
 
 ## Platzhalter-Reifen und -Speiche an jedem Rad (car.tscn), solange kein Modell da ist
 const PLACEHOLDER_WHEEL_PARTS: Array[String] = ["Tire", "Spoke"]
+## Eigene Bild-Ebene (Ebene 11) für das Auto des Spielers: Die Kamera der Rückspiegel lässt sie aus
+const OWN_CAR_LAYER: int = 1 << 10
+## Scheiben: trocken und mit Regentropfen (gleiche Parameter)
+const DRY_GLASS: Shader = preload("res://shaders/car_glass.gdshader")
+const RAIN_GLASS: Shader = preload("res://shaders/car_glass_rain.gdshader")
 
 ## Aktuelle Lackfarbe (Index in profile.paint_colors)
 var paint_index: int = 0
@@ -70,6 +77,15 @@ var _calipers: Array = []
 ## Alles, was beim Wechsel wieder weg muss (Halter, Scheinwerfer, Vorschau-Räder)
 var _extra_nodes: Array[Node] = []
 var _plates: Array[MeshInstance3D] = []
+## Lenkrad: Halter an der Lenksäule und Richtung der Säule (zeigt zum Fahrer)
+var _steering: Node3D
+var _steering_axis := Vector3.BACK
+## Innenraum-Teile (nur in der Cockpit-Sicht sichtbar) und Teile mit niedriger Detailstufe
+var _interior: Array[MeshInstance3D] = []
+var _low_detail: Array[MeshInstance3D] = []
+var _cockpit_view: bool = false
+## Was beim Einbauen passiert ist (für tools/cockpit_measure.gd): Lenkrad-Teile, geschnittene Meshes, Zeit
+var build_report: Dictionary = {}
 
 
 ## Pfad zum Modell eines Profils: scene.gltf (ältere Downloads) oder die .glb im Ordner
@@ -146,6 +162,10 @@ func _physics_process(_delta: float) -> void:
 		var wheel := pair[1] as VehicleWheel3D
 		if wheel:
 			holder.transform = Transform3D(Basis(Vector3.UP, wheel.steering), wheel.transform.origin)
+	# Lenkrad: dreht sich um die Lenksäule, Übersetzung aus dem Profil (links = gegen den Uhrzeigersinn)
+	if _steering and _car:
+		_steering.transform = Transform3D(Basis(_steering_axis, _car.steering * _profile.steering_ratio),
+			_profile.steering_wheel_center)
 
 
 func _process(_delta: float) -> void:
@@ -169,6 +189,11 @@ func _process(_delta: float) -> void:
 	if _glass and _car:
 		_glass.set_shader_parameter("car_inverse", Projection(_car.global_transform.affine_inverse()))
 		_glass.set_shader_parameter("window_open", _car.windows_open)
+		_glass.set_shader_parameter("car_speed", _car.linear_velocity.length())
+		# Tropfen nur, solange es regnet (die Variante mit Tropfen greift das ganze Bild ab)
+		var wanted := RAIN_GLASS if Weather.rain_now > 0.01 else DRY_GLASS
+		if _glass.shader != wanted:
+			_glass.shader = wanted
 		if _glass_box.size != Vector3.ZERO:
 			_glass.set_shader_parameter("top_y", _glass_box.end.y)
 			_glass.set_shader_parameter("belt_y", _glass_box.position.y + _glass_box.size.y * 0.35)
@@ -254,6 +279,9 @@ func _clear() -> void:
 	_spots.clear()
 	_calipers.clear()
 	_anchors.clear()
+	_interior.clear()
+	_low_detail.clear()
+	_steering = null
 
 
 func _set_placeholder(on: bool) -> void:
@@ -327,6 +355,10 @@ func _build(scene: PackedScene) -> void:
 		for mi: MeshInstance3D in caliper_corners[corner]:
 			_attach(mi, holder, center)
 		_calipers.append([holder, anchor])
+	var started := Time.get_ticks_usec()
+	var steering_parts := _build_steering_wheel(body)
+	build_report["steering_ms"] = (Time.get_ticks_usec() - started) / 1000.0
+	build_report["steering_parts"] = steering_parts.size()
 	_make_materials()
 	if _profile.merge_static_parts:
 		body = _merge_static(body)
@@ -337,12 +369,13 @@ func _build(scene: PackedScene) -> void:
 			wheels.append_array(_merge_attached(_anchors[corner]))
 		for pair: Array in _calipers:
 			calipers.append_array(_merge_attached(pair[0]))
-	for mi in body + wheels + calipers:
+	for mi in body + wheels + calipers + steering_parts:
 		_setup_mesh(mi)
 	_setup_headlights()
 	_set_stickers(stickers_visible)
 	_set_placeholder(false)
 	_place_plates(body)
+	set_cockpit_view(_cockpit_view)
 
 
 ## Kennzeichen vorne und hinten: Text aus der Garage (pro Auto gespeichert). Lage, Größe und Neigung
@@ -372,6 +405,7 @@ func _place_plates(body: Array) -> void:
 		var normal := Vector3(0.0, sin(tilt), cos(tilt) * (1.0 if side == 0 else -1.0))
 		LicensePlate.place(plate, (spot["center"] as Vector3) + normal * 0.012, side == 0, spot["tilt"])
 		plate.visible = plates_enabled(_profile.id)
+		plate.layers = OWN_CAR_LAYER
 		_extra_nodes.append(plate)
 		_plates.append(plate)
 
@@ -617,6 +651,7 @@ func _split_mesh(mi: MeshInstance3D, classify: Callable) -> Array[MeshInstance3D
 			continue
 		var piece := MeshInstance3D.new()
 		piece.name = "%s_Teil%d" % [mi.name, corner]
+		piece.set_meta("part", corner)
 		piece.mesh = pieces[corner]
 		mi.get_parent().add_child(piece)
 		piece.transform = mi.transform
@@ -756,8 +791,8 @@ func _merge_static(meshes: Array[MeshInstance3D]) -> Array[MeshInstance3D]:
 	var keep: Array[MeshInstance3D] = []
 	var to_model := _model.global_transform.affine_inverse()
 	for mi in meshes:
-		# Aufkleber bleiben einzeln (Taste K)
-		if _matches(mi, _profile.sticker_parts):
+		# Aufkleber (Taste K) und Innenraum (nur im Cockpit sichtbar) bleiben einzeln
+		if _matches(mi, _profile.sticker_parts) or _matches(mi, _profile.interior_parts):
 			keep.append(mi)
 			continue
 		var relative := to_model * mi.global_transform
@@ -862,7 +897,7 @@ func _replacement_for(material: Material, front: bool) -> Material:
 		if _glass == null:
 			# Eigener Shader: Seitenscheiben lassen sich herunterfahren (Car.windows_open)
 			_glass = ShaderMaterial.new()
-			_glass.shader = load("res://shaders/car_glass.gdshader")
+			_glass.shader = DRY_GLASS
 			_glass.set_shader_parameter("glass_color", Color(0.03, 0.04, 0.05, _profile.glass_opacity))
 		return _glass
 	if _any_match(material_name, _profile.rim_materials):
@@ -924,8 +959,13 @@ func _setup_mesh(mi: MeshInstance3D) -> void:
 		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if _matches(mi, _profile.low_detail_parts):
 		mi.lod_bias = low_detail_lod_bias
+		_low_detail.append(mi)
 	if _matches(mi, _profile.sticker_parts):
 		_stickers.append(mi)
+	if _matches(mi, _profile.interior_parts):
+		_interior.append(mi)
+	if _car:
+		mi.layers = OWN_CAR_LAYER
 
 
 func _has_light(mi: MeshInstance3D) -> bool:
@@ -967,3 +1007,89 @@ func _setup_headlights() -> void:
 		_root.add_child(spot)
 		_spots.append(spot)
 		_extra_nodes.append(spot)
+
+
+# ---------------------------------------------------------------------------
+# Lenkrad und Cockpit
+# ---------------------------------------------------------------------------
+
+## Richtung der Lenksäule (zeigt vom Lenkrad zum Fahrer, nach hinten und oben)
+static func steering_axis(profile: CarProfile) -> Vector3:
+	var angle := deg_to_rad(profile.steering_column_angle)
+	return Vector3(0.0, sin(angle), -cos(angle))
+
+
+## Lenkrad an einen drehbaren Halter hängen. Teile aus dem Profil (steering_wheel_parts) kommen ganz
+## daran. Außerdem wird alles, was im Zylinder um die Lenksäule liegt (Mitte, Halbmesser, Tiefe aus dem
+## Profil), aus den übrigen Meshes herausgeschnitten. body enthält danach statt der geschnittenen
+## Meshes ihre Reste. Gibt die Teile am Halter zurück.
+func _build_steering_wheel(body: Array[MeshInstance3D]) -> Array[MeshInstance3D]:
+	var result: Array[MeshInstance3D] = []
+	var center := _profile.steering_wheel_center
+	if center == Vector3.ZERO:
+		return result
+	_steering_axis = steering_axis(_profile)
+	_steering = Node3D.new()
+	_steering.name = "SteeringWheel"
+	_root.add_child(_steering)
+	_steering.position = center
+	_extra_nodes.append(_steering)
+	var depth := _profile.steering_wheel_depth
+	var reach := Vector3.ONE * Vector2(_profile.steering_wheel_radius, depth).length()
+	var cut_box := AABB(center - reach, reach * 2.0)
+	var cut_meshes := 0
+	for mi in body.duplicate():
+		if not is_instance_valid(mi) or mi.is_queued_for_deletion():
+			continue
+		var parts: Array[MeshInstance3D] = []
+		if _matches(mi, _profile.steering_wheel_parts):
+			parts.append(mi)
+			body.erase(mi)
+		elif depth > 0.0 and (_to_root(mi) * mi.get_aabb()).intersects(cut_box) and _touches_steering_wheel(mi):
+			body.erase(mi)
+			cut_meshes += 1
+			for piece in _split_mesh(mi, func(p: Vector3) -> int: return 0 if _in_steering_wheel(p) else 1):
+				if piece.get_meta("part") == 0:
+					parts.append(piece)
+				else:
+					body.append(piece)
+		for part in parts:
+			_attach(part, _steering, center)
+			result.append(part)
+	build_report["cut_meshes"] = cut_meshes
+	return result
+
+
+## Liegt dieser Punkt (im Auto) im Zylinder des Lenkrads?
+func _in_steering_wheel(p: Vector3) -> bool:
+	var d := p - _profile.steering_wheel_center
+	var along := d.dot(_steering_axis)
+	if absf(along) > _profile.steering_wheel_depth:
+		return false
+	return (d - _steering_axis * along).length() < _profile.steering_wheel_radius
+
+
+## Liegt mindestens ein Punkt dieses Meshes im Zylinder des Lenkrads? (Sonst nicht schneiden: das Teilen
+## kostet Zeit und die Detailstufen des Meshes)
+func _touches_steering_wheel(mi: MeshInstance3D) -> bool:
+	var to_root := _to_root(mi)
+	for s in mi.mesh.get_surface_count():
+		var verts: PackedVector3Array = mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+		for v in verts:
+			if _in_steering_wheel(to_root * v):
+				return true
+	return false
+
+
+## Cockpit-Sicht an oder aus: Innenraum zeigen (von außen ausgeblendet), volle Detailstufe für die
+## Teile, die sonst früher vereinfacht werden, und klare Scheiben von innen
+func set_cockpit_view(on: bool) -> void:
+	_cockpit_view = on
+	for mi in _interior:
+		if is_instance_valid(mi):
+			mi.visible = on
+	for mi in _low_detail:
+		if is_instance_valid(mi):
+			mi.lod_bias = 2.0 if on else low_detail_lod_bias
+	if _glass:
+		_glass.set_shader_parameter("inside", 1.0 if on else 0.0)

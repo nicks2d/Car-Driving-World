@@ -24,6 +24,8 @@ extends Node
 ## --carzoom=D    Abstand dieser Kamera von der Auto-Mitte (Standard 5,5); dann waagerecht auf Höhe der
 ##                Kennzeichen (z. B. 4.6 für Nahaufnahmen vorne und hinten)
 ## --steer=left   beim Screenshot nach links (oder right) lenken, um die Vorderräder zu prüfen
+## --view=cockpit Kamera-Ansicht: cockpit (vom Fahrersitz) oder ego (an der Scheibe), wie Taste Tab
+## --mirrorfps=N  Bildrate der Rückspiegel im Cockpit (0 = aus), um ihre Kosten zu messen
 ## --target=X,Z   vor dem Foto ein Navi-Ziel setzen (Route und Hinweis im HUD prüfen)
 ## --photo        Foto im Fotomodus machen (mit Bedienfeld), --filter=N wählt den Filter (0–3)
 ## --map          Foto mit geöffneter großer Karte
@@ -135,6 +137,10 @@ var _traffic_view_type: String = ""
 var _traffic_view_angle: float = 0.0
 var _mesh_check: bool = false
 var _steer: String = ""
+## Kamera-Ansicht (--view): "", "cockpit" oder "ego"
+var _view: String = ""
+## Bildrate der Rückspiegel (--mirrorfps), negativ = Standard
+var _mirror_fps: float = -1.0
 var _photo: bool = false
 var _open_map: bool = false
 var _open_garage: bool = false
@@ -292,6 +298,10 @@ func _ready() -> void:
 				_traffic_view_angle = float(parts_tv[1]) if parts_tv.size() > 1 else 0.0
 			"steer":
 				_steer = value
+			"view":
+				_view = value
+			"mirrorfps":
+				_mirror_fps = float(value)
 			"photo":
 				_photo = true
 			"map":
@@ -432,6 +442,10 @@ func on_world_ready(game: Node3D) -> void:
 		_place_car_view_camera()
 	if _steer != "":
 		Input.action_press("steer_left" if _steer == "left" else "steer_right")
+	if _mirror_fps >= 0.0:
+		(game.car.get_node("Cockpit") as Cockpit).mirror_fps = _mirror_fps
+	if _view != "" and camera is FollowCamera:
+		(camera as FollowCamera).set_view(FollowCamera.View.EGO if _view == "ego" else FollowCamera.View.COCKPIT)
 	if _no_hud and game.has_node("HUD"):
 		game.get_node("HUD").visible = false
 	if _moon >= 0.0:

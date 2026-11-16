@@ -1,8 +1,8 @@
 class_name SelfTest
 extends Node
 ## Automatischer Testlauf (--selftest, gestartet von DebugTools, aufgerufen von tools/test.sh):
-## fährt mit dem Autopiloten Landstraße und Autobahn, schaltet Regen, Schnee, Nacht, Garage,
-## Karte, Fotomodus, Pausemenü und Chill-Modus kurz durch und schreibt am Ende
+## fährt mit dem Autopiloten Landstraße und Autobahn, schaltet Cockpit- und Ego-Sicht (mit Regen),
+## Regen, Schnee, Nacht, Garage, Karte, Fotomodus, Pausemenü und Chill-Modus kurz durch und schreibt am Ende
 ## „SELFTEST ENDE“. Fehlt diese Zeile im Log, ist das Spiel unterwegs abgestürzt.
 ## Mit --selftest=shots macht er bei jedem Schritt ein Foto (screenshots/selftest_*.png,
 ## in der exportierten App user://selftest/).
@@ -35,7 +35,7 @@ func _ready() -> void:
 	# Garage, Karte, Fotomodus und Pausemenü halten das Spiel an, der Test läuft weiter
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_steps = [["landstrasse", drive_seconds], ["sprung", 0.0], ["autobahn", drive_seconds],
-		["regen", step_seconds], ["schnee", step_seconds], ["nacht", step_seconds],
+		["cockpit", step_seconds], ["ego", step_seconds], ["regen", step_seconds], ["schnee", step_seconds], ["nacht", step_seconds],
 		["garage", step_seconds], ["karte", step_seconds], ["fotomodus", step_seconds],
 		["pausemenue", step_seconds], ["chill", chill_seconds]]
 	_start_msec = Time.get_ticks_msec()
@@ -77,6 +77,7 @@ func _next_step() -> void:
 	print("SELFTEST Schritt: %s" % step)
 	var weather := game.get_node("Weather") as Weather
 	var day_night := game.get_node("DayNight") as DayNight
+	var camera := game.get_node("Camera") as FollowCamera
 	match step:
 		"sprung":
 			debug_tools.autopilot_enabled = false
@@ -86,7 +87,13 @@ func _next_step() -> void:
 			_waiting_for_world = true
 		"autobahn":
 			debug_tools.autopilot_enabled = true
+		"cockpit":
+			camera.set_view(FollowCamera.View.COCKPIT)
+			weather.set_mode(Weather.Kind.RAIN, true, false)
+		"ego":
+			camera.set_view(FollowCamera.View.EGO)
 		"regen":
+			camera.set_view(FollowCamera.View.FOLLOW)
 			weather.set_mode(Weather.Kind.RAIN, true, false)
 		"schnee":
 			weather.set_season(Weather.Season.WINTER, true, false)

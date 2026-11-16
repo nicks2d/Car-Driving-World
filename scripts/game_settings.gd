@@ -66,7 +66,7 @@ const ACTIONS: Array = [["accelerate", "Gas"], ["brake", "Bremse / rückwärts"]
 	["time_warp", "Zeitraffer (halten)"], ["cycle_paint", "Lackfarbe"], ["toggle_stickers", "Aufkleber"],
 	["toggle_fps", "FPS-Anzeige"], ["cruise_toggle", "Tempomat an/aus"], ["cruise_faster", "Wunschtempo +"],
 	["cruise_slower", "Wunschtempo −"], ["cruise_distance", "Abstandsstufe"], ["flash_lights", "Lichthupe"],
-	["toggle_windows", "Fenster / Dach"]]
+	["toggle_windows", "Fenster / Dach"], ["cycle_camera", "Kamera (Verfolger, Cockpit, Ego)"]]
 
 var _values: Dictionary = {}
 var _keys: Dictionary = {}  # Aktion -> physischer Tastencode (nur geänderte)

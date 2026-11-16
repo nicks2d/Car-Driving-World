@@ -41,6 +41,9 @@ extends Resource
 @export var caliper_parts: PackedStringArray = PackedStringArray()
 ## Teile, die man nicht sieht oder die stören (Motor, Hilfsobjekte)
 @export var hidden_parts: PackedStringArray = PackedStringArray()
+## Innenraum-Teile, die nur in Cockpit- und Ego-Sicht zu sehen sind (von außen ausgeblendet, spart
+## Leistung)
+@export var interior_parts: PackedStringArray = PackedStringArray()
 ## Aufkleber (Taste K)
 @export var sticker_parts: PackedStringArray = PackedStringArray()
 ## Materialien, die durch eigene ersetzt werden
@@ -148,6 +151,34 @@ extends Resource
 @export_range(0.0, 1.0) var turbo_volume: float = 0.04
 @export_range(0.0, 1.0) var blow_off_volume: float = 0.0
 @export_range(0.0, 1.0) var intake_volume: float = 0.18
+
+@export_group("Cockpit")
+## Augen des Fahrers im Auto (Cockpit-Sicht, Taste Tab), am Modell gemessen mit tools/cockpit_measure.gd
+@export var eye_position: Vector3 = Vector3(0.37, 0.72, -0.4)
+## Lenkrad: eigene Teile im Modell (Muster wie oben). Leer = das Lenkrad wird beim Laden aus dem
+## Innenraum herausgeschnitten: alles im Zylinder um die Lenksäule (Mitte, Halbmesser, Tiefe ± entlang
+## der Säule).
+@export var steering_wheel_parts: PackedStringArray = PackedStringArray()
+## Mitte des Lenkrads im Auto ((0, 0, 0) = Lenkrad dreht sich nicht mit)
+@export var steering_wheel_center: Vector3 = Vector3.ZERO
+@export var steering_wheel_radius: float = 0.19
+## 0 = nichts herausschneiden (nur die Lenkrad-Teile drehen sich)
+@export var steering_wheel_depth: float = 0.07
+## Neigung der Lenksäule gegen die Waagerechte (Grad)
+@export var steering_column_angle: float = 22.0
+## Lenkübersetzung: so viel weiter als die Vorderräder dreht sich das Lenkrad
+@export var steering_ratio: float = 14.0
+## Eigenes Kombiinstrument (Tacho und Drehzahl): Mitte, Größe (Breite × Höhe, Meter) und Neigung
+## (Grad, oben nach hinten). Position (0, 0, 0) = keins.
+@export var cluster_position: Vector3 = Vector3.ZERO
+@export var cluster_size: Vector2 = Vector2(0.3, 0.11)
+@export var cluster_tilt: float = 20.0
+## Spiegel (Bild von der Rückkamera): Mitte des Innenspiegels und des linken Außenspiegels (der rechte
+## ist gespiegelt), Größe Breite × Höhe. Position (0, 0, 0) = keiner.
+@export var mirror_inner_position: Vector3 = Vector3.ZERO
+@export var mirror_inner_size: Vector2 = Vector2(0.24, 0.06)
+@export var mirror_side_position: Vector3 = Vector3.ZERO
+@export var mirror_side_size: Vector2 = Vector2(0.15, 0.08)
 
 @export_group("Blinker und Hupe")
 ## Blinker auf der linken Seite: vorne, hinten, Spiegel (rechts gespiegelt), am Modell gemessen

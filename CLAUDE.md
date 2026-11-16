@@ -77,7 +77,7 @@ bis dahin Platzhalter. Automodelle liegen wegen ihrer Lizenzen nie im Repo
 | Autobahn, Anschlussstellen, Rampen, Streifen, Raststätten | `docs/autobahn.md` |
 | Tunnel (Entstehung, Röhre, Löcher im Gelände, Prüfwerkzeug) | `docs/tunnel.md` |
 | Flüsse, Seen, Talsperren, Wasserfälle, Landmarken-Brücken, Seeleben | `docs/wasser.md` |
-| Fahrphysik, Profile, Modelle, Licht, Sound, Kennzeichen, Prüfstand | `docs/autos.md` |
+| Fahrphysik, Profile, Modelle, Licht, Sound, Kennzeichen, Prüfstand, Cockpit-Sicht | `docs/autos.md` |
 | KI-Verkehr, Tempolimits, Schilder, Tempomat, Rennen | `docs/verkehr.md` |
 | Wetter, Jahreszeiten, Himmel, Mond, Polarlicht, Wolkenschatten | `docs/wetter-himmel.md` |
 | HUD, alle Tasten, Garage, Karte/Navi, Entdecker-Karte, Fotomodus, Chill-Modus, Einstellungen | `docs/hud-menues.md` |
@@ -90,13 +90,15 @@ bis dahin Platzhalter. Automodelle liegen wegen ihrer Lizenzen nie im Repo
 
 WASD fahren, Leertaste Handbremse, R Reset, Esc Pausemenü (Einstellungen), G Garage, M Karte,
 P Fotomodus, L Licht, F Lichthupe, Q/E Blinker, X Warnblinker, H Hupe, N Tempomat (+/−, B Abstand),
-V Fenster, F5 Wetter, J Jahreszeit, T Zeitraffer, F3 FPS. Alle Tasten: `docs/hud-menues.md`.
+V Fenster, Tab Kamera (Verfolger/Cockpit/Ego), F5 Wetter, J Jahreszeit, T Zeitraffer, F3 FPS.
+Alle Tasten: `docs/hud-menues.md`.
 
 ## Wichtigste Testbefehle
 
 ```
 G=/Applications/Godot.app/Contents/MacOS/Godot
 $G --path . --always-on-top -- --shot=NAME --pos=X,Z --heading=G   # Foto nach screenshots/
+$G --path . -- --shot=NAME --car=m2 --view=cockpit --steer=left      # Cockpit-Foto (oder --view=ego)
 $G --path . -- --bench=30 --highway --full --quality=hoch          # FPS (docs/leistung.md)
 $G --headless --path . --import                                    # nach neuen class_name
 tools/build_mac_app.sh                                             # Mac-App (docs/mac-app.md)
@@ -122,3 +124,4 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
 - [x] Aufräumen: CLAUDE.md nach `docs/` aufgeteilt · Testlauf `tools/test.sh` und Welt-Prüfer
 - [x] Straßen-Bugs, breitere Rampen · Tunnel von außen dicht · Reset mit sicheren Stellen ·
   Kennzeichen an der Stelle des Originals · Autos in der Mac-App sichtbar (Export-Einstellung)
+- [x] Cockpit- und Ego-Sicht (Tab): Lenkrad 14:1, Kombiinstrument, Spiegel, Kopfbewegung

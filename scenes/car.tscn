@@ -7,6 +7,7 @@
 [ext_resource type="Resource" path="res://cars/m2.tres" id="5_m2"]
 [ext_resource type="Script" path="res://scripts/exhaust_flames.gd" id="6_flames"]
 [ext_resource type="Script" path="res://scripts/car_signals.gd" id="7_signals"]
+[ext_resource type="Script" path="res://scripts/cockpit.gd" id="8_cockpit"]
 
 [sub_resource type="StandardMaterial3D" id="Mat_body"]
 albedo_color = Color(0.75, 0.1, 0.08, 1)
@@ -187,3 +188,6 @@ script = ExtResource("6_flames")
 
 [node name="Signals" type="Node3D" parent="."]
 script = ExtResource("7_signals")
+
+[node name="Cockpit" type="Node3D" parent="."]
+script = ExtResource("8_cockpit")

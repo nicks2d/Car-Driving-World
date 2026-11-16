@@ -57,3 +57,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
 - [x] Aufräumen: CLAUDE.md nach docs/ aufgeteilt (13.11.)
 - [x] Testlauf tools/test.sh (Selbsttest mit allen Modi) und Welt-Prüfer tools/world_check.gd (13.11.)
 - [x] Teil 3–7 (13.11.): Straßen-Bugs und breitere Rampen, Tunnel-Deckel, Reset, Kennzeichen, Autos in der App
+- [x] Teil 1 (16.11.): Cockpit- und Ego-Sicht (Tab) mit drehendem Lenkrad, eigenem Kombiinstrument,
+  Rückspiegeln mit Kamera, Kopfbewegung, Innenraum, Regentropfen auf den Scheiben

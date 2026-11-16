@@ -189,6 +189,51 @@
   Karosserie in dieser Höhe), hinten Stoßstange. Nach Änderungen am Werkzeug die Modelle neu vorbereiten
   (`--only=NAME`).
 
+## Cockpit- und Ego-Sicht (16.11.)
+
+- Taste Tab (umbelegbar, Aktion `cycle_camera`): Verfolger → Cockpit (vom Fahrersitz, Armaturen,
+  Lenkrad und Spiegel sichtbar) → Ego (näher an der Scheibe, Motorhaube und oberer Teil des
+  Lenkrads). Kamera: `scripts/follow_camera.gd` (Klasse FollowCamera), alles im Auto:
+  `scripts/cockpit.gd` (Knoten Cockpit im Auto), Lenkrad und Innenraum: `CarModel`.
+- Werte pro Auto im Profil (Gruppe „Cockpit“): Augen `eye_position`, Lenkrad (Mitte, Halbmesser
+  0,18–0,2 m, Tiefe ±7 cm, Säulenwinkel 17–28°), Kombiinstrument (Mitte, Größe, Neigung),
+  Innen- und linker Außenspiegel (der rechte ist gespiegelt). Gemessen mit
+  `tools/cockpit_measure.gd`: Schnittbilder jedes Autos mit 10-cm-Raster (Seite bei x, oben bei y,
+  hinten bei z, Blick wie der Fahrer), die Werte sind eingezeichnet (rot Augen, türkis Lenkrad, grün
+  Display, gelb Spiegel). `--parts` listet Teile ums Lenkrad und alle Spiegel-Teile, `--showall`
+  zeigt ausgeblendete Teile. Danach per Foto im Spiel geprüft (`--view=cockpit|ego`).
+- Lenkrad: Übersetzung 14:1 (`steering_ratio`), dreht sich um die Lenksäule, auch von außen zu sehen.
+  Bei M5 F90 (`*steer_stiches*` usw.) und M4 CSL (`*steer_stitch*`) sind es eigene Teile, beim F90
+  wird zusätzlich der Rest im Zylinder geschnitten. Bei allen anderen schneidet CarModel beim Laden
+  alle Dreiecke im Zylinder um die Säule aus den Meshes heraus (nur Meshes, die wirklich Punkte darin
+  haben; die Reste verlieren ihre Detailstufen).
+- Innenraum: C 63, M5 G90 und SL 65 hatten ihren Innenraum (`*InteriorA_Material1`) ganz
+  ausgeblendet. Jetzt ist er `interior_parts`: nur in Cockpit und Ego sichtbar, von außen weiter aus
+  (gleiche Leistung wie vorher). Im Cockpit haben alle `low_detail_parts` volle Detailstufe
+  (`lod_bias` 2 statt 0,35).
+- Kombiinstrument: Kein Modell hat drehbare Zeiger, deshalb ein eigenes Display an der Stelle des
+  Originals (2D-Bild 512 × 192, 30 Bilder pro Sekunde, nur im Cockpit): Tacho links, Drehzahl rechts
+  mit rotem Bereich, Gang groß in der Mitte, Tempo, Blinkerpfeile. Leuchtet (tags 1,6, nachts 0,7),
+  nachts zusätzlich ein sehr schwaches Innenlicht (OmniLight 0,025, Reichweite 0,8 m, ohne Schatten; 0,18 machte den Innenraum hell wie am Tag).
+- Spiegel: Eine Rückkamera (576 × 192, 30 Bilder pro Sekunde, 110° breit) auf Augenhöhe in der
+  Wagenmitte, Blick nach hinten, nur im Cockpit. Das eigene Auto liegt auf Bild-Ebene 11
+  (`CarModel.OWN_CAR_LAYER`), die diese Kamera auslässt. Sie rendert in HDR ohne Tonemapping (das
+  macht das Hauptbild für die Spiegel mit), mit einer Kopie der Umgebung (alle 0,25 s, ohne SSAO, SSR,
+  Glow). Innenspiegel zeigt die Mitte (30–70 %), die Außenspiegel je ein Drittel, alles gespiegelt
+  (`shaders/car_mirror.gdshader`). Die Spiegelflächen schauen zum Auge und hängen 4 cm vor der Stelle aus
+  dem Profil (das Glas des Modells steht meist schräger, sonst taucht das Bild halb dahinter ab).
+  Eine automatische Suche nach dem Spiegelglas im Modell (Dreiecke, die zum Auge zeigen) habe ich
+  ausprobiert und verworfen: Sie fand bei M2, F90 und G90 Teile von Dach und Gehäuse. Spiegel und
+  Display entstehen erst beim ersten Blick aus dem Cockpit.
+- Kopf: Feder mit Dämpfer (1,7 Hz, Dämpfung 0,55), 5 cm Auslenkung pro g (senkrecht halb), dazu
+  2,2° Neigung pro g, Zittern nach Drehzahl und Tempo (abseits der Straße 3,5-mal so stark), ein
+  kurzer Ruck nach vorne beim Hochschalten unter Last und 5° Blick in die Kurve. Sichtfeld 58°
+  (Ego 62°) plus 4° bei vollem Tempo, nahe Grenze 3 cm.
+- Scheiben: von innen nur 10 % Deckkraft (statt 55 %). Bei Regen zeichnet der Glas-Shader Tropfen,
+  die das Bild dahinter brechen: ruhende (werden alle paar Sekunden neu verteilt) und laufende, die im
+  Stand nach unten rutschen und beim Fahren vom Fahrtwind nach hinten über die Scheibe gedrückt
+  werden (ab 90 km/h voll). Das gilt auch von außen.
+
 ## Prüfstand
 
 - Prüfstand (`dyno.gd`, `Dyno`, Garage > Prüfstand): eigene 3D-Welt (SubViewport), im Code gebaut:

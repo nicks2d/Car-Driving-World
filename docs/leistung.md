@@ -67,3 +67,11 @@ mindestens 60. Einzelne Kosten (SSR, Glas, Modelle …) stehen auch bei ihrem Th
   `tools/bench_compare.sh`): vor Teil 3 (c71aa75) 61,7 / 59,8 FPS (1%-Low 44,9 / 42,2), jetzt 61,2 / 58,8
   (43,1 / 35,9), GPU 91–93 %. Teil 3–7 kosten also ~1–2 %; die schlechten Werte vom 14.11. lagen vor
   allem an der Wärme. Auf Akku liegt Hoch knapp um 60 FPS, Runde 2 ist schon wärmer.
+- Cockpit-Sicht (16.11., Mac nach vielen Fotos warm, Akku 81 %, Hoch, `--full`, Autobahn): Rückspiegel
+  (576 × 192, 30 Bilder/s) kosten nur 1–2 FPS (Cockpit mit Spiegeln 53,5 / 33,0, ohne 54,1 / 34,8; der
+  Unterschied zwischen den Runden ist die Wärme). Teuer war dagegen der erste Glas-Shader: Er griff mit
+  `hint_screen_texture` (mit Mipmaps) immer das ganze Bild ab, auch ohne Regen (Cockpit 32 FPS gegen
+  Verfolger 50). Jetzt gibt es zwei Varianten (`car_glass.gdshader` trocken, `car_glass_rain.gdshader`
+  mit Tropfen, ohne Mipmaps), CarModel nimmt die mit Tropfen nur, solange es regnet. Messung mit
+  kühlem Mac steht noch aus (Ende der Sitzung). Messbefehl: `--bench=30 --highway --full --view=cockpit`,
+  `--mirrorfps=0` schaltet die Spiegel ab.

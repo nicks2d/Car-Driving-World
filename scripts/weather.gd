@@ -135,6 +135,9 @@ const CHANCES: Array = [
 @export var lightning_max_seconds: float = 14.0
 
 ## -1 = automatisch wechseln, sonst feste Wetterlage (Kind)
+## Aktuelle Regenstärke 0–1 (wie der Shader-Wert rain_amount; für CarModel: Tropfen auf den Scheiben)
+static var rain_now: float = 0.0
+
 var mode: int = -1
 ## Wetterlage, auf die gerade zugesteuert wird
 var kind: int = Kind.CLEAR
@@ -415,6 +418,7 @@ func _apply(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("season_autumn", w[Season.AUTUMN])
 	RenderingServer.global_shader_parameter_set("season_winter", w[Season.WINTER])
 	RenderingServer.global_shader_parameter_set("rain_amount", _current["rain"])
+	rain_now = _current["rain"]
 	RenderingServer.global_shader_parameter_set("weather_wind", _current["wind"])
 	# Wolkenschatten: ziehen mit dem Wind übers Land; nur bei Sonne und nicht ganz zugezogen
 	_cloud_offset += cloud_shadow_wind * _current["wind"] * delta

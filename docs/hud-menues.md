@@ -11,6 +11,7 @@
   G Schärfe aufs Auto, Leertaste Foto, O Foto-Ordner, P/Esc zurück), Q Blinker links,
   E Blinker rechts (noch mal = aus), X Warnblinker, H Hupe, F Lichthupe, N Tempomat an/aus,
   + / − Wunschtempo (gedrückt halten: 10er-Schritte), B Abstandsstufe, V Fenster auf/zu,
+  Tab Kamera (Verfolger → Cockpit → Ego, siehe `autos.md`),
   Esc Pausemenü (dort Einstellungen; alle Tasten außer Esc lassen sich unter Steuerung neu belegen).
 
 ## HUD und Glas
