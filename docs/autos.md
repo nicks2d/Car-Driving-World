@@ -234,6 +234,28 @@
   Stand nach unten rutschen und beim Fahren vom Fahrtwind nach hinten über die Scheibe gedrückt
   werden (ab 90 km/h voll). Das gilt auch von außen.
 
+## Verfolger-Kamera, Karosserie in Bewegung, Kollisionen (16.11.)
+
+- Verfolger (`follow_camera.gd`): schwenkt wie an einer Feder hinter das Auto (Eigenfrequenz 3,2 rad/s,
+  Dämpfung 0,72: nach einer Kurve schwingt sie leicht nach), schaut seitlich in die Kurve (2,2 m pro rad/s
+  Drehrate, höchstens 3 m) und weitet das Sichtfeld von 65° im Stand auf 75° bei 250 km/h (vorher 70° →
+  82° bei 200 km/h).
+- Karosserie (`CarModel._update_body_motion`): Wanken zur Kurvenaußenseite (2,4° pro g) und Nicken
+  (Bremsen: Nase runter, 1,5° pro g), Feder 1,5 Hz mit Dämpfung 0,45, Drehpunkt 10 cm unter der Auto-Mitte.
+  Nur das Modell bewegt sich (Physik und Räder bleiben), deshalb hängen Kennzeichen, Scheinwerfer und
+  Lenkrad jetzt am Modell. In der Cockpit-Sicht ruht die Karosserie (dort bewegt sich der Kopf).
+- Kollisionen (`scripts/collision_effects.gd`, Knoten CollisionEffects im Auto): Das Auto meldet seine
+  Berührungen (`contact_monitor`, 6 Stellen). Aufprall ab 0,8 m/s Geschwindigkeitsänderung (voll bei 9 m/s):
+  dumpfer Schlag (Lautstärke nach Wucht), Funkenschauer, Kamera-Ruck (Verfolger wackelt bis 35 cm, im Auto
+  wird der Kopf weggestoßen). Schrammen ab 1,5 m/s Rutschen: Funkenstrom an der Berührstelle und
+  Schleifgeräusch, lauter und heller mit dem Tempo. Gelände, Bäume und Felsen sind weich: nur ein leiserer
+  Schlag, keine Funken. Funken: GPUParticles3D (240, 0,45 s, leuchtend über Emission, damit sie glühen).
+  Schlag und Schleifen werden beim Start berechnet (tiefer Ton mit Knirschen und Klingen, Rauschen mit
+  Resonanz und Knacken), Bus „Motor“. Gilt für Leitplanken, Wände, Häuser und Verkehrsautos.
+- Test: `--bench=12 --highway --crashtest` lenkt nach 8 s mit Vollgas in die rechte Planke (Fotos
+  `crash_0` beim Einlenken bis `crash_3`). Ergebnis 16.11.: Aufprall bei 118 km/h mit voller Stärke, 3 s
+  Schrammen; in der Aufnahme (`--record`) liegt der Schlag 5 dB über dem Motor, das Schleifen 3 dB.
+
 ## Prüfstand
 
 - Prüfstand (`dyno.gd`, `Dyno`, Garage > Prüfstand): eigene 3D-Welt (SubViewport), im Code gebaut:

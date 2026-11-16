@@ -98,6 +98,9 @@ extends Node
 ## --resettest   mit --bench: Reset prüfen (CarReset): nach 10 s Autopilot mit Vollgas in den Graben,
 ##                R (Fotos reset_vorher/reset_nachher), noch einmal R in der Sperre, Überschlag auf der
 ##                Straße (Aufrichten am Platz), Sturz unter das Gelände (Sicherheitsnetz)
+## --crashtest   mit --bench --highway: nach 8 s lenkt das Auto mit Vollgas nach rechts in die Leitplanke
+##                und schrammt 3 s daran entlang (Fotos crash_0 beim Einlenken, crash_1 bis crash_3, Aufpralle und Schrammen in der
+##                Ausgabe), dann Ende der Fahrt wie gewohnt
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
 ##                Audio, Spiel
@@ -248,6 +251,12 @@ var _drop_drive: float = 0.0
 var _drop_fallen: int = 0
 ## Reset-Test (--resettest): nächster Schritt und gemerkte Lage
 var _reset_test: bool = false
+## Leitplanken-Test (--crashtest): Schritt, Aufpralle, stärkster Aufprall, Sekunden mit Schrammen
+var _crash_test: bool = false
+var _crash_step: int = 0
+var _crash_hits: int = 0
+var _crash_strongest: float = 0.0
+var _crash_scrape: float = 0.0
 var _reset_step: int = 0
 var _reset_mark := Vector3.ZERO
 
@@ -319,6 +328,8 @@ func _ready() -> void:
 					_drop_points.append(Vector2(float(xz[0]), float(xz[1])))
 			"resettest":
 				_reset_test = true
+			"crashtest":
+				_crash_test = true
 			"noplate":
 				CarModel.test_no_plates = true
 			"dropdrive":
@@ -634,6 +645,8 @@ func _process(delta: float) -> void:
 				_save_image("bench_%d" % int(_timer))
 			if _reset_test:
 				_update_reset_test()
+			if _crash_test:
+				_update_crash_test(delta)
 			if _windows_at >= 0.0 and _timer >= _windows_at:
 				_windows_at = -1.0
 				(_game.get_node("OpenWindows") as OpenWindows).open = true
@@ -724,6 +737,46 @@ func _print_mesh_check() -> void:
 
 
 ## Reset-Test: feste Abfolge nach der Zeit im Benchmark
+## Leitplanken-Test: Autopilot aus, Vollgas nach rechts in die Planke, daran entlangschrammen
+func _update_crash_test(delta: float) -> void:
+	var car: Car = _game.car
+	var effects := car.get_node("CollisionEffects") as CollisionEffects
+	if float(effects.get("_scrape_level")) > 0.05:
+		_crash_scrape += delta
+	var steps: Array[float] = [8.0, 8.4, 8.7, 9.2, 10.2, 11.4, 12.0]
+	if _crash_step >= steps.size() or _timer < steps[_crash_step]:
+		return
+	match _crash_step:
+		0:
+			autopilot_enabled = false
+			effects.hit.connect(func(strength: float, _direction: Vector3) -> void:
+				_crash_hits += 1
+				_crash_strongest = maxf(_crash_strongest, strength)
+				print("Crash-Test: Aufprall Stärke %.2f bei %.0f km/h" % [strength, car.linear_velocity.length() * 3.6]))
+			Input.action_release("steer_left")
+			Input.action_press("accelerate")
+			Input.action_press("steer_right", 0.7)
+			print("Crash-Test: nach rechts in die Planke bei %.0f km/h" % (car.linear_velocity.length() * 3.6))
+		1:
+			# Mitten im Einlenken (Kamera schaut in die Kurve, Karosserie wankt)
+			_save_image("crash_0")
+		2:
+			# Leicht weiter nach rechts drücken, damit das Auto an der Planke entlangschrammt
+			Input.action_press("steer_right", 0.12)
+		3:
+			_save_image("crash_1")
+		4:
+			_save_image("crash_2")
+		5:
+			_save_image("crash_3")
+		6:
+			for action: String in ["accelerate", "steer_right"]:
+				Input.action_release(action)
+			print("Crash-Test: %d Aufpralle, stärkster %.2f, %.1f s geschrammt, jetzt %.0f km/h" % [_crash_hits,
+				_crash_strongest, _crash_scrape, car.linear_velocity.length() * 3.6])
+	_crash_step += 1
+
+
 func _update_reset_test() -> void:
 	var car: Car = _game.car
 	var reset := _game.get_node("CarReset") as CarReset

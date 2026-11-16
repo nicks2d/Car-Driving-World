@@ -1,12 +1,14 @@
 class_name FollowCamera
 extends Camera3D
 ## Kamera des Spielers mit drei Ansichten (Taste Tab):
-##  - Verfolger: folgt dem Auto weich von hinten. Sie hängt bewusst nicht direkt am Auto, sonst würde
-##    sie jede Bodenwelle und jedes Kippen der Karosserie mitmachen.
+##  - Verfolger: folgt dem Auto weich von hinten (Feder: schwingt in Kurven leicht nach), schaut in die
+##    Kurve hinein und weitet bei Tempo das Sichtfeld. Sie hängt bewusst nicht direkt am Auto, sonst
+##    würde sie jede Bodenwelle und jedes Kippen der Karosserie mitmachen.
 ##  - Cockpit: vom Fahrersitz (Augen laut Profil), Armaturenbrett, Lenkrad und Spiegel sichtbar
 ##  - Ego: weiter vorne an der Scheibe, man sieht Motorhaube und den oberen Teil des Lenkrads
 ## Im Auto bewegt sich der Kopf mit: Fliehkraft, Bremsen und Gasgeben schieben ihn (Feder mit Dämpfer),
-## dazu Zittern nach Drehzahl und Straße und ein kurzer Ruck beim Schalten.
+## dazu Zittern nach Drehzahl und Straße und ein kurzer Ruck beim Schalten. Bei Kollisionen
+## (CollisionEffects) ruckt die Kamera kurz in allen Ansichten.
 
 enum View { FOLLOW, COCKPIT, EGO }
 const VIEW_NAMES: Array[String] = ["Verfolger", "Cockpit", "Ego-Sicht"]
@@ -21,8 +23,13 @@ const VIEW_NAMES: Array[String] = ["Verfolger", "Cockpit", "Ego-Sicht"]
 @export var distance: float = 6.5
 ## Höhe über dem Auto in Metern
 @export var height: float = 2.3
-## Wie schnell die Kamera hinter das Auto schwenkt (höher = straffer)
-@export var follow_speed: float = 4.0
+## Wie schnell die Kamera hinter das Auto schwenkt (Eigenfrequenz der Feder, höher = straffer)
+@export var follow_speed: float = 3.2
+## Dämpfung der Feder: 1 = schwingt nicht nach, kleiner = schwingt weich nach
+@export var swing_damping: float = 0.72
+## In die Kurve schauen: so viele Meter seitlich pro rad/s Drehrate (höchstens max_look_side)
+@export var look_into_curve: float = 2.2
+@export var max_look_side: float = 3.0
 ## Wie weit die Kamera in Fahrtrichtung vorausschaut (in Sekunden Fahrweg)
 @export var look_ahead_time: float = 0.25
 ## Höchstens so viele Meter schaut sie voraus
@@ -30,13 +37,13 @@ const VIEW_NAMES: Array[String] = ["Verfolger", "Cockpit", "Ego-Sicht"]
 
 @export_group("Tempo-Effekt")
 ## Bei diesem Tempo (km/h) ist der Zoom-Effekt voll da
-@export var zoom_full_speed_kmh: float = 200.0
+@export var zoom_full_speed_kmh: float = 250.0
 ## So viele Meter weiter weg ist die Kamera bei vollem Tempo
 @export var extra_distance: float = 2.5
 ## Sichtfeld im Stand in Grad
-@export var base_fov: float = 70.0
+@export var base_fov: float = 65.0
 ## So viel breiter wird das Sichtfeld bei vollem Tempo (Grad)
-@export var extra_fov: float = 12.0
+@export var extra_fov: float = 10.0
 ## Wie schnell sich Abstand und Sichtfeld dem Tempo anpassen
 @export var zoom_speed: float = 2.0
 
@@ -68,8 +75,16 @@ const VIEW_NAMES: Array[String] = ["Verfolger", "Cockpit", "Ego-Sicht"]
 ## Blick in die Kurve: so viele Grad bei vollem Lenkeinschlag
 @export var look_into_turn: float = 5.0
 
-# Geglättete Fahrtrichtung, hinter der die Kamera steht
-var _heading: Vector3 = Vector3.BACK
+@export_group("Kollision")
+## Ruck bei einem vollen Aufprall: Verfolger (Meter), im Auto (Kopf-Tempo m/s)
+@export var hit_shake: float = 0.35
+@export var hit_head_kick: float = 0.6
+# Richtung (Winkel um die Hochachse), hinter der die Kamera steht, und wie schnell sie schwenkt
+var _yaw: float = 0.0
+var _yaw_velocity: float = 0.0
+# Seitlicher Blick in die Kurve (Meter) und Ruck nach Kollisionen (0–1, klingt ab)
+var _look_side: float = 0.0
+var _jolt: float = 0.0
 # 0 = Auto steht, 1 = volles Tempo
 var _zoom: float = 0.0
 # Kopf im Auto: Auslenkung und Tempo der Feder (Auto-Koordinaten), gemessene Beschleunigung, Zittern
@@ -123,6 +138,10 @@ func _update_camera(delta: float, snap: bool) -> void:
 	if target != _connected_car and target is Car:
 		_connected_car = target
 		(target as Car).gear_changed.connect(_on_gear_changed)
+		var collisions := target.get_node_or_null("CollisionEffects") as CollisionEffects
+		if collisions:
+			collisions.hit.connect(_on_hit)
+	_jolt = move_toward(_jolt, 0.0, delta * 3.0)
 	if view == View.FOLLOW or not (target is Car) or (target as Car).profile == null:
 		near = 0.1
 		_update_follow(delta, snap)
@@ -132,10 +151,19 @@ func _update_camera(delta: float, snap: bool) -> void:
 
 
 func _update_follow(delta: float, snap: bool) -> void:
-	# Richtung langsam der Fahrtrichtung des Autos nachführen.
-	# 1 - exp(-k * delta) macht das Glätten unabhängig von der Bildrate.
-	var smooth: float = 1.0 if snap else 1.0 - exp(-follow_speed * delta)
-	_heading = _heading.slerp(_flat_forward(), smooth).normalized()
+	# Hinter das Auto schwenken wie an einer Feder: bei großer Dämpfung weich, darunter schwingt die
+	# Kamera nach einer Kurve leicht nach
+	var forward := _flat_forward()
+	var target_yaw := atan2(forward.x, forward.z)
+	if snap:
+		_yaw = target_yaw
+		_yaw_velocity = 0.0
+	else:
+		var omega := follow_speed
+		var spring := wrapf(target_yaw - _yaw, -PI, PI) * omega * omega - _yaw_velocity * 2.0 * swing_damping * omega
+		_yaw_velocity += spring * delta
+		_yaw = wrapf(_yaw + _yaw_velocity * delta, -PI, PI)
+	var heading := Vector3(sin(_yaw), 0.0, cos(_yaw))
 
 	# Bei Tempo etwas zurückfahren und das Sichtfeld weiten
 	var speed_kmh: float = target.linear_velocity.length() * 3.6
@@ -144,13 +172,17 @@ func _update_follow(delta: float, snap: bool) -> void:
 	fov = base_fov + extra_fov * _zoom
 
 	var car_pos: Vector3 = target.global_position
-	global_position = car_pos - _heading * (distance + extra_distance * _zoom) + Vector3.UP * height
+	var shake := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * hit_shake * _jolt * _jolt
+	global_position = car_pos - heading * (distance + extra_distance * _zoom) + Vector3.UP * height + shake
 
-	# Blickpunkt: etwas über dem Auto, plus ein Stück in Fahrtrichtung voraus
+	# Blickpunkt: etwas über dem Auto, ein Stück in Fahrtrichtung voraus und seitlich in die Kurve
 	var ahead: Vector3 = target.linear_velocity * look_ahead_time
 	ahead.y = 0.0
 	ahead = ahead.limit_length(max_look_ahead)
-	look_at(car_pos + Vector3.UP + ahead, Vector3.UP)
+	var side_target := clampf(target.angular_velocity.y * look_into_curve, -max_look_side, max_look_side)
+	_look_side = side_target if snap else lerpf(_look_side, side_target, 1.0 - exp(-2.5 * delta))
+	var left := Vector3(heading.z, 0.0, -heading.x)
+	look_at(car_pos + Vector3.UP + ahead + left * _look_side, Vector3.UP)
 
 
 ## Cockpit und Ego: Augen laut Profil, Kopf bewegt sich mit Beschleunigung, Zittern und Schaltruck
@@ -216,6 +248,13 @@ func _on_gear_changed(new_gear: int) -> void:
 	_head_velocity.z += shift_kick * load_factor * (1.0 if new_gear > 1 else 0.5)
 
 
+## Kollision (CollisionEffects): Kamera ruckt; im Auto wird der Kopf weggestoßen
+func _on_hit(strength: float, direction: Vector3) -> void:
+	_jolt = maxf(_jolt, strength)
+	if view != View.FOLLOW:
+		_head_velocity += -direction.normalized() * hit_head_kick * strength
+
+
 ## Blickrichtung des Autos flach auf dem Boden (ohne Neigung nach oben/unten)
 func _flat_forward() -> Vector3:
 	# Beim VehicleBody3D zeigt die Nase in Richtung +Z
@@ -223,5 +262,5 @@ func _flat_forward() -> Vector3:
 	forward.y = 0.0
 	if forward.length() < 0.1:
 		# Auto steht fast senkrecht: lieber die alte Richtung behalten
-		return _heading
+		return Vector3(sin(_yaw), 0.0, cos(_yaw))
 	return forward.normalized()

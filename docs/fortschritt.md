@@ -59,3 +59,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
 - [x] Teil 3–7 (13.11.): Straßen-Bugs und breitere Rampen, Tunnel-Deckel, Reset, Kennzeichen, Autos in der App
 - [x] Teil 1 (16.11.): Cockpit- und Ego-Sicht (Tab) mit drehendem Lenkrad, eigenem Kombiinstrument,
   Rückspiegeln mit Kamera, Kopfbewegung, Innenraum, Regentropfen auf den Scheiben
+- [x] Teil 2 (16.11.): Verfolger-Kamera mit Feder und Blick in die Kurve, Sichtfeld 65–75°, Karosserie
+  nickt und wankt, Kollisionen mit Funken, Schleifen, Schlag und Kamera-Ruck

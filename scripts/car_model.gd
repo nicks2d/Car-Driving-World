@@ -10,6 +10,8 @@ extends Node3D
 ##  - eigene Materialien (Lack, Glas, Felgen, Reifen, Lichter), Schatten nur für große Teile
 ##  - Lenkrad an einen drehbaren Halter hängen (eigene Teile oder aus dem Innenraum geschnitten)
 ##  - Innenraum-Teile nur in der Cockpit-Sicht zeigen (set_cockpit_view)
+##  - Karosserie nickt und wankt mit der Beschleunigung (nur das Modell, die Physik bleibt gleich).
+##    Kennzeichen, Scheinwerfer und Lenkrad hängen deshalb am Modell, die Räder an den Physik-Rädern.
 ## Ohne Modell bleibt die Platzhalter-Box. Als Kind eines Car fährt es mit; sonst (Vorschau
 ## in der Garage) stellt es die Räder einfach an ihre Plätze.
 ##
@@ -38,6 +40,16 @@ signal model_ready
 @export var lights_on_below_sun_degrees: float = 4.0
 ## Diese Teile wechseln früher auf vereinfachte Versionen (LOD), Wert < 1 = früher
 @export var low_detail_lod_bias: float = 0.35
+
+@export_group("Karosserie in Bewegung")
+## Wanken zur Kurvenaußenseite und Nicken (Bremsen: Nase runter) in Grad pro 1 g
+@export var body_roll_per_g: float = 2.4
+@export var body_pitch_per_g: float = 1.5
+## Eigenfrequenz (Hz) und Dämpfung der Feder (1 = schwingt nicht nach)
+@export var body_frequency: float = 1.5
+@export var body_damping: float = 0.45
+## Drehpunkt des Wankens und Nickens im Auto (Meter, etwa Höhe der Radnaben)
+@export var body_pivot := Vector3(0.0, -0.1, 0.0)
 
 ## Platzhalter-Reifen und -Speiche an jedem Rad (car.tscn), solange kein Modell da ist
 const PLACEHOLDER_WHEEL_PARTS: Array[String] = ["Tire", "Spoke"]
@@ -86,6 +98,11 @@ var _low_detail: Array[MeshInstance3D] = []
 var _cockpit_view: bool = false
 ## Was beim Einbauen passiert ist (für tools/cockpit_measure.gd): Lenkrad-Teile, geschnittene Meshes, Zeit
 var build_report: Dictionary = {}
+## Karosserie: Wanken (x) und Nicken (y) in Grad, Tempo der Feder, gemessene Beschleunigung
+var _body_angles := Vector2.ZERO
+var _body_speed := Vector2.ZERO
+var _body_accel := Vector3.ZERO
+var _last_velocity := Vector3.ZERO
 
 
 ## Pfad zum Modell eines Profils: scene.gltf (ältere Downloads) oder die .glb im Ordner
@@ -166,6 +183,7 @@ func _physics_process(_delta: float) -> void:
 	if _steering and _car:
 		_steering.transform = Transform3D(Basis(_steering_axis, _car.steering * _profile.steering_ratio),
 			_profile.steering_wheel_center)
+	_update_body_motion(_delta)
 
 
 func _process(_delta: float) -> void:
@@ -299,6 +317,10 @@ func _set_placeholder(on: bool) -> void:
 # ---------------------------------------------------------------------------
 
 func _build(scene: PackedScene) -> void:
+	# Messen und Einpassen im ruhenden Auto
+	transform = Transform3D.IDENTITY
+	_body_angles = Vector2.ZERO
+	_body_speed = Vector2.ZERO
 	_pivot = Node3D.new()
 	_pivot.name = "ModelPivot"
 	_pivot.rotation.y = deg_to_rad(_profile.model_rotation_deg)
@@ -399,7 +421,7 @@ func _place_plates(body: Array) -> void:
 		if spot == null:
 			continue
 		var plate := LicensePlate.make_mesh(text, spot["size"])
-		_car.add_child(plate)
+		add_child(plate)
 		# 1,2 cm vor die Fläche (entlang ihrer Normale), damit nichts flimmert
 		var tilt := deg_to_rad(spot["tilt"])
 		var normal := Vector3(0.0, sin(tilt), cos(tilt) * (1.0 if side == 0 else -1.0))
@@ -1004,7 +1026,7 @@ func _setup_headlights() -> void:
 		spot.transform = Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, deg_to_rad(-3.0)),
 			Vector3(side * spacing, box.get_center().y, box.end.z + 0.25))
 		spot.visible = false
-		_root.add_child(spot)
+		add_child(spot)
 		_spots.append(spot)
 		_extra_nodes.append(spot)
 
@@ -1031,7 +1053,7 @@ func _build_steering_wheel(body: Array[MeshInstance3D]) -> Array[MeshInstance3D]
 	_steering_axis = steering_axis(_profile)
 	_steering = Node3D.new()
 	_steering.name = "SteeringWheel"
-	_root.add_child(_steering)
+	add_child(_steering)
 	_steering.position = center
 	_extra_nodes.append(_steering)
 	var depth := _profile.steering_wheel_depth
@@ -1093,3 +1115,29 @@ func set_cockpit_view(on: bool) -> void:
 			mi.lod_bias = 2.0 if on else low_detail_lod_bias
 	if _glass:
 		_glass.set_shader_parameter("inside", 1.0 if on else 0.0)
+
+
+## Karosserie nickt und wankt: Feder mit Dämpfer gegen die Beschleunigung im Auto (Kurve: nach außen,
+## Bremsen: Nase runter, Gas: Heck runter). Nur am Modell; in der Cockpit-Sicht nicht (dort bewegt
+## sich der Kopf, und Spiegel und Display hängen fest am Auto).
+func _update_body_motion(delta: float) -> void:
+	if _car == null or _model == null or delta <= 0.0:
+		return
+	var accel := (_car.linear_velocity - _last_velocity) / delta
+	_last_velocity = _car.linear_velocity
+	# Sprünge (Reset, Teleport) nicht mitmachen
+	if accel.length() > 600.0:
+		accel = Vector3.ZERO
+	_body_accel = _body_accel.lerp(_car.global_basis.inverse() * accel, 1.0 - exp(-10.0 * delta))
+	var wanted := Vector2.ZERO
+	if not _cockpit_view:
+		# Rollwinkel positiv = rechte Seite (−x) runter; Kurve links (Beschleunigung +x) drückt nach rechts
+		wanted = Vector2(_body_accel.x / 9.81 * body_roll_per_g, -_body_accel.z / 9.81 * body_pitch_per_g)
+		wanted = wanted.limit_length(maxf(body_roll_per_g, body_pitch_per_g) * 1.8)
+	var omega := TAU * body_frequency
+	_body_speed += ((wanted - _body_angles) * omega * omega - _body_speed * 2.0 * body_damping * omega) * delta
+	_body_angles += _body_speed * delta
+	# Um die Fahrtrichtung (z) wanken, um die Querachse (x) nicken (positiv = Nase runter)
+	var rotation_basis := Basis(Vector3.BACK, deg_to_rad(_body_angles.x)) * Basis(Vector3.RIGHT, deg_to_rad(_body_angles.y))
+	transform = Transform3D(rotation_basis, body_pivot - rotation_basis * body_pivot)
+

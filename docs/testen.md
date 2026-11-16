@@ -80,7 +80,8 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
   `screenshots/NAME.png`. `-- --bench=20` misst FPS (siehe `scripts/debug_tools.gd`).
   `--carview=G` stellt die Kamera neben das Auto (0 = vorne, 180 = hinten), `--steer=left`
   lenkt dabei (Vorderräder prüfen), `--car=e30` startet mit diesem Auto. `--view=cockpit|ego`
-  setzt die Kamera ins Auto (mit `--steer=left` ist das Lenkrad eingeschlagen). `--nowait` macht das
+  setzt die Kamera ins Auto (mit `--steer=left` ist das Lenkrad eingeschlagen). `--crashtest` (mit
+  `--bench=12 --highway`) fährt in die Leitplanke (Funken, Schlag, Kamera-Ruck, siehe `autos.md`). `--nowait` macht das
   Foto, ohne auf die Kacheln zu warten, `--jump=X,Z` springt nach dem Laden weit weg.
 - Freie Kamera: `--cam=X,Z,H --lookat=X,Z,H` (H über dem Gelände), Überblick `--fly=H --pitch=G
   --lookat=X,Z`.
