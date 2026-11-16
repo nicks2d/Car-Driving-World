@@ -63,3 +63,7 @@ mindestens 60. Einzelne Kosten (SSR, Glas, Modelle …) stehen auch bei ihrem Th
   Wärme liegt oder an Teil 3–7 (Tunnel-Deckel, breitere Rampen, mehr Kollision), ist offen: mit kühlem
   Mac abwechselnd gegen den Stand vor Teil 3 (Commit c71aa75) messen: `tools/bench_compare.sh`
   (vorbereitet, der alte Stand liegt importiert in `~/Godot-Projekte/.endlose-welt-vergleich-c71aa75`).
+- Vergleich abwechselnd (16.11., Mac nach zwei Tagen Pause kühl, Akku 98 %, Hoch, `--full`,
+  `tools/bench_compare.sh`): vor Teil 3 (c71aa75) 61,7 / 59,8 FPS (1%-Low 44,9 / 42,2), jetzt 61,2 / 58,8
+  (43,1 / 35,9), GPU 91–93 %. Teil 3–7 kosten also ~1–2 %; die schlechten Werte vom 14.11. lagen vor
+  allem an der Wärme. Auf Akku liegt Hoch knapp um 60 FPS, Runde 2 ist schon wärmer.
