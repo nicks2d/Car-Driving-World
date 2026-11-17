@@ -49,6 +49,10 @@ var built: Dictionary = {}
 var junctions_built: Dictionary = {}
 ## Ergebnis: Fehlerart -> {Stelle (Vector2i): [x, z, Text]}
 var bad: Dictionary = {}
+## Kuppen und Senken (Höhenprofil): je Straßenart größter Knick zwischen zwei 4-m-Stücken (Änderung der
+## Steigung) und kleinster Ausrundungs-Halbmesser über 12 m: [Knick, Lage, Halbmesser, Lage]
+var vertical: Dictionary = {}
+var vertical_seen: Dictionary = {}
 var stats := {"segments": 0, "chunks": 0, "trees": 0, "houses": 0, "junctions": 0, "holes": 0}
 
 
@@ -189,12 +193,39 @@ func _check_tile(tile: Rect2) -> void:
 							best = minf(best, Geometry2D.get_closest_point_to_segment(Vector2(q.x, q.z), line[j], line[j + 1]).distance_to(Vector2(q.x, q.z)))
 						print("PROBE Zone: %d Punkte von %s bis %s, halbe Breite %.2f, Abstand %.2f" % [line.size(), line[0].round(), line[-1].round(), zone[1], best])
 					print("PROBE in Sperrzone: ", segments[k].call("_in_keepout", q))
+	# --profile=X,Z: Höhenprofil des nächsten Abschnitts um diese Stelle (Fehlersuche Kuppen)
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--profile="):
+			var v := arg.trim_prefix("--profile=").split(",")
+			var q := Vector2(float(v[0]), float(v[1]))
+			if not tile.has_point(q):
+				continue
+			var best_k := -1
+			var best_i := -1
+			var best_d := INF
+			for k in segments.size():
+				for i in segments[k].points.size():
+					var d := Vector2(segments[k].points[i].x, segments[k].points[i].z).distance_to(q)
+					if d < best_d:
+						best_d = d
+						best_k = k
+						best_i = i
+			if best_k >= 0:
+				var seg := segments[best_k]
+				print("PROFIL %s Punkt %d von %d (flach %d/%d, Fenster %d, Steigung max %.3f)" % [keys[best_k], best_i,
+					seg.points.size(), seg.flat_points, seg.flat_end, seg.vertical_window, seg.max_grade])
+				for i in range(maxi(best_i - 14, 1), mini(best_i + 15, seg.points.size() - 1)):
+					var g0 := (seg.points[i].y - seg.points[i - 1].y) / 4.0
+					var g1 := (seg.points[i + 1].y - seg.points[i].y) / 4.0
+					print("  %4d  y %8.2f  Steigung %+.3f  Knick %+.3f  Gelände %8.2f  Brücke %d Tunnel %d" % [i, seg.points[i].y,
+						g1, g1 - g0, seg.ground[i], seg.bridge[i], seg.tunnel[i]])
 	var junctions := _junctions_in(area)
 	var index := _point_index(segments)
 	times.append(Time.get_ticks_msec())
 	_check_overlaps(tile, segments, keys, index, junctions)
 	_check_rails(tile, segments, keys, index, junctions)
 	_check_water(tile, segments)
+	_measure_vertical(segments, keys)
 	_check_junctions(tile, junctions)
 	times.append(Time.get_ticks_msec())
 	var jobs := _terrain_jobs(tile, segments)
@@ -494,6 +525,46 @@ func _check_rails(tile: Rect2, segments: Array[RoadSegment], keys: Array[Vector3
 # ---------------------------------------------------------------------------
 # 3. Straßen im Wasser
 # ---------------------------------------------------------------------------
+
+## Höhenprofile messen (nicht als Fehler gezählt): größter Steigungswechsel pro 4 m und kleinster
+## Kuppen-/Wannenhalbmesser über 12 m, ohne Tunnel und Brücken-Enden (dort zählt die Fahrbahn genauso)
+func _measure_vertical(segments: Array[RoadSegment], keys: Array[Vector3i]) -> void:
+	for k in segments.size():
+		var seg := segments[k]
+		if vertical_seen.has(keys[k]) or seg.kind == RoadSegment.Kind.RAMP:
+			continue
+		vertical_seen[keys[k]] = true
+		var kind := "Autobahn" if seg.kind == RoadSegment.Kind.HIGHWAY else "Landstraße"
+		var entry: Array = vertical.get(kind, [0.0, Vector3.ZERO, INF, Vector3.ZERO, 0, 0, 0])
+		var n := seg.points.size()
+		var grades := PackedFloat32Array()
+		grades.resize(n - 1)
+		for i in n - 1:
+			var a := seg.points[i]
+			var b := seg.points[i + 1]
+			grades[i] = (b.y - a.y) / maxf(Vector2(b.x - a.x, b.z - a.z).length(), 0.01)
+		for i in range(1, n - 1):
+			var kink := absf(grades[i] - grades[i - 1])
+			entry[4] = int(entry[4]) + 1
+			# Halbmesser unter 400 m bzw. 1000 m (über 12 m gemessen)
+			if i + 2 < n - 1:
+				var bend := absf(grades[i + 2] - grades[i - 1])
+				if bend > 12.0 / 400.0:
+					entry[5] = int(entry[5]) + 1
+				if bend > 12.0 / 1000.0:
+					entry[6] = int(entry[6]) + 1
+			if kink > float(entry[0]):
+				entry[0] = kink
+				entry[1] = seg.points[i]
+			if i + 2 < n - 1:
+				var change := absf(grades[i + 2] - grades[i - 1])
+				if change > 0.0001:
+					var radius := 12.0 / change
+					if radius < float(entry[2]):
+						entry[2] = radius
+						entry[3] = seg.points[i]
+		vertical[kind] = entry
+
 
 func _check_water(tile: Rect2, segments: Array[RoadSegment]) -> void:
 	for seg in segments:
@@ -858,6 +929,13 @@ func _report() -> void:
 			if shown < 4:
 				lines.append(line)
 				shown += 1
+	for kind: String in vertical:
+		var entry: Array = vertical[kind]
+		var line := "KUPPEN %s: größter Knick %.3f (Steigungswechsel pro 4 m) bei %s, kleinster Halbmesser %.0f m bei %s; Halbmesser unter 400 m an %.2f %%, unter 1000 m an %.2f %% der Punkte" % [
+			kind, entry[0], (entry[1] as Vector3).round(), entry[2], (entry[3] as Vector3).round(),
+			100.0 * int(entry[5]) / maxi(int(entry[4]), 1), 100.0 * int(entry[6]) / maxi(int(entry[4]), 1)]
+		lines.append(line)
+		full.append(line)
 	lines.append("ERGEBNIS: %d Stellen" % _total())
 	for line in lines:
 		print(line)

@@ -115,6 +115,8 @@ extends Node
 ##                einer solchen Kreuzung (z. B. --pos=-2105,-776 für Stopp, --pos=-683,463 für Vorfahrt gewähren)
 ## --tunnelshot=ART Foto der Tunnel-Ausstattung: nächste Stelle dieser Art (sos, sign, bay, fan) im langen
 ##                Tunnel in der Nähe, Kamera 7 m davor im Tunnel (z. B. --pos=-4145,4246 im 2.980-m-Tunnel)
+## --edgeview     Kamera am rechten Straßenrand (1,2 m hoch), Blick schräg nach vorne auf Bankett, Grasrand und
+##                Fahrspuren (Landstraße: das Auto steht auf der rechten Spur)
 ## --2wd          mit 2WD-Modus starten (nur Autos mit two_wd_switch, z. B. --car=f90)
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
@@ -273,6 +275,12 @@ var _rewind_test: bool = false
 var _rewind_step: int = 0
 var _rewind_mark := Vector3.ZERO
 var _two_wd: bool = false
+var _edge_view: bool = false
+## Abheben bei hohem Tempo (Benchmark): Sekunden über 150 km/h, davon ohne Bodenkontakt bzw. mit 1–3 Rädern
+var _fast_time: float = 0.0
+var _airborne_time: float = 0.0
+var _light_time: float = 0.0
+var _airborne_at := Vector3.ZERO
 ## Kreuzungsfoto (--junctionshot): gewünschte Regel, das wartende Auto
 var _junction_rule: int = -1
 var _junction_car: Traffic.TrafficCar
@@ -375,6 +383,8 @@ func _ready() -> void:
 				_rewind_test = true
 			"2wd":
 				_two_wd = true
+			"edgeview":
+				_edge_view = true
 			"tunnelshot":
 				_tunnel_shot = value
 			"junctionshot":
@@ -645,6 +655,14 @@ func _process(delta: float) -> void:
 				_place_car_view_camera()
 			if _junction_car:
 				_place_junction_camera()
+			if _edge_view:
+				var car: VehicleBody3D = _game.car
+				var forward := Vector3(car.global_basis.z.x, 0.0, car.global_basis.z.z).normalized()
+				var right := forward.cross(Vector3.UP).normalized()
+				camera.set_physics_process(false)
+				var eye := car.global_position + right * 4.6 + Vector3.UP * 1.0
+				camera.global_transform = Transform3D(Basis.looking_at(forward * 16.0 + right * 0.6 - Vector3.UP * 1.6), eye)
+				camera.reset_physics_interpolation()
 			if _has_sign_camera:
 				camera.global_transform = _sign_camera
 				camera.reset_physics_interpolation()
@@ -1112,8 +1130,25 @@ func _surface_at(p: Vector2) -> float:
 	return maxf((hit["position"] as Vector3).y, natural)
 
 
-func _physics_process(_delta: float) -> void:
-	if _state != "bench" or _chill or not autopilot_enabled:
+func _physics_process(delta: float) -> void:
+	if _state != "bench":
+		return
+	# Abheben: über 150 km/h keine Rad am Boden (Kuppen); Zeit und schnellste Stelle merken
+	if _game and _game.car is Car:
+		var car: Car = _game.car
+		var speed := car.linear_velocity.length() * 3.6
+		if speed > 150.0:
+			_fast_time += delta
+			var touching := 0
+			for wheel in car.corner_wheels():
+				if wheel.is_in_contact():
+					touching += 1
+			if touching == 0:
+				_airborne_time += delta
+				_airborne_at = car.global_position
+			elif touching < 4:
+				_light_time += delta
+	if _chill or not autopilot_enabled:
 		return
 	_drive_autopilot()
 
@@ -1584,6 +1619,9 @@ func _print_bench() -> void:
 	if _levels:
 		_print_levels()
 	var rewind := _game.get_node_or_null("Rewind") as Rewind
+	if _fast_time > 0.0:
+		print("BENCH abheben: %.1f s über 150 km/h, davon %.2f s ohne Bodenkontakt (zuletzt bei %s), %.2f s mit 1–3 Rädern" % [
+			_fast_time, _airborne_time, _airborne_at.round(), _light_time])
 	var traffic := _game.get_node_or_null("Traffic") as Traffic
 	if traffic:
 		var factors := traffic.time_factor()

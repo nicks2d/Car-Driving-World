@@ -82,3 +82,15 @@
   jetzt 110–160 Schilfbüschel pro Kachel am See. Schilf und Büsche nur bis Detailstufe 1.
 - Kollision von Stämmen/Felsen direkt über den PhysicsServer, ein Körper pro 64 × 64 m.
   Ein Körper mit 1000 Formen kostete 33 ms (Ruckler), so sind es ~3,5 ms pro Kachel.
+
+## Felswände und Straßenrand (17.11.)
+
+- Fels (`terrain.gdshaderinc`): weiter triplanar (drei Projektionen nach der Normalen gewichtet), dazu gegen
+  Wiederholung dieselbe Textur noch einmal gedreht und 2,7-mal größer, beide nach einem Rauschen gemischt;
+  Helligkeit in groß (Schichten, schräg in der Höhe) und klein. Projektionen mit unter 2 % Gewicht werden
+  übersprungen (spart Texturzugriffe). Foto: `--pos=-1562,-8360 --cam=-1575,-8395,2 --lookat=-1610,-8430,12`.
+- Straßenrand (`road.gdshader`): Das Bankett geht mit einer weichen, wellig verlaufenden Kante (Rauschen
+  entlang der Straße, 23 m und 4 m) in Gras über, gleiche Textur und Farbe wie das Gelände (RoadNetwork gibt
+  sie beim Start weiter), mit Jahreszeit. Reifenspuren dunkler (20 statt 12 %) und etwas glatter, mit
+  Unterschieden entlang der Straße. Flickstellen: in 30 % der 37-m-Abschnitte ein Rechteck aus frischem,
+  dunklem Asphalt (3–12 m lang, eine Fahrbahnhälfte) mit Fuge. Foto: `--pos=-150,197 --edgeview`.

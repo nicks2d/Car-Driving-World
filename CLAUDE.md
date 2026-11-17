@@ -132,4 +132,5 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Kontaktschatten · Sound 48 kHz, Limiter, Ducking, Hall der Umgebung
 - [x] Vorfahrt an Kreuzungen (Schilder, Haltelinien, KI wartet) · Verkehr nach Uhrzeit, Berufsverkehr, Stau ·
   Tunnel-Ausstattung (SOS, Fluchtweg, Ventilatoren, Pannenbuchten, Name) · Bäume in 3 Stufen mit
-  Impostoren, weiche LOD-Übergänge, Waldränder, Lichtungen, Schilf
+  Impostoren, weiche LOD-Übergänge, Waldränder, Lichtungen, Schilf · Fels ohne Wiederholung, Grasrand,
+  Flickstellen, ausgerundete Kuppen

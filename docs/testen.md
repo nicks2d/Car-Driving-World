@@ -90,7 +90,10 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
   `BENCH rueckspulen_ms` die der Rücklauf-Aufzeichnung.
   `--junctionshot[=yield]` fotografiert eine Kreuzung mit wartendem KI-Auto, `BENCH verkehr` zeigt die Zahl der
   Autos (Autobahn, im Stau) und den Faktor der Uhrzeit.
-  `--tunnelshot=sos|sign|bay|fan` fotografiert die Ausstattung langer Tunnel (siehe `tunnel.md`). `--nowait` macht das
+  `--tunnelshot=sos|sign|bay|fan` fotografiert die Ausstattung langer Tunnel (siehe `tunnel.md`).
+  `--edgeview` setzt die Kamera an den rechten Straßenrand. `BENCH abheben` (bei jedem Benchmark) zählt die Zeit
+  über 150 km/h ohne Bodenkontakt. Welt-Prüfer: Zeile `KUPPEN` (Halbmesser der Kuppen und Senken),
+  `--profile=X,Z` druckt das Höhenprofil um eine Stelle. `--nowait` macht das
   Foto, ohne auf die Kacheln zu warten, `--jump=X,Z` springt nach dem Laden weit weg.
 - Freie Kamera: `--cam=X,Z,H --lookat=X,Z,H` (H über dem Gelände), Überblick `--fly=H --pitch=G
   --lookat=X,Z`.

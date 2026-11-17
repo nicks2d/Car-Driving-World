@@ -48,6 +48,9 @@ var flat_end: int = -1
 var max_fill: float = MAX_FILL
 ## Das Höhenprofil wird über ±profile_window Punkte geglättet
 var profile_window: int = 8
+## Kuppen und Senken ausrunden: zweimal gleitender Mittelwert über ±vertical_window Punkte (aus Knicken
+## werden Bögen wie im Straßenbau; Autobahn 40 = ±160 m, siehe _round_vertical_curves)
+var vertical_window: int = 10
 ## Kleine Zickzacks der Wegsuche bis zu dieser Abweichung (Meter) entfernen
 var simplify_tolerance: float = 4.0
 ## Größter Kurvenradius, wie weit ein Bogen höchstens von der Ecke abweicht und wie weit
@@ -995,10 +998,14 @@ func _make_profile(allow_tunnels: bool) -> bool:
 	# Über Flüsse hinweg mindestens ein paar Meter über dem Wasser bleiben
 	var over_water := PackedByteArray()
 	over_water.resize(n)
+	var water_min := PackedFloat32Array()
+	water_min.resize(n)
+	water_min.fill(-INF)
 	for i in n:
 		var water := world_gen.water_level_at(points[i].x, points[i].z, lakes)
 		if water > WorldGen.NO_WATER:
 			smooth[i] = maxf(smooth[i], water + 4.5)
+			water_min[i] = water + 4.5
 			over_water[i] = 1
 	# Auf der Staumauer liegt die Straße genau auf Kronenhöhe
 	var fixed := PackedByteArray()
@@ -1026,9 +1033,15 @@ func _make_profile(allow_tunnels: bool) -> bool:
 	for i in range(n - flat_b - 1, flat_points - 1, -1):
 		if fixed[i] == 0:
 			smooth[i] = clampf(smooth[i], smooth[i + 1] - max_step, smooth[i + 1] + max_step)
+	# Ausrunden. Ist die Steigung auf einem ganzen Stück an der Grenze (z. B. vom flachen Ende bis zur Brücke),
+	# gibt es keinen Spielraum für Bögen: deshalb nach dem Ausrunden 25 % mehr erlaubt (Autobahn 5 %,
+	# Landstraße 12,5 %), nur in den Übergängen genutzt.
+	var round_step := max_step * 1.25
+	_round_vertical_curves(smooth, fixed, flat_b, water_min)
+	_limit_steps(smooth, fixed, flat_b, round_step)
 	# Passt es trotzdem nicht (Höhenunterschied zu groß für die Länge), keine Straße
 	for i in range(1, n):
-		if absf(smooth[i] - smooth[i - 1]) > max_step + 0.01:
+		if absf(smooth[i] - smooth[i - 1]) > round_step + 0.01:
 			fail_reason = "Steigung bei Punkt %d von %d" % [i, n]
 			return false
 	# Tief unter dem Gelände: Tunnel statt Einschnitt (Rampen haben keine Tunnel)
@@ -1039,6 +1052,10 @@ func _make_profile(allow_tunnels: bool) -> bool:
 	elif not _find_tunnels(smooth, over_water):
 		fail_reason = "Tunnel zu lang"
 		return false
+	# Begradigte Tunnel machen an den Portalen neue Knicke: noch einmal ausrunden
+	if not tunnel_ranges.is_empty():
+		_round_vertical_curves(smooth, fixed, flat_b, water_min)
+		_limit_steps(smooth, fixed, flat_b, round_step)
 	# Wenn die Straße tiefe Einschnitte (außerhalb von Tunneln) oder riesige Brücken bräuchte,
 	# lieber keine Straße
 	for i in n:
@@ -1135,6 +1152,122 @@ func _dam_distance(p: Vector2) -> float:
 ## mindestens 7,5 m über der anderen liegen (Brücke darüber) oder, wenn die andere selbst
 ## hoch auf einer Brücke liegt, 7 m darunter. Die Grenzen werden nach beiden Seiten mit der
 ## erlaubten Steigung ausgedehnt, so entstehen Rampen. Unter der Brücke: keine Pfeiler.
+## Kuppen und Senken ausrunden wie im Straßenbau: Nach dem Begrenzen der Steigung hat das Profil Knicke (wo
+## die Steigung an die Grenze stößt, an den flachen Enden, an Kreuzungen). Geglättet wird die Steigung, nicht
+## die Höhe: In jedem Stück zwischen festen Punkten (flache Enden, Staumauer) zweimal gleitender Mittelwert
+## der Steigungen über ±vertical_window Punkte (aus Knicken werden Bögen), dann wieder aufsummiert; was am
+## Ende fehlt, verteilt sich gleichmäßig. Danach wieder in die Grenzen (andere Straßen, Wasser). Ein Mittelwert
+## macht die Steigung nicht größer, die Steigungsgrenze prüft _make_profile danach noch einmal.
+func _round_vertical_curves(smooth: PackedFloat32Array, fixed: PackedByteArray, flat_b: int,
+		water_min: PackedFloat32Array) -> void:
+	var n := smooth.size()
+	var w := vertical_window
+	if w <= 0 or n < 3:
+		return
+	# Feste Enden: an Kreuzungen und dort, wo Rampen ansetzen, die ganze flache Strecke. Auf der Autobahn an
+	# normalen Stützpunkten nur die letzten 4 Punkte (dort treffen sich zwei Abschnitte mit Steigung 0), sonst
+	# fehlt der Platz für die Bögen, wenn die Steigung bis zum flachen Stück an der Grenze ist.
+	var lock_a := flat_points if kind != Kind.HIGHWAY or flat_points >= 50 else mini(flat_points, 4)
+	var lock_b := flat_b if kind != Kind.HIGHWAY or flat_b >= 50 else mini(flat_b, 4)
+	var editable := PackedByteArray()
+	editable.resize(n)
+	for i in range(lock_a, n - lock_b):
+		editable[i] = 1 if fixed[i] == 0 else 0
+	# Grenzen (andere Straßen darüber/darunter, Abstand zum Wasser). Stößt das Profil an eine Grenze, entsteht
+	# dort wieder ein Knick; in mehreren Runden aus Glätten und Begrenzen wird er rund (die Straße biegt dann
+	# z. B. über einer Brücke etwas höher aus statt an der Mindesthöhe abzuknicken).
+	var max_step := max_grade * POINT_SPACING
+	var low := water_min.duplicate()
+	var high := PackedFloat32Array()
+	high.resize(n)
+	high.fill(INF)
+	for k in n:
+		if not _bound_low.is_empty():
+			low[k] = maxf(low[k], _bound_low[k])
+			high[k] = _bound_high[k]
+	_spread_bound(low, max_step, true)
+	_spread_bound(high, max_step, false)
+	for round in 6:
+		var i := 0
+		while i < n:
+			if editable[i] == 0:
+				i += 1
+				continue
+			var a := i
+			while i < n and editable[i] == 1:
+				i += 1
+			# Anker: fester Punkt davor und danach (am Rand des Abschnitts: der Punkt selbst)
+			_round_span(smooth, maxi(a - 1, 0), mini(i, n - 1), w)
+		for k in n:
+			if editable[k] == 1:
+				smooth[k] = clampf(smooth[k], low[k], maxf(high[k], low[k]))
+
+
+## Steigung begrenzen: vorwärts und rückwärts durchgehen (feste Enden wie in _round_vertical_curves und die
+## Staumauer bleiben)
+func _limit_steps(smooth: PackedFloat32Array, fixed: PackedByteArray, flat_b: int, step: float) -> void:
+	var n := smooth.size()
+	var lock_a := flat_points if kind != Kind.HIGHWAY or flat_points >= 50 else mini(flat_points, 4)
+	var lock_b := flat_b if kind != Kind.HIGHWAY or flat_b >= 50 else mini(flat_b, 4)
+	for i in range(maxi(lock_a, 1), n - lock_b):
+		if fixed[i] == 0:
+			smooth[i] = clampf(smooth[i], smooth[i - 1] - step, smooth[i - 1] + step)
+	for i in range(n - lock_b - 1, lock_a - 1, -1):
+		if fixed[i] == 0 and i + 1 < n:
+			smooth[i] = clampf(smooth[i], smooth[i + 1] - step, smooth[i + 1] + step)
+
+
+## Grenze mit der erlaubten Steigung nach beiden Seiten ausdehnen (wie in _apply_crossings), damit sie
+## überall endlich ist, wo es irgendwo eine gibt
+func _spread_bound(bound: PackedFloat32Array, max_step: float, is_low: bool) -> void:
+	var n := bound.size()
+	for k in range(1, n):
+		bound[k] = maxf(bound[k], bound[k - 1] - max_step) if is_low else minf(bound[k], bound[k - 1] + max_step)
+	for k in range(n - 2, -1, -1):
+		bound[k] = maxf(bound[k], bound[k + 1] - max_step) if is_low else minf(bound[k], bound[k + 1] + max_step)
+
+
+## Steigungen zwischen den Punkten left und right glätten (die beiden bleiben, wie sie sind). Die Steigungen
+## draußen (flache Enden: 0) zählen beim Mittelwert mit, damit der Übergang dorthin auch rund wird.
+func _round_span(smooth: PackedFloat32Array, left: int, right: int, w: int) -> void:
+	var n := smooth.size()
+	var steps := right - left
+	if steps < 2:
+		return
+	# Steigungen (pro Punktabstand) im Bereich und w Punkte davor und danach
+	var from := maxi(left - w, 0)
+	var to := mini(right + w, n - 1)
+	var grades := PackedFloat32Array()
+	grades.resize(to - from)
+	for k in to - from:
+		grades[k] = smooth[from + k + 1] - smooth[from + k]
+	var sums := PackedFloat64Array()
+	sums.resize(grades.size() + 1)
+	for filter_pass in 2:
+		for k in grades.size():
+			sums[k + 1] = sums[k] + grades[k]
+		var filtered := PackedFloat32Array()
+		filtered.resize(grades.size())
+		for k in grades.size():
+			var lo := maxi(k - w, 0)
+			var hi := mini(k + w, grades.size() - 1)
+			filtered[k] = (sums[hi + 1] - sums[lo]) / (hi - lo + 1)
+		# Nur die Steigungen im Bereich ändern sich, draußen bleibt alles
+		for k in grades.size():
+			var step_index := from + k
+			if step_index >= left and step_index < right:
+				grades[k] = filtered[k]
+	# Aufsummieren und den Rest (damit right genau getroffen wird) gleichmäßig verteilen
+	var total := 0.0
+	for step_index in range(left, right):
+		total += grades[step_index - from]
+	var correction := (smooth[right] - smooth[left] - total) / steps
+	var h := smooth[left]
+	for step_index in range(left, right - 1):
+		h += grades[step_index - from] + correction
+		smooth[step_index + 1] = h
+
+
 func _apply_crossings(smooth: PackedFloat32Array, max_step: float) -> void:
 	no_pillars = PackedVector3Array()
 	var n := points.size()

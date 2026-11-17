@@ -8,6 +8,9 @@
 // Im Tunnel (UV2.y = überdacht, nur bei normaler Straße) bleibt die Fahrbahn trocken.
 // lane_profile: 0 = Landstraße (Mittellinie gestrichelt), 1 = Autobahn (je Richtung zwei
 // Fahrstreifen, Standstreifen, Mittelstreifen), 2 = Rampe (nur Randlinien).
+// Straßenrand: Das Bankett geht mit einer weichen, unregelmäßigen Kante in Gras über (wie das Gelände),
+// in den Fahrspuren dunklere, glattere Reifenspuren, ab und zu Flickstellen (frischer, dunkler Asphalt mit
+// Fugen).
 // Autobahn mit Zusatzfahrstreifen (Verzögerungs-/Beschleunigungsstreifen): Die Punktfarbe sagt,
 // wie viel breiter die Fahrbahn links/rechts ist (COLOR.r/g × 10 m, UV.x reicht dann über 0 bzw.
 // 1 hinaus) und welche Markierung dort gilt (COLOR.b/a × 3): 1 = Blockmarkierung zum
@@ -20,6 +23,16 @@ uniform sampler2D asphalt_normal : hint_normal, filter_linear_mipmap_anisotropic
 uniform sampler2D gravel_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D gravel_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D variation_noise : filter_linear_mipmap, repeat_enable;
+// Gras am Bankett (gleiche Textur und Farbe wie im Gelände, setzt RoadNetwork beim Start)
+uniform sampler2D grass_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform vec3 grass_color : source_color = vec3(0.27, 0.45, 0.10);
+uniform float grass_scale = 4.0;
+// Breite des Banketts (Meter) und wo darin das Gras im Mittel anfängt (Anteil)
+uniform float shoulder_width = 1.5;
+uniform float grass_start = 0.55;
+// Flickstellen: so viele Meter Abstand im Mittel, Anteil der Abschnitte mit einer Flickstelle
+uniform float patch_spacing = 37.0;
+uniform float patch_share = 0.3;
 
 // Breite der Fahrbahn in Metern (setzt RoadNetwork beim Start aus seiner road_width)
 uniform float road_width = 9.0;
@@ -52,6 +65,9 @@ uniform float puddle_amount = 0.3;
 global uniform float wetness;
 global uniform float road_snow;
 global uniform float snow_cover;
+global uniform float season_spring;
+global uniform float season_autumn;
+global uniform float season_winter;
 #include "res://shaders/cloud_shadow.gdshaderinc"
 
 varying vec3 world_pos;
@@ -73,6 +89,33 @@ void vertex() {
 
 float luminance(vec3 c) {
 	return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+float hash1(float x) {
+	return fract(sin(x * 127.1 + 11.7) * 43758.5453);
+}
+
+// Flickstelle an dieser Stelle? 1 = darin, 2 = auf der Fuge am Rand, 0 = nein. across in Metern vom linken
+// Rand, Fahrbahnbreite width
+float patch_at(float across, float along, float width) {
+	float cell = floor(along / patch_spacing);
+	float h1 = hash1(cell);
+	if (h1 > patch_share) {
+		return 0.0;
+	}
+	float h2 = hash1(cell + 17.3);
+	float h3 = hash1(cell + 41.9);
+	float len = mix(3.0, 12.0, h2);
+	float start = cell * patch_spacing + hash1(cell + 5.1) * (patch_spacing - len);
+	// Quer: eine Fahrbahnhälfte, nicht ganz bis zum Rand
+	float left = h3 < 0.5 ? 0.25 : width * 0.5 + 0.05;
+	float right = left + width * mix(0.3, 0.48, hash1(cell + 2.3));
+	float u = along - start;
+	if (u < 0.0 || u > len || across < left || across > right) {
+		return 0.0;
+	}
+	float edge = min(min(u, len - u), min(across - left, right - across));
+	return edge < 0.05 ? 2.0 : 1.0;
 }
 
 void fragment() {
@@ -111,8 +154,17 @@ void fragment() {
 		wheel_tracks = smoothstep(0.5, 0.0, abs(across - 3.1)) + smoothstep(0.5, 0.0, abs(across - 4.9));
 	}
 	float junction = UV2.x;
+	// Reifenspuren: dunkler und etwas glatter, mit Unterschieden entlang der Straße
+	float track_strength = wheel_tracks * mix(0.7, 1.15, texture(variation_noise, vec2(across * 0.2, along / 30.0)).r);
 	// Kreuzungen haben keine Spuren, sind dafür insgesamt so dunkel wie eine Fahrbahn im Mittel
-	asphalt *= 1.0 - mix(wheel_tracks * 0.12, 0.04, junction);
+	asphalt *= 1.0 - mix(track_strength * 0.2, 0.04, junction);
+	// Flickstellen: frischer, dunklerer Asphalt mit Fuge (nicht auf Kreuzungen und Parkplätzen)
+	float patch = (lane_profile == 3 || junction > 0.5) ? 0.0 : patch_at(across, along, road_width);
+	if (patch > 1.5) {
+		asphalt *= 0.45;
+	} else if (patch > 0.5) {
+		asphalt = mix(asphalt, vec3(luminance(asphalt)) * 0.62, 0.8);
+	}
 
 	// --- Markierungen ---
 	float aa = fwidth(across) * 0.75;
@@ -165,9 +217,28 @@ void fragment() {
 		shoulder = max(shoulder, smoothstep(-0.05, 0.05, side - hw_shoulder - hw_lane * 2.0 - hw_inner));
 	}
 
+	// Gras am äußeren Rand des Banketts: weiche, unregelmäßige Kante (nicht auf Kreuzungen und Parkplätzen,
+	// nicht im Mittelstreifen: dort ist „outside“ 0)
+	float outside = max(max(-UV.x * road_width - aux.r * 10.0, (UV.x - 1.0) * road_width - aux.g * 10.0), 0.0);
+	float wobble = texture(variation_noise, vec2(along / 23.0, 0.37)).r * 0.6 + texture(variation_noise, vec2(along / 4.1, 0.71)).r * 0.4;
+	float grass_edge = shoulder_width * (grass_start + (wobble - 0.5) * 0.7);
+	float grass = smoothstep(grass_edge - 0.25, grass_edge + 0.25, outside) * (1.0 - junction);
+	if (lane_profile == 3) {
+		grass = 0.0;
+	}
+	vec3 green = mix(grass_color, vec3(0.30, 0.56, 0.10), season_spring * 0.7);
+	green = mix(green, vec3(0.42, 0.40, 0.15), season_autumn * 0.45 + season_winter * 0.5);
+	vec3 grass_tex = texture(grass_albedo, world_pos.xz / grass_scale).rgb;
+	vec3 grass_color_now = mix(grass_tex, luminance(grass_tex) * green * 3.2, 0.85) * mix(0.85, 1.1, noise);
+
 	vec3 albedo = mix(asphalt, line_color, paint);
 	albedo = mix(albedo, gravel, shoulder);
+	albedo = mix(albedo, grass_color_now, grass * shoulder);
 	float roughness = mix(mix(0.82, 0.6, paint), 0.95, shoulder);
+	roughness = mix(roughness, 0.75, track_strength * 0.5 * (1.0 - shoulder) * (1.0 - junction));
+	if (patch > 0.5) {
+		roughness = 0.62;
+	}
 	float normal_depth = mix(mix(0.6, 0.2, paint), 1.0, shoulder);
 
 	// --- Nässe und Pfützen (nicht im Tunnel) ---

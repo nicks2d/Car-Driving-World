@@ -20,6 +20,23 @@
   Kleinster Radius im Test 26 m, ~3 % der Strecke unter 60 m. Querneigung bis 5 % (3/R),
   sanft über ~50 m aufgebaut; `road_query.gd` berücksichtigt sie beim Gelände.
 
+- Kuppen und Senken (17.11., `RoadSegment._round_vertical_curves`): Nach dem Begrenzen der Steigung hatte
+  das Profil Knicke (wo die Steigung an die Grenze stößt, an flachen Enden, an Kreuzungen, an Tunnelportalen,
+  wo der Tunnel begradigt wird). Jetzt wird die Steigung geglättet (zweimal gleitender Mittelwert über
+  ±`vertical_window` Punkte: Landstraße 10 = ±40 m, Autobahn 40 = ±160 m, Rampen 5) und wieder aufsummiert,
+  das Fehlende gleichmäßig verteilt; in 6 Runden mit den Höhengrenzen (andere Straßen, Wasser). Danach sind
+  25 % mehr Steigung erlaubt (Autobahn 5 %, Landstraße 12,5 %), nur in den Übergängen genutzt; ohne diesen
+  Spielraum gab es dort, wo die Steigung vom flachen Ende bis zur Brücke an der Grenze lag, keinen Platz für
+  Bögen. Auf der Autobahn sind an normalen Stützpunkten nur die letzten 4 Punkte fest (statt 25), an
+  Anschlussstellen weiter alle 80. Nach Tunneln wird noch einmal ausgerundet.
+- Gemessen (Welt-Prüfer 20 × 20 km, Zeile `KUPPEN`, Halbmesser über 12 m): Landstraße vorher Halbmesser unter
+  400 m an 5,6 % der Punkte, unter 1000 m an 27,4 %, größter Knick 0,20 pro 4 m; nachher 0,39 % / 1,3 %, 0,125.
+  Autobahn vorher 2,8 % / 3,6 %, Knick 0,080, kleinster Halbmesser 150 m; nachher 0,16 % / 0,44 %, 0,044,
+  273 m (die übrigen Knicke liegen an Stützpunkten, wo eine Kreuzung das flache Ende anhebt). Abheben bei
+  250 km/h (`BENCH abheben`, `--bench=40 --highway --traffic=0 --pos=-6600,-10 --heading=90`): vorher 1,4 s
+  ohne Bodenkontakt, nachher 0; zweite Strecke (bei 6882, −1074) vorher 0,8 s, nachher 0. Abschnitte im
+  Prüfgebiet: 498 vorher, 516 nachher (nicht weniger Straßen).
+
 ## Kreuzungen und Überlappungen
 
 - Kreuzungen (`road_junction.gd`): Jeder Ort verteilt Abfahrtsrichtungen für seine bis zu

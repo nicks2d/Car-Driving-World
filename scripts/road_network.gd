@@ -217,6 +217,16 @@ func start(gen: WorldGen, follow: Node3D) -> void:
 		(ramp_material as ShaderMaterial).set_shader_parameter("edge_line_width", 0.25)
 	if parking_material is ShaderMaterial:
 		(parking_material as ShaderMaterial).set_shader_parameter("road_width", HighwayLayout.REST_WIDTH)
+	# Gras am Bankett wie im Gelände (Textur und Farbe aus dem Gelände-Material)
+	var terrain := get_node_or_null("../Terrain") as TerrainManager
+	if terrain and terrain.terrain_material is ShaderMaterial:
+		var terrain_shader := terrain.terrain_material as ShaderMaterial
+		for material: Material in [road_material, highway_material, ramp_material, parking_material]:
+			if material is ShaderMaterial:
+				(material as ShaderMaterial).set_shader_parameter("grass_albedo", terrain_shader.get_shader_parameter("grass_albedo"))
+				(material as ShaderMaterial).set_shader_parameter("grass_color", terrain_shader.get_shader_parameter("grass_color"))
+				(material as ShaderMaterial).set_shader_parameter("grass_scale", terrain_shader.get_shader_parameter("grass_scale"))
+				(material as ShaderMaterial).set_shader_parameter("shoulder_width", shoulder_width)
 
 
 # ---------------------------------------------------------------------------
@@ -1301,6 +1311,7 @@ func _make_highway_segment(key: Vector3i) -> RoadSegment:
 	segment.flat_points = 25
 	segment.max_fill = 120.0
 	segment.profile_window = 25
+	segment.vertical_window = 40
 	segment.simplify_tolerance = 12.0
 	segment.max_curve_radius = 8000.0
 	segment.curve_bulge = 40.0
@@ -1436,6 +1447,7 @@ func _make_interchange_segment(key: Vector3i) -> RoadSegment:
 	segment.follow_ground = false
 	segment.flat_points = 3
 	segment.profile_window = 6
+	segment.vertical_window = 5
 	segment.fixed_path = path
 	var highway_height := point.y + RAMP_LIFT
 	segment.start = Vector3(a.x, highway_height if exit else connector_height, a.y)
@@ -1476,6 +1488,7 @@ func _make_rest_segment(key: Vector3i) -> RoadSegment:
 	segment.follow_ground = false
 	segment.flat_points = 3
 	segment.profile_window = 6
+	segment.vertical_window = 5
 	segment.fixed_path = path
 	# Am Ende auf der Autobahn etwas höher (liegt im Zusatzfahrstreifen)
 	segment.start = Vector3(a.x, height + (RAMP_LIFT if part == 1 else 0.0), a.y)

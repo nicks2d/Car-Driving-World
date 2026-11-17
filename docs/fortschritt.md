@@ -74,3 +74,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
   Tunnelname am Portal)
 - [x] Teil 3 (17.11.): Bäume in drei Stufen (detailliert, mittel, Impostor), weiche Übergänge zwischen den
   Detailstufen, Baumgruppen, Lichtungen, Waldränder, Schilf und Steine am Ufer
+- [x] Teil 4 (17.11.): Fels ohne sichtbare Wiederholung, Grasrand am Bankett, Reifenspuren, Flickstellen,
+  Kuppen und Senken ausgerundet (bei 250 km/h kein Abheben mehr)

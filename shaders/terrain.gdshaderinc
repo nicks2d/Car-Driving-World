@@ -94,6 +94,15 @@ float luminance(vec3 c) {
 	return dot(c, vec3(0.299, 0.587, 0.114));
 }
 
+// Fels gegen sichtbare Wiederholung: dieselbe Textur noch einmal gedreht und 2,7-mal größer, beide nach
+// einem Rauschen gemischt (große Flecken), dazu Helligkeit in groß und klein
+vec3 rock_sample(vec2 uv, float blend) {
+	vec3 a = texture(rock_albedo, uv).rgb;
+	vec2 big = mat2(vec2(0.79, 0.61), vec2(-0.61, 0.79)) * uv * 0.37 + vec2(0.31, 0.77);
+	vec3 b = texture(rock_albedo, big).rgb;
+	return mix(a, b, blend);
+}
+
 // Durchschnittsfarben der Texturen (linear). Damit sehen weit entferntes Gelände und
 // der Horizont-Ring genauso aus wie die Texturen aus der Nähe.
 const vec3 GRASS_MEAN = vec3(0.319, 0.236, 0.106);
@@ -196,7 +205,18 @@ void fragment() {
 		vec2 uv_x = world_pos.zy / rock_scale;
 		vec2 uv_y = world_pos.xz / rock_scale;
 		vec2 uv_z = world_pos.xy / rock_scale;
-		vec3 rock = texture(rock_albedo, uv_x).rgb * w.x + texture(rock_albedo, uv_y).rgb * w.y + texture(rock_albedo, uv_z).rgb * w.z;
+		// Mischung der beiden Maßstäbe: großflächig wechselnd (Rauschen in Welt-Koordinaten, auch an Wänden)
+		float rock_blend = smoothstep(0.3, 0.7, texture(variation_noise, (world_pos.xz + world_pos.yy * 0.7) / 41.0).r);
+		vec3 rock = vec3(0.0);
+		if (rock_w > 0.01) {
+			if (w.x > 0.02) { rock += rock_sample(uv_x, rock_blend) * w.x; }
+			if (w.y > 0.02) { rock += rock_sample(uv_y, rock_blend) * w.y; }
+			if (w.z > 0.02) { rock += rock_sample(uv_z, rock_blend) * w.z; }
+			rock /= max(w.x * step(0.02, w.x) + w.y * step(0.02, w.y) + w.z * step(0.02, w.z), 0.001);
+		}
+		// Helligkeit in groß (Schichten, Verwitterung) und klein, damit die Wand nicht gleichförmig wirkt
+		float strata = texture(variation_noise, vec2(world_pos.x * 0.013 + world_pos.z * 0.009, world_pos.y * 0.09)).r;
+		rock *= mix(0.78, 1.18, strata) * mix(0.9, 1.08, small_noise);
 		rock = grade_rock(rock, mid_noise);
 		vec3 tx = unpack_normal(texture(rock_normal, uv_x));
 		vec3 ty = unpack_normal(texture(rock_normal, uv_y));
