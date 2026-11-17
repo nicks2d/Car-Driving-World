@@ -14,6 +14,8 @@ extends Node3D
 ##    eigenen Blinkergläsern; nur wo das nicht geht, setzt CarSignals Kästchen (indicator_covered)
 ##  - Scheinwerfer mit Projektor-Bild: Abblendlicht mit scharfer Hell-Dunkel-Grenze, Fernlicht
 ##  - Begrüßungslicht in der Garage (play_welcome): Tagfahrlicht, Scheinwerfer, Rücklicht, Motorstart
+##  - Wetter am Auto (Werte von CarWeather): Tropfen und Schnee als Zusatzdurchgang über dem Lack
+##    (shaders/car_paint_fx.gdshader), Tropfen, Eis und Schnee im Glas; Kontaktschatten unter dem Auto
 ##  - Karosserie nickt und wankt mit der Beschleunigung (nur das Modell, die Physik bleibt gleich).
 ##    Kennzeichen, Scheinwerfer und Lenkrad hängen deshalb am Modell, die Räder an den Physik-Rädern.
 ## Ohne Modell bleibt die Platzhalter-Box. Als Kind eines Car fährt es mit; sonst (Vorschau
@@ -93,6 +95,10 @@ var indicator_covered: Array[bool] = [false, false, false]
 ## Projektor-Bilder der Scheinwerfer (einmal berechnet)
 static var _low_beam: ImageTexture
 static var _high_beam: ImageTexture
+## Wetter am Auto (CarWeather): nass, Schnee, Eis (0–1); Zusatzdurchgang über dem Lack; Kontaktschatten
+var _fx := Vector3.ZERO
+var _paint_fx: ShaderMaterial
+var _contact_shadow: Decal
 ## Begrüßungslicht: Sekunden seit dem Start (negativ = aus), Spieler für den Motorstart
 var _welcome_time: float = -1.0
 var _welcome_sound: AudioStreamPlayer
@@ -229,10 +235,23 @@ func _process(_delta: float) -> void:
 		_glass.set_shader_parameter("car_inverse", Projection(_car.global_transform.affine_inverse()))
 		_glass.set_shader_parameter("window_open", _car.windows_open)
 		_glass.set_shader_parameter("car_speed", _car.linear_velocity.length())
-		# Tropfen nur, solange es regnet (die Variante mit Tropfen greift das ganze Bild ab)
-		var wanted := RAIN_GLASS if Weather.rain_now > 0.01 else DRY_GLASS
+		# Tropfen nur, solange das Auto nass ist (die Variante mit Tropfen greift das ganze Bild ab)
+		var wanted := RAIN_GLASS if _fx.x > 0.01 else DRY_GLASS
 		if _glass.shader != wanted:
 			_glass.shader = wanted
+		_glass.set_shader_parameter("wet", _fx.x)
+		_glass.set_shader_parameter("snow", _fx.y)
+		_glass.set_shader_parameter("frost", _fx.z)
+	# Tropfen und Schnee auf dem Lack: Zusatzdurchgang nur, solange es etwas zu zeigen gibt (kostet sonst)
+	if _paint and _paint_fx:
+		var show_fx := _fx.x > 0.01 or _fx.y > 0.01
+		_paint.next_pass = _paint_fx if show_fx else null
+		if show_fx:
+			_paint_fx.set_shader_parameter("car_inverse", Projection(_car.global_transform.affine_inverse()))
+			_paint_fx.set_shader_parameter("car_basis", _car.global_basis)
+			_paint_fx.set_shader_parameter("car_speed", _car.linear_velocity.length())
+			_paint_fx.set_shader_parameter("wet", _fx.x)
+			_paint_fx.set_shader_parameter("snow", _fx.y)
 		if _glass_box.size != Vector3.ZERO:
 			_glass.set_shader_parameter("top_y", _glass_box.end.y)
 			_glass.set_shader_parameter("belt_y", _glass_box.position.y + _glass_box.size.y * 0.35)
@@ -442,6 +461,7 @@ func _build(scene: PackedScene) -> void:
 	_set_stickers(stickers_visible)
 	_set_placeholder(false)
 	_place_plates(body)
+	_add_contact_shadow()
 	set_cockpit_view(_cockpit_view)
 
 
@@ -928,6 +948,8 @@ func _make_materials() -> void:
 	_paint.clearcoat_enabled = true
 	_paint.clearcoat = clearcoat
 	_paint.clearcoat_roughness = clearcoat_roughness
+	_paint_fx = ShaderMaterial.new()
+	_paint_fx.shader = preload("res://shaders/car_paint_fx.gdshader")
 	var points := _profile.indicator_points
 	_head_glow = _lamp_material(Color(0.9, 0.92, 0.95), Color(1.0, 0.96, 0.88), points[0] if points.size() > 0 else Vector3.DOWN * 100.0)
 	_tail_glow = _lamp_material(Color(0.5, 0.02, 0.02), Color(1.0, 0.05, 0.03), points[1] if points.size() > 1 else Vector3.DOWN * 100.0)
@@ -1339,4 +1361,21 @@ func _play_engine_start() -> void:
 	_welcome_sound.stream = wav
 	_welcome_sound.volume_db = welcome_volume_db
 	_welcome_sound.play()
+
+
+## Wetter am Auto setzen (CarWeather, jedes Bild): nass, Schnee, Eis (0–1)
+func set_weather_fx(wet: float, snow: float, frost: float) -> void:
+	_fx = Vector3(wet, snow, frost)
+
+
+## Weicher Kontaktschatten auf dem Boden unter dem Auto (nicht auf dem eigenen Auto: Ebene 11 aus)
+func _add_contact_shadow() -> void:
+	if _car == null:
+		return
+	_contact_shadow = ContactShadow.make(Vector2(_profile.body_size.x, _profile.body_size.z))
+	_contact_shadow.cull_mask = 0xFFFFF & ~OWN_CAR_LAYER
+	var ground := Car.resting_wheel_center(_profile, 0).y - _profile.wheel_radius
+	_contact_shadow.position = Vector3(0.0, ground + 0.15, _profile.body_center.z)
+	_car.add_child(_contact_shadow)
+	_extra_nodes.append(_contact_shadow)
 

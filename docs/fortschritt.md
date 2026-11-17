@@ -64,3 +64,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
 - [x] Teil 3 (16.11.): Blinker im Glas der Modelle (Spiegelblinker bei F90 und M4 CSL), Begrüßungslicht
   mit Motorstart in der Garage, Scheinwerfer mit Projektor-Bild (Abblend- und Fernlicht)
 - [x] Teil 4 (16.11.): 2WD-Modus für beide M5 (Taste U, Drift 4° → 30°), Zurückspulen bis 10 s mit Verkehr
+- [x] Teil 5 (17.11.): Regentropfen auf Lack und Scheiben, Schnee auf dem Auto, vereiste Scheiben am kalten
+  Morgen, weicher Kontaktschatten unter eigenem Auto und Verkehr

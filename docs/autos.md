@@ -302,6 +302,30 @@
   Rauschen mit Pfeifen, das beim Spulen tiefer wird (1,25 → 0,55). Test: `--rewindtest` (nach 2,5 s
   Spulen steht das Auto wieder dort, wo es 5 s vorher war).
 
+## Wetter am Auto und Kontaktschatten (17.11.)
+
+- `scripts/car_weather.gd` (Knoten CarWeather im Auto) rechnet aus, wie nass, verschneit und vereist das
+  Auto ist (je 0–1); CarModel zeichnet es (`set_weather_fx`). Gemeinsame Shader-Funktionen:
+  `shaders/car_weather.gdshaderinc` (Tropfen, Schnee, Eis).
+- Nässe: bei Regen in 4 s, danach trocknet es im Stand in 2 min, bei 100 km/h fünfmal so schnell (im Tunnel
+  kommt kein Regen dazu). Tropfen auf dem Lack: Zusatzdurchgang `shaders/car_paint_fx.gdshader` (next_pass
+  des Lacks, nur solange nass oder verschneit): kleine glänzende Perlen (Normale gekippt, sonst
+  durchsichtig), auf schrägen Flächen laufen sie, beim Fahren weht der Fahrtwind sie nach hinten (ab
+  90 km/h voll). Auf den Scheiben dieselben Tropfen mit Brechung (Variante `car_glass_rain` nur, solange
+  das Auto nass ist, also auch beim Abtrocknen nach dem Regen).
+- Schnee: wächst in 90 s auf nach oben zeigenden Flächen (Dach, Haube, Kofferraum, flache Scheiben), solange
+  es schneit und das Auto unter 8 km/h fährt; ab 25 km/h weht er weg (bei 90 km/h in etwa 6 s), über 1 °C
+  taut er in 2,5 min. Seitenwände bleiben frei (erst ab deutlich nach oben zeigenden Flächen).
+- Eis: Unter 0 °C zwischen 5 und 10 Uhr sind die Scheiben vereist, auch schon beim Start. Beim Fahren tauen
+  sie in 40 s ab (ab 50 km/h, darunter langsamer), von unten her mit Eisblumen-Rand; im Stand frieren sie
+  in 3 min wieder zu. Von innen fast blind (Deckkraft 0,88), wie echt.
+- Kontaktschatten (`scripts/contact_shadow.gd`): Decal mit weichem schwarzem Fleck (64 × 64, im Code
+  gezeichnet) unter dem eigenen Auto (Grundfläche + 1,3 m quer, + 1,2 m längs, nicht auf dem Auto selbst:
+  Ebene 11 ausgelassen) und unter jedem Verkehrsauto (blendet ab 55 m aus, weg bei 70 m). Erst war der Fleck
+  so klein, dass er ganz unter dem Auto lag und nichts zu sehen war; mit einem roten Test-Decal gefunden.
+- Test-Fotos: `--carfx=W,S,F` setzt nass, Schnee, Eis fest (z. B. `--carfx=-1,1,-1 --weather=snow
+  --season=winter` für Schnee auf dem Auto, `--carfx=-1,-1,1 --season=winter --time=7.5` für Eis).
+
 ## Prüfstand
 
 - Prüfstand (`dyno.gd`, `Dyno`, Garage > Prüfstand): eigene 3D-Welt (SubViewport), im Code gebaut:

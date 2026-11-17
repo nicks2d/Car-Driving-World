@@ -84,7 +84,7 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
   `--bench=12 --highway`) fährt in die Leitplanke (Funken, Schlag, Kamera-Ruck, siehe `autos.md`).
   `--rewindtest` (mit `--bench=17 --highway`) spult 2,5 s zurück (Fotos `rewind_1`, `rewind_2`),
   `--drifttest` (mit `--bench=12 --highway --car=f90 --2wd`) zeigt einen Power-Drift (`drift_1/2`),
-  `--2wd` startet im 2WD-Modus. `--nowait` macht das
+  `--2wd` startet im 2WD-Modus, `--carfx=W,S,F` setzt Nässe, Schnee und Eis am Auto fürs Foto. `--nowait` macht das
   Foto, ohne auf die Kacheln zu warten, `--jump=X,Z` springt nach dem Laden weit weg.
 - Freie Kamera: `--cam=X,Z,H --lookat=X,Z,H` (H über dem Gelände), Überblick `--fly=H --pitch=G
   --lookat=X,Z`.

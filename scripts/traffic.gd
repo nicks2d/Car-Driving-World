@@ -25,6 +25,8 @@ extends Node3D
 ## Dichte: 0 = aus, 0.5 = wenig, 1 = normal (Einstellungen)
 @export_range(0.0, 1.0) var density: float = 1.0
 @export var max_cars: int = 25
+## Bis zu dieser Entfernung (m) haben Verkehrsautos einen weichen Kontaktschatten (ContactShadow)
+@export var contact_shadow_distance: float = 70.0
 ## Ein Auto pro so viele Meter je Fahrtrichtung (Landstraße, Autobahn)
 @export var road_spacing: float = 2500.0
 @export var highway_spacing: float = 450.0
@@ -425,6 +427,13 @@ func _spawn(type: String, leg: Leg, s: float, fast: bool) -> void:
 	# Licht zeigt nach -Z, das Auto nach +Z: umdrehen und leicht nach unten
 	traffic_car.light.rotation = Vector3(deg_to_rad(-6.0), PI, 0.0)
 	traffic_car.node.add_child(traffic_car.light)
+	# Weicher Kontaktschatten (nur in der Nähe)
+	var shadow := ContactShadow.make(Vector2(traffic_car.width, traffic_car.length))
+	shadow.position = Vector3(0.0, 0.15, 0.0)
+	shadow.distance_fade_enabled = true
+	shadow.distance_fade_begin = contact_shadow_distance - 15.0
+	shadow.distance_fade_length = 15.0
+	traffic_car.node.add_child(shadow)
 	add_child(traffic_car.node)
 	var pose := _pose(leg, s, leg.lateral)
 	traffic_car.position = pose[0]

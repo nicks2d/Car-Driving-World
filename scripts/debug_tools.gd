@@ -105,6 +105,8 @@ extends Node
 ##                und rewind_2 danach, Ausgabe: wie weit das Auto von seiner Lage 5 s vorher entfernt ist
 ## --drifttest   mit --bench --highway: nach 6 s auf 50 km/h bremsen, dann halb links lenken und Vollgas
 ##                (Power-Drift, z. B. mit --car=f90 --2wd), Fotos drift_1 und drift_2, größter Driftwinkel
+## --carfx=W,S,F  Wetter am Auto fürs Foto fest setzen: nass, Schnee, Eis (je 0–1, -1 = berechnen),
+##                z. B. --carfx=1,-1,-1 für Tropfen ohne Regen oder --carfx=-1,1,-1 für Schnee auf dem Auto
 ## --2wd          mit 2WD-Modus starten (nur Autos mit two_wd_switch, z. B. --car=f90)
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
@@ -263,6 +265,8 @@ var _rewind_test: bool = false
 var _rewind_step: int = 0
 var _rewind_mark := Vector3.ZERO
 var _two_wd: bool = false
+## Wetter am Auto (--carfx): nass, Schnee, Eis, negativ = berechnen
+var _car_fx := Vector3(-1.0, -1.0, -1.0)
 ## Drift-Test (--drifttest): Schritt, Zeitpunkt des Gasgebens, größter Driftwinkel
 var _drift_test: bool = false
 var _drift_step: int = 0
@@ -349,6 +353,9 @@ func _ready() -> void:
 				_rewind_test = true
 			"2wd":
 				_two_wd = true
+			"carfx":
+				var fx := value.split(",")
+				_car_fx = Vector3(float(fx[0]), float(fx[1]) if fx.size() > 1 else -1.0, float(fx[2]) if fx.size() > 2 else -1.0)
 			"drifttest":
 				_drift_test = true
 			"noplate":
@@ -474,6 +481,8 @@ func on_world_ready(game: Node3D) -> void:
 		_place_car_view_camera()
 	if _steer != "":
 		Input.action_press("steer_left" if _steer == "left" else "steer_right")
+	if _car_fx != Vector3(-1.0, -1.0, -1.0):
+		(game.car.get_node("CarWeather") as CarWeather).forced = _car_fx
 	if _two_wd and game.car is Car:
 		(game.car as Car).two_wheel_drive = true
 	if _mirror_fps >= 0.0:

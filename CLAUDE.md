@@ -128,4 +128,5 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
 - [x] Cockpit- und Ego-Sicht (Tab): Lenkrad 14:1, Kombiinstrument, Spiegel, Kopfbewegung ·
   Kamera mit Feder, Karosserie nickt und wankt, Kollisionen mit Funken und Schleifen ·
   Blinker im Lampenglas, Begrüßungslicht, Scheinwerfer mit Hell-Dunkel-Grenze ·
-  2WD-Modus der M5, Zurückspulen bis 10 s (mit Verkehr)
+  2WD-Modus der M5, Zurückspulen bis 10 s (mit Verkehr) · Tropfen, Schnee und Eis am Auto,
+  Kontaktschatten

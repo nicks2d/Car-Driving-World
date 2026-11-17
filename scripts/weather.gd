@@ -135,8 +135,9 @@ const CHANCES: Array = [
 @export var lightning_max_seconds: float = 14.0
 
 ## -1 = automatisch wechseln, sonst feste Wetterlage (Kind)
-## Aktuelle Regenstärke 0–1 (wie der Shader-Wert rain_amount; für CarModel: Tropfen auf den Scheiben)
+## Aktuelle Regen- und Schneestärke 0–1 (wie die Shader-Werte; für CarWeather: Tropfen und Schnee am Auto)
 static var rain_now: float = 0.0
+static var snow_now: float = 0.0
 
 var mode: int = -1
 ## Wetterlage, auf die gerade zugesteuert wird
@@ -188,6 +189,7 @@ var _cloud_offset: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
+	add_to_group("weather")
 	_rng.randomize()
 	_change_timer = _rng.randf_range(change_min_minutes, change_max_minutes) * 60.0
 	_create_valley_fog()
@@ -419,6 +421,7 @@ func _apply(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("season_winter", w[Season.WINTER])
 	RenderingServer.global_shader_parameter_set("rain_amount", _current["rain"])
 	rain_now = _current["rain"]
+	snow_now = _current["snow"]
 	RenderingServer.global_shader_parameter_set("weather_wind", _current["wind"])
 	# Wolkenschatten: ziehen mit dem Wind übers Land; nur bei Sonne und nicht ganz zugezogen
 	_cloud_offset += cloud_shadow_wind * _current["wind"] * delta
