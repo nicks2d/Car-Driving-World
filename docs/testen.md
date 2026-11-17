@@ -96,7 +96,7 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
   `--profile=X,Z` druckt das Höhenprofil um eine Stelle.
   Jeder Benchmark druckt `BENCH langsam 1–12` (langsamste Bilder mit Rechenzeit der Teile, `FrameCosts`).
   `--rainat=S` lässt im Benchmark nach S Sekunden Regen einsetzen, `--nowarmup` schaltet das Vorab-Übersetzen
-  der Shader ab. `--nowait` macht das
+  der Shader ab. `--nonear` (ohne nahe Detail-Bäume) und `--noimpostor` (ferne Bäume als Modelle) zum Messen. `--nowait` macht das
   Foto, ohne auf die Kacheln zu warten, `--jump=X,Z` springt nach dem Laden weit weg.
 - Freie Kamera: `--cam=X,Z,H --lookat=X,Z,H` (H über dem Gelände), Überblick `--fly=H --pitch=G
   --lookat=X,Z`.

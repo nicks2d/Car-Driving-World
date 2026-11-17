@@ -61,6 +61,11 @@ func _ready() -> void:
 		# Tests: festes Wetter (Standard klar, Sommer), damit Bilder und Messungen vergleichbar sind
 		if debug_tools.is_active():
 			weather.set_debug(debug_tools.weather_id, debug_tools.season_id)
+	# Vergleichsmessungen (DebugTools): ohne nahe Detail-Bäume bzw. ohne Impostoren
+	if OS.get_cmdline_user_args().has("--nonear"):
+		terrain.near_tree_distance = 0.0
+	if OS.get_cmdline_user_args().has("--noimpostor"):
+		terrain.use_impostors = false
 	terrain.start(world_gen, car, roads)
 	horizon.start(world_gen, car, terrain)
 	water.start(world_gen, car, roads)

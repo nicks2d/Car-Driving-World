@@ -119,6 +119,8 @@ extends Node
 ##                Fahrspuren (Landstraße: das Auto steht auf der rechten Spur)
 ## --rainat=S     mit --bench: nach S Sekunden setzt Regen ein (erster Regen: ruckelt es beim Übersetzen der
 ##                Shader? Siehe BENCH langsam); --nowarmup schaltet das Vorab-Übersetzen ab (Vergleich)
+## --nonear       ohne die sehr detaillierten nahen Bäume (nur die mittlere Version), zum Messen der Kosten
+## --noimpostor   ferne Bäume als einfache Modelle statt Impostoren, zum Messen der Kosten
 ## --2wd          mit 2WD-Modus starten (nur Autos mit two_wd_switch, z. B. --car=f90)
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,

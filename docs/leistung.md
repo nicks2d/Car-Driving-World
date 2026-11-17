@@ -110,3 +110,9 @@ mindestens 60. Einzelne Kosten (SSR, Glas, Modelle …) stehen auch bei ihrem Th
   sind; Verdecker für das Gelände müssten mit jeder nachgeladenen Kachel neu eingebaut werden (Godot baut dann
   seine Verdecker-Struktur neu, das droht neue Ruckler). Das wäre ein eigener, größerer Schritt mit Messung im
   Tal, Tunnel und Dorf.
+- Messung am Ende der Sitzung (17.11., Mac nach vielen Stunden Dauerlast heiß, am Netzteil, Hoch, `--full`):
+  `tools/bench_compare.sh 65856d4 2 hoch` (Sitzungsbeginn gegen jetzt): alt 45,9 / 37,5 FPS (1%-Low 24,4 / 21,0),
+  neu 29,9 / 33,0 (15,9 / 18,5), GPU 83–85 %. Gleicher Stand zweimal hintereinander gemessen: 38,1 und 29,7 FPS
+  – die Wärme verschiebt mehr als die Unterschiede. Kosten einzeln (`--nonear`, `--noimpostor`, je einmal):
+  im Rauschen. Gültig ist erst die Messung mit kühlem Mac (nach einer Pause, Netzteil, abwechselnd):
+  `tools/bench_compare.sh 65856d4 2 hoch`, dazu `--nonear` und `--noimpostor`, wenn „neu“ langsamer ist.

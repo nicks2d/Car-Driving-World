@@ -55,6 +55,8 @@ extends Node3D
 ## dahinter die mittlere Version, ab Detailstufe 2 Impostoren (Bilder). Übergang gerastert über so viele Meter.
 @export var near_tree_distance: float = 170.0
 @export var near_tree_fade: float = 35.0
+## Ferne Bäume als Impostoren (aus: einfache Modelle wie früher; zum Vergleichen der Leistung)
+@export var use_impostors: bool = true
 ## So lange (Sekunden) blenden Gelände und Pflanzen beim Wechsel der Detailstufe über
 @export var lod_fade_time: float = 0.6
 
@@ -383,9 +385,9 @@ func _apply_vegetation(chunk: Chunk, job: TerrainChunkJob) -> void:
 		if (kind == "bush" or kind == "reed") and job.lod > 1:
 			continue
 		var nodes: Array = []
-		if tree and job.lod == 0:
+		if tree and job.lod == 0 and near_tree_distance > 0.0:
 			nodes = _near_trees(chunk, kind, buffer, job.tree_quarters.get(kind, []))
-		elif tree and job.lod >= 2 and _impostors.ready_to_use:
+		elif tree and job.lod >= 2 and _impostors.ready_to_use and use_impostors:
 			nodes = [_veg_instance(chunk, buffer, _impostors.quad_mesh(), _impostor_material(kind, false))]
 		else:
 			var mesh: Mesh = _veg_meshes[kind][0 if job.lod <= 1 else 1]
