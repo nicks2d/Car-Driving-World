@@ -176,9 +176,14 @@ class TrafficCar:
 	var shown_left: bool = false
 	var shown_right: bool = false
 	var shown_shadow: bool = false
+	## Zurückspulen (Rewind): seit wann es aufgezeichnet wird und der Fahrzustand je Physik-Schritt [Zeit, Zustand]
+	var born: float = -1.0
+	var snapshots: Array = []
 
 
 var _cars: Array[TrafficCar] = []
+## Wird gerade zurückgespult? Dann fährt der Verkehr nicht selbst, Rewind stellt die Lage ein
+var rewinding: bool = false
 var _rng := RandomNumberGenerator.new()
 var _spawn_timer: float = 0.0
 var _count_timer: float = 0.0
@@ -231,6 +236,8 @@ func car_count() -> int:
 
 
 func _physics_process(delta: float) -> void:
+	if rewinding:
+		return
 	_upgrade_parked(delta)
 	if roads == null or roads.world_gen == null or car == null:
 		return
@@ -1803,3 +1810,74 @@ func _quad(tool: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, no
 	# Godot: Vorderseite im Uhrzeigersinn
 	for p: Vector3 in [a, c, b, a, d, c]:
 		tool.add_vertex(p)
+
+
+# ---------------------------------------------------------------------------
+# Zurückspulen (Rewind, Taste Rücktaste)
+# ---------------------------------------------------------------------------
+
+## Fahrzustand jedes Autos aufzeichnen (jeden Physik-Schritt), älter als keep Sekunden fällt weg
+func record(time: float, keep: float) -> void:
+	for c in _cars:
+		if c.born < 0.0:
+			c.born = time
+		c.snapshots.append([time, {"leg": c.leg, "s": c.s, "lateral": c.lateral, "lane_target": c.lane_target,
+			"speed": c.speed, "plan": c.plan.duplicate(), "curve": c.curve, "curve_length": c.curve_length,
+			"curve_t": c.curve_t, "next": c.next, "blink": c.blink, "blink_timer": c.blink_timer,
+			"hazard": c.hazard, "crash_timer": c.crash_timer, "merge_end": c.merge_end,
+			"decide_timer": c.decide_timer, "right_free_time": c.right_free_time, "braking": c.braking}])
+		while c.snapshots.size() > 1 and (c.snapshots[0][0] as float) < time - keep:
+			c.snapshots.pop_front()
+
+
+## Aufzeichnung verwerfen (z. B. nach einem Sprung des Spielers)
+func clear_records() -> void:
+	for c in _cars:
+		c.born = -1.0
+		c.snapshots.clear()
+
+
+## Jedes Auto in den Zustand zur Zeit time setzen. Autos, die es da noch nicht gab, sind unsichtbar.
+## finish = true: Zurückspulen ist vorbei, spätere Aufzeichnung fällt weg, Autos ohne Vergangenheit
+## werden entfernt und der Verkehr fährt von hier aus weiter.
+func show_time(time: float, finish: bool) -> void:
+	for c in _cars.duplicate():
+		if c.born < 0.0 or c.born > time or c.snapshots.is_empty():
+			if finish:
+				_remove(c)
+			else:
+				c.node.visible = false
+				if c.body:
+					c.body.global_position = c.position + Vector3.DOWN * 500.0
+			continue
+		# Letzter Zustand vor oder genau zu dieser Zeit (von hinten suchen: meist nah am Ende)
+		var index: int = c.snapshots.size() - 1
+		while index > 0 and (c.snapshots[index][0] as float) > time:
+			index -= 1
+		var state: Dictionary = c.snapshots[index][1]
+		c.leg = state["leg"]
+		c.s = state["s"]
+		c.lateral = state["lateral"]
+		c.lane_target = state["lane_target"]
+		c.speed = state["speed"]
+		c.plan.assign(state["plan"])
+		c.curve = state["curve"]
+		c.curve_length = state["curve_length"]
+		c.curve_t = state["curve_t"]
+		c.next = state["next"]
+		c.blink = state["blink"]
+		c.blink_timer = state["blink_timer"]
+		c.hazard = state["hazard"]
+		c.crash_timer = state["crash_timer"]
+		c.merge_end = state["merge_end"]
+		c.decide_timer = state["decide_timer"]
+		c.right_free_time = state["right_free_time"]
+		c.braking = state["braking"]
+		c.node.visible = true
+		_update_pose(c)
+		_place(c)
+		if finish:
+			c.snapshots.resize(index + 1)
+	if finish:
+		rewinding = false
+

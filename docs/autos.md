@@ -276,6 +276,32 @@
   `crash_0` beim Einlenken bis `crash_3`). Ergebnis 16.11.: Aufprall bei 118 km/h mit voller Stärke, 3 s
   Schrammen; in der Aufnahme (`--record`) liegt der Schlag 5 dB über dem Motor, das Schleifen 3 dB.
 
+## 2WD-Modus der M5 und Zurückspulen (16.11.)
+
+- 2WD (Taste U, nur M5 F90 und M5 G90: `two_wd_switch`, nur unter 10 km/h): Die ganze Antriebskraft geht
+  nach hinten, Stabilitätshilfe und Leistungsbegrenzung im Drift sind aus, HUD-Chip „2WD · ESP aus“.
+  Übersteuern beim Gasgeben nimmt dann `two_wd_oversteer` (0,14, wie ein Hecktriebler) statt
+  `power_oversteer` (F90 0,07, G90 0,05, passend zum Allrad), und es zählt der ganze Hinterachs-Anteil.
+  Allrad fährt sich unverändert.
+- Messung (`tools/grip_test.gd --cars=f90,g90`, Stufe sport, 16.11.): Power-Drift-Schwimmwinkel Allrad
+  4° / 4°, 2WD 30° / 31° (zum Vergleich M4 CSL 24°, M2 20°). Ausweichen 6–7°, Handbremse 33° bzw. 31°
+  (am Ende 26° / 27° statt 21° / 19°), Kurvengrenze unverändert 1,68 g. Mit `--drifttest --car=f90 --2wd`
+  im Spiel: bei 49 km/h Vollgas mit halbem Lenkeinschlag dreht sich der F90 bis 105° (ganz herum).
+  Das Messwerkzeug hat jetzt `--2wd` und `--trace`; beim ersten Auto wirkte eine Einstellung vor dem
+  ersten Test nicht (dessen `_ready` läuft erst später), deshalb setzt `_start` sie jetzt.
+- Zurückspulen (`scripts/rewind.gd`, Taste Rücktaste halten): bis zu 10 s, doppelt so schnell wie die
+  Zeit lief. Jeden Physik-Schritt aufgezeichnet: Lage, Tempo, Drehung, Lenkung, Lenkwinkel, Gang, Drehzahl,
+  Gas und die Lage der Kamera. Beim Spulen ist das Auto eingefroren und wird Schritt für Schritt
+  zurückgesetzt, die Kamera steht dort, wo sie damals war (auch im Cockpit), Motorsound folgt der
+  Drehzahl. Beim Loslassen fährt es mit dem damaligen Tempo weiter, die spätere Aufzeichnung fällt weg.
+  Der Verkehr spult mit: Jedes Auto speichert jeden Physik-Schritt seinen Fahrzustand (Stück, Lage,
+  Spur, Tempo, Plan, Kurve, Blinker …, `Traffic.record`), beim Spulen wird er zurückgeholt; Autos, die
+  es damals noch nicht gab, sind unsichtbar und werden danach entfernt. Wetter und Uhrzeit laufen weiter.
+  Springt das Auto (Reset, Karte, Garage), beginnt die Aufzeichnung neu. Bildeffekt
+  (`shaders/rewind.gdshader`): fast schwarz-weiß, bläulich, Streifen, Störband, „◀◀ ZURÜCK“; Ton:
+  Rauschen mit Pfeifen, das beim Spulen tiefer wird (1,25 → 0,55). Test: `--rewindtest` (nach 2,5 s
+  Spulen steht das Auto wieder dort, wo es 5 s vorher war).
+
 ## Prüfstand
 
 - Prüfstand (`dyno.gd`, `Dyno`, Garage > Prüfstand): eigene 3D-Welt (SubViewport), im Code gebaut:

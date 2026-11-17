@@ -87,6 +87,10 @@ signal flashed
 var turn_signal: int = 0
 var hazard: bool = false
 var signal_lit: bool = false
+## 2WD-Modus (nur Autos mit two_wd_switch, Taste U): Heckantrieb, Stabilitätshilfe aus
+var two_wheel_drive: bool = false
+## Bis zu diesem Tempo (km/h) lässt sich 2WD umschalten
+const TWO_WD_MAX_KMH: float = 10.0
 
 ## Werte der Grip-Stufen. grip: Faktor auf den Reifen-Grip, oversteer: Faktor auf
 ## power_oversteer, stability: Stabilitätshilfe (0 = aus), steer_fast: Lenkgeschwindigkeit
@@ -175,6 +179,7 @@ func apply_profile(new_profile: CarProfile) -> void:
 	_set_box($CabinShape, $CabinMesh, profile.cabin_size, profile.cabin_center)
 	gear = 1
 	engine_rpm = profile.idle_rpm
+	two_wheel_drive = false
 	profile_changed.emit(profile)
 
 
@@ -202,6 +207,8 @@ func _physics_process(delta: float) -> void:
 	_apply_stability(delta)
 	_apply_aerodynamics(forward_speed)
 
+	if Input.is_action_just_pressed("toggle_2wd") and throttle_enabled:
+		toggle_two_wheel_drive()
 	if Input.is_action_just_pressed("reset_car") and not external_reset:
 		_place_car(_upright_transform())
 	if global_position.y < fall_limit_y:
@@ -296,7 +303,8 @@ static func torque_curve(p: CarProfile, rpm: float) -> float:
 
 ## Fahrhilfe: Wie viel Leistung darf bei diesem Driftwinkel noch anliegen (0 bis 1)?
 func _drift_control() -> float:
-	if profile.drift_angle_limit <= 0.0:
+	# Im 2WD-Modus ist die Stabilitätshilfe aus: keine Leistungsbegrenzung im Drift
+	if profile.drift_angle_limit <= 0.0 or two_wheel_drive:
 		return 1.0
 	# Bis zum Grenzwert volle Leistung, 15° darüber nur noch 20 %
 	return clampf(1.0 - (drift_angle - profile.drift_angle_limit) / 15.0 * 0.8, 0.2, 1.0)
@@ -361,8 +369,8 @@ func _update_engine_and_brakes(forward_speed: float) -> void:
 
 	# Kraft auf die Räder verteilen: Heckantrieb nur hinten, Allrad nach front_drive_share
 	_drive_force_now = drive_force
-	var front := drive_force * profile.front_drive_share * 0.5
-	var rear := drive_force * (1.0 - profile.front_drive_share) * 0.5
+	var front := drive_force * front_drive_share() * 0.5
+	var rear := drive_force * (1.0 - front_drive_share()) * 0.5
 	_front_left.engine_force = front
 	_front_right.engine_force = front
 	_rear_left.engine_force = rear
@@ -390,9 +398,12 @@ func _update_rear_grip() -> void:
 	# das Heck ruhig. Provoziert man es (viel Gas im kleinen Gang), kommt es kräftiger.
 	var lateral := absf(angular_velocity.y) * linear_velocity.length()
 	var power := clampf(absf(_drive_force_now) / profile.max_drive_force, 0.0, 1.0)
-	var oversteer: float = profile.power_oversteer * GRIP_LEVELS[grip_level]["oversteer"]
+	# 2WD: die ganze Kraft geht nach hinten statt nur des Anteils aus dem Profil (Allrad unverändert)
+	power = minf(power * (1.0 - front_drive_share()) / maxf(1.0 - profile.front_drive_share, 0.1), 1.0)
+	var base_oversteer := profile.two_wd_oversteer if two_wheel_drive else profile.power_oversteer
+	var oversteer: float = base_oversteer * GRIP_LEVELS[grip_level]["oversteer"]
 	if _drift_intent():
-		oversteer = maxf(oversteer, profile.power_oversteer * 1.8)
+		oversteer = maxf(oversteer, base_oversteer * 1.8)
 	grip *= 1.0 - oversteer * power * power * power * clampf((lateral - 3.0) / power_oversteer_lateral, 0.0, 1.0)
 	for wheel: VehicleWheel3D in [_rear_left, _rear_right]:
 		if pulled:
@@ -414,7 +425,32 @@ func _grip_scale() -> float:
 
 ## Will der Fahrer driften? Heckantrieb, 1. oder 2. Gang, viel Gas
 func _drift_intent() -> bool:
-	return profile.front_drive_share < 0.5 and gear >= 1 and gear <= 2 and throttle_input >= drift_throttle
+	return front_drive_share() < 0.5 and gear >= 1 and gear <= 2 and throttle_input >= drift_throttle
+
+
+## Anteil der Antriebskraft vorne: aus dem Profil, im 2WD-Modus 0 (nur hinten)
+func front_drive_share() -> float:
+	return 0.0 if two_wheel_drive else profile.front_drive_share
+
+
+## 2WD an oder aus (nur Autos mit two_wd_switch, im Stand oder langsam). Meldung als Toast.
+func toggle_two_wheel_drive() -> void:
+	if not profile.two_wd_switch:
+		Toasts.post(get_tree(), "warning", "2WD gibt es nur beim M5", "Allrad lässt sich hier nicht abschalten")
+		return
+	if linear_velocity.length() * 3.6 > TWO_WD_MAX_KMH:
+		Toasts.post(get_tree(), "warning", "2WD nur im Stand", "Unter %d km/h umschalten" % roundi(TWO_WD_MAX_KMH))
+		return
+	two_wheel_drive = not two_wheel_drive
+	if two_wheel_drive:
+		Toasts.post(get_tree(), "warning", "2WD: Heckantrieb", "Stabilitätshilfe aus")
+	else:
+		Toasts.post(get_tree(), "check", "4WD: Allrad", "Stabilitätshilfe an")
+
+
+## Lenkeinschlag direkt setzen (Zurückspulen)
+func set_steer_amount(value: float) -> void:
+	_steer_input = value
 
 
 ## Grip-Stufe wechseln (Einstellungen)
@@ -429,7 +465,7 @@ func set_grip_level(level: String) -> void:
 ## beim provozierten Drift hält sie sich raus.
 func _apply_stability(delta: float) -> void:
 	_handbrake_timer = maxf(_handbrake_timer - delta, 0.0)
-	var strength: float = GRIP_LEVELS[grip_level]["stability"]
+	var strength: float = 0.0 if two_wheel_drive else GRIP_LEVELS[grip_level]["stability"]
 	var speed := linear_velocity.length()
 	if strength <= 0.0 or _handbrake_timer > 0.0 or _drift_intent() or speed < 4.0:
 		return

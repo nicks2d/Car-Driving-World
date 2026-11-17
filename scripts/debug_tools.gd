@@ -101,6 +101,11 @@ extends Node
 ## --crashtest   mit --bench --highway: nach 8 s lenkt das Auto mit Vollgas nach rechts in die Leitplanke
 ##                und schrammt 3 s daran entlang (Fotos crash_0 beim Einlenken, crash_1 bis crash_3, Aufpralle und Schrammen in der
 ##                Ausgabe), dann Ende der Fahrt wie gewohnt
+## --rewindtest  mit --bench: nach 12 s 2,5 s lang zurückspulen (Taste Rücktaste), Fotos rewind_1 währenddessen
+##                und rewind_2 danach, Ausgabe: wie weit das Auto von seiner Lage 5 s vorher entfernt ist
+## --drifttest   mit --bench --highway: nach 6 s auf 50 km/h bremsen, dann halb links lenken und Vollgas
+##                (Power-Drift, z. B. mit --car=f90 --2wd), Fotos drift_1 und drift_2, größter Driftwinkel
+## --2wd          mit 2WD-Modus starten (nur Autos mit two_wd_switch, z. B. --car=f90)
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
 ##                Audio, Spiel
@@ -253,6 +258,16 @@ var _drop_fallen: int = 0
 var _reset_test: bool = false
 ## Leitplanken-Test (--crashtest): Schritt, Aufpralle, stärkster Aufprall, Sekunden mit Schrammen
 var _crash_test: bool = false
+## Rücklauf-Test (--rewindtest): Lage 5 s vor dem Spulen, Schritt
+var _rewind_test: bool = false
+var _rewind_step: int = 0
+var _rewind_mark := Vector3.ZERO
+var _two_wd: bool = false
+## Drift-Test (--drifttest): Schritt, Zeitpunkt des Gasgebens, größter Driftwinkel
+var _drift_test: bool = false
+var _drift_step: int = 0
+var _drift_start: float = 0.0
+var _drift_max: float = 0.0
 var _crash_step: int = 0
 var _crash_hits: int = 0
 var _crash_strongest: float = 0.0
@@ -330,6 +345,12 @@ func _ready() -> void:
 				_reset_test = true
 			"crashtest":
 				_crash_test = true
+			"rewindtest":
+				_rewind_test = true
+			"2wd":
+				_two_wd = true
+			"drifttest":
+				_drift_test = true
 			"noplate":
 				CarModel.test_no_plates = true
 			"dropdrive":
@@ -453,6 +474,8 @@ func on_world_ready(game: Node3D) -> void:
 		_place_car_view_camera()
 	if _steer != "":
 		Input.action_press("steer_left" if _steer == "left" else "steer_right")
+	if _two_wd and game.car is Car:
+		(game.car as Car).two_wheel_drive = true
 	if _mirror_fps >= 0.0:
 		(game.car.get_node("Cockpit") as Cockpit).mirror_fps = _mirror_fps
 	if _view != "" and camera is FollowCamera:
@@ -647,6 +670,10 @@ func _process(delta: float) -> void:
 				_update_reset_test()
 			if _crash_test:
 				_update_crash_test(delta)
+			if _rewind_test:
+				_update_rewind_test()
+			if _drift_test:
+				_update_drift_test()
 			if _windows_at >= 0.0 and _timer >= _windows_at:
 				_windows_at = -1.0
 				(_game.get_node("OpenWindows") as OpenWindows).open = true
@@ -737,6 +764,66 @@ func _print_mesh_check() -> void:
 
 
 ## Reset-Test: feste Abfolge nach der Zeit im Benchmark
+## Drift-Test: Autopilot aus, auf 50 km/h bremsen, dann halb links und Vollgas (Power-Drift)
+func _update_drift_test() -> void:
+	var car: Car = _game.car
+	var kmh := car.linear_velocity.length() * 3.6
+	match _drift_step:
+		0:
+			if _timer >= 6.0:
+				autopilot_enabled = false
+				for action: String in ["accelerate", "steer_left", "steer_right"]:
+					Input.action_release(action)
+				Input.action_press("brake")
+				_drift_step = 1
+		1:
+			if kmh < 50.0:
+				Input.action_release("brake")
+				Input.action_press("steer_left", 0.5)
+				Input.action_press("accelerate")
+				_drift_start = _timer
+				print("Drift-Test: Vollgas bei %.0f km/h, Gang %d, 2WD %s" % [kmh, car.gear, car.two_wheel_drive])
+				_drift_step = 2
+		2:
+			_drift_max = maxf(_drift_max, car.drift_angle)
+			if _timer >= _drift_start + 0.9:
+				_save_image("drift_1")
+				_drift_step = 3
+		3:
+			_drift_max = maxf(_drift_max, car.drift_angle)
+			if _timer >= _drift_start + 1.5:
+				_save_image("drift_2")
+				for action: String in ["accelerate", "steer_left"]:
+					Input.action_release(action)
+				print("Drift-Test: größter Driftwinkel %.0f°" % _drift_max)
+				_drift_step = 4
+
+
+## Rücklauf-Test: bei 7 s die Lage merken, bei 12 s 2,5 s lang zurückspulen (doppelt so schnell = 5 s),
+## dann vergleichen
+func _update_rewind_test() -> void:
+	var car: Car = _game.car
+	var steps: Array[float] = [7.0, 12.0, 13.2, 14.5, 15.5]
+	if _rewind_step >= steps.size() or _timer < steps[_rewind_step]:
+		return
+	match _rewind_step:
+		0:
+			_rewind_mark = car.global_position
+		1:
+			print("Rücklauf-Test: spule zurück bei %s, %.0f km/h" % [car.global_position.round(), car.linear_velocity.length() * 3.6])
+			Input.action_press("rewind")
+		2:
+			_save_image("rewind_1")
+		3:
+			Input.action_release("rewind")
+		4:
+			print("Rücklauf-Test: zurück bei %s, %.1f m von der Lage 5 s vorher, %.0f km/h, Verkehr: %d Autos" % [
+				car.global_position.round(), car.global_position.distance_to(_rewind_mark),
+				car.linear_velocity.length() * 3.6, (_game.get_node("Traffic") as Traffic).car_count()])
+			_save_image("rewind_2")
+	_rewind_step += 1
+
+
 ## Leitplanken-Test: Autopilot aus, Vollgas nach rechts in die Planke, daran entlangschrammen
 func _update_crash_test(delta: float) -> void:
 	var car: Car = _game.car

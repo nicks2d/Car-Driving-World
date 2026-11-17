@@ -79,6 +79,9 @@ const VIEW_NAMES: Array[String] = ["Verfolger", "Cockpit", "Ego-Sicht"]
 ## Ruck bei einem vollen Aufprall: Verfolger (Meter), im Auto (Kopf-Tempo m/s)
 @export var hit_shake: float = 0.35
 @export var hit_head_kick: float = 0.6
+## Zurückspulen (Rewind): Die Kamera steht dort, wo sie zur zurückgespulten Zeit war
+var rewinding: bool = false
+var rewind_transform := Transform3D.IDENTITY
 # Richtung (Winkel um die Hochachse), hinter der die Kamera steht, und wie schnell sie schwenkt
 var _yaw: float = 0.0
 var _yaw_velocity: float = 0.0
@@ -134,6 +137,9 @@ func is_inside_car() -> bool:
 
 func _update_camera(delta: float, snap: bool) -> void:
 	if not target:
+		return
+	if rewinding:
+		global_transform = rewind_transform
 		return
 	if target != _connected_car and target is Car:
 		_connected_car = target

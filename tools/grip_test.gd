@@ -10,10 +10,14 @@ extends SceneTree
 ##     geradeaus. Größter Schwimmwinkel (wie leicht das Auto dabei ausbricht).
 ##   Vollgas in der Kurve: 100 km/h, Lenkung 0,4, nach 1,5 s Vollgas. Größter Schwimmwinkel.
 ## Aufruf: Godot --path . -s res://tools/grip_test.gd -- [--cars=m2,e30] [--grip=komfort|sport|drift]
-##   [--wet] (Nässe) [--snow] (Schnee)
+##   [--wet] (Nässe) [--snow] (Schnee) [--2wd] (2WD-Modus der M5) [--trace] (Verlauf des Power-Drifts)
 
 var cars: Array = ["m2", "e30", "e92", "f90", "g90"]
 var grip_level: String = ""
+## --2wd: 2WD-Modus (Heckantrieb, Stabilitätshilfe aus) bei Autos mit two_wd_switch
+var two_wd: bool = false
+## --trace: Verlauf des Power-Drifts ausgeben
+var trace: bool = false
 var surface_grip: float = 1.0
 var car: Car
 var car_index := -1
@@ -36,6 +40,10 @@ func _initialize() -> void:
 			surface_grip = 0.7
 		elif arg == "--snow":
 			surface_grip = 0.5
+		elif arg == "--2wd":
+			two_wd = true
+		elif arg == "--trace":
+			trace = true
 	var ground := StaticBody3D.new()
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
@@ -65,6 +73,8 @@ func _next_car() -> void:
 
 
 func _start(name: String) -> void:
+	# Hier statt beim Anlegen: Beim ersten Auto läuft dessen _ready (setzt 2WD zurück) erst später
+	car.two_wheel_drive = two_wd and car.profile.two_wd_switch
 	test = name
 	phase = "anfahren"
 	t = 0.0
@@ -132,6 +142,9 @@ func _physics_process(delta: float) -> bool:
 				Input.action_press("accelerate", 1.0)
 			elif phase == "vollgas":
 				max_slip = maxf(max_slip, _slip())
+				if trace and fmod(t, 0.25) < delta:
+					print("  %s t=%.2f %.0f km/h Gang %d Gas %.2f Winkel %.0f° 2WD %s" % [car.profile.id, t, kmh, car.gear,
+						car.throttle_input, _slip(), car.two_wheel_drive])
 				if t > 2.0:
 					results["power"] = "Schwimmwinkel max. %.0f°" % max_slip
 					_start("handbremse")

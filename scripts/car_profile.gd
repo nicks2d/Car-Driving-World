@@ -114,6 +114,11 @@ extends Resource
 @export var max_drive_force: float = 11000.0
 ## Anteil der Antriebskraft an der Vorderachse (0 = Heckantrieb, 0.4 = Allrad 40:60)
 @export_range(0.0, 1.0) var front_drive_share: float = 0.0
+## Allrad lässt sich abschalten (2WD wie beim M5: Taste U, nur unter 10 km/h): dann Heckantrieb und
+## Stabilitätshilfe aus
+@export var two_wd_switch: bool = false
+## Übersteuern beim Gasgeben im 2WD-Modus (statt power_oversteer, das zum Allrad passt)
+@export var two_wd_oversteer: float = 0.14
 ## Abregelung (Höchstgeschwindigkeit)
 @export var top_speed_kmh: float = 250.0
 ## Luftwiderstand und Anpressdruck

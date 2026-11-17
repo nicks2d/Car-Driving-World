@@ -51,6 +51,7 @@ power_end_rpm = 6000.0
 redline_rpm = 7200.0
 low_end_torque = 0.55
 max_drive_force = 19800.0
+two_wd_switch = true
 front_drive_share = 0.35
 top_speed_kmh = 250.0
 air_drag = 0.45

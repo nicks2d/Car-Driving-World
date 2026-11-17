@@ -7,7 +7,7 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
 
 - `tools/test.sh` (ca. 110 s): startet das Spiel mit `--selftest` (`scripts/self_test.gd`): 25 s
   Autopilot auf der Landstraße, Sprung auf die Autobahn bei (1200, −4000) mit Ladebildschirm, 25 s
-  Autobahn, dann je 3,5 s Cockpit-Sicht (mit Regen), Ego-Sicht, Regen (wieder Verfolger), Schnee
+  Autobahn, 2 s Zurückspulen, dann je 3,5 s Cockpit-Sicht (mit Regen), Ego-Sicht, Regen (wieder Verfolger), Schnee
   (Winter), Nacht (23 Uhr), Garage (schließt mit „Losfahren“),
   große Karte, Fotomodus, Pausemenü und 12 s Chill-Modus. Danach „SELFTEST ENDE“ und Beenden.
 - Ausgewertet werden Rückgabewert, die Zeile „SELFTEST ENDE“ (fehlt sie: stiller Absturz oder
@@ -81,7 +81,10 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
   `--carview=G` stellt die Kamera neben das Auto (0 = vorne, 180 = hinten), `--steer=left`
   lenkt dabei (Vorderräder prüfen), `--car=e30` startet mit diesem Auto. `--view=cockpit|ego`
   setzt die Kamera ins Auto (mit `--steer=left` ist das Lenkrad eingeschlagen). `--crashtest` (mit
-  `--bench=12 --highway`) fährt in die Leitplanke (Funken, Schlag, Kamera-Ruck, siehe `autos.md`). `--nowait` macht das
+  `--bench=12 --highway`) fährt in die Leitplanke (Funken, Schlag, Kamera-Ruck, siehe `autos.md`).
+  `--rewindtest` (mit `--bench=17 --highway`) spult 2,5 s zurück (Fotos `rewind_1`, `rewind_2`),
+  `--drifttest` (mit `--bench=12 --highway --car=f90 --2wd`) zeigt einen Power-Drift (`drift_1/2`),
+  `--2wd` startet im 2WD-Modus. `--nowait` macht das
   Foto, ohne auf die Kacheln zu warten, `--jump=X,Z` springt nach dem Laden weit weg.
 - Freie Kamera: `--cam=X,Z,H --lookat=X,Z,H` (H über dem Gelände), Überblick `--fly=H --pitch=G
   --lookat=X,Z`.

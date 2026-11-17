@@ -1,5 +1,6 @@
 extends Control
-## Drei Glas-Chips oben rechts: Uhrzeit, Wetter mit Temperatur, Jahreszeit.
+## Glas-Chips oben rechts: Uhrzeit, Wetter mit Temperatur, Jahreszeit, dazu „2WD“, solange der
+## 2WD-Modus an ist (Car.two_wheel_drive).
 
 @export var day_night: DayNight
 @export var weather: Weather
@@ -21,7 +22,7 @@ var _timer: float = 0.0
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for i in 3:
+	for i in 4:
 		var glass := GlassPanel.new()
 		glass.radius = CHIP_HEIGHT * 0.5
 		glass.blur = 0.0
@@ -46,6 +47,8 @@ func _process(delta: float) -> void:
 		var text := "%s · %d °C" % [Weather.KIND_NAMES[weather.kind], temperature]
 		chips.append([WEATHER_ICONS[weather.kind], WEATHER_COLORS[weather.kind], text.replace("-", "−")])
 		chips.append([SEASON_ICONS[weather.season], SEASON_COLORS[weather.season], Weather.SEASON_NAMES[weather.season]])
+	if car and car.two_wheel_drive:
+		chips.push_front(["warning", Color("#F5A524"), "2WD · ESP aus"])
 	if chips != _chips:
 		_chips = chips
 		_layout()
