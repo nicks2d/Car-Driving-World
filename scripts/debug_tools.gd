@@ -1505,6 +1505,10 @@ func _print_bench() -> void:
 	print("BENCH window=%s screen_scale=%.1f" % [DisplayServer.window_get_size(), DisplayServer.screen_get_scale()])
 	if _levels:
 		_print_levels()
+	var rewind := _game.get_node_or_null("Rewind") as Rewind
+	if rewind and rewind.cost_steps > 0:
+		print("BENCH rueckspulen_ms avg=%.3f pro Physik-Schritt (Aufzeichnung Auto und Verkehr, %d Verkehrsautos)" % [
+			rewind.cost_usec / 1000.0 / rewind.cost_steps, (_game.get_node("Traffic") as Traffic).car_count()])
 	var engine_sound: Node = _game.car.get_node_or_null("EngineSound")
 	if engine_sound:
 		print("BENCH motorsound_ms avg=%.3f (Abtastrate %d Hz)" % [engine_sound.call("average_cost_ms"),

@@ -22,6 +22,9 @@ extends Node
 
 ## Wird gerade zurückgespult?
 var rewinding: bool = false
+## Rechenzeit der Aufzeichnung (für den Benchmark): Summe in Mikrosekunden und Anzahl Schritte
+var cost_usec: int = 0
+var cost_steps: int = 0
 
 ## Aufzeichnung: je Physik-Schritt [Zeit, Lage, Tempo, Drehung, Lenkung, Lenkwinkel, Gang, Drehzahl, Gas,
 ## Kamera]
@@ -80,6 +83,7 @@ func _physics_process(delta: float) -> void:
 		_frames.clear()
 		if traffic:
 			traffic.clear_records()
+	var started := Time.get_ticks_usec()
 	_time += delta
 	_frames.append([_time, car.global_transform, car.linear_velocity, car.angular_velocity, car.steer_amount(),
 		car.steering, car.gear, car.engine_rpm, car.throttle_input, camera.global_transform if camera else Transform3D()])
@@ -87,6 +91,8 @@ func _physics_process(delta: float) -> void:
 		_frames.pop_front()
 	if traffic:
 		traffic.record(_time, max_seconds)
+	cost_usec += Time.get_ticks_usec() - started
+	cost_steps += 1
 
 
 ## Nur beim normalen Fahren (nicht im Fotomodus, Chill-Modus, Menüs, Test-Fotos)

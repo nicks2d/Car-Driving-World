@@ -75,3 +75,13 @@ mindestens 60. Einzelne Kosten (SSR, Glas, Modelle …) stehen auch bei ihrem Th
   mit Tropfen, ohne Mipmaps), CarModel nimmt die mit Tropfen nur, solange es regnet. Messung mit
   kühlem Mac steht noch aus (Ende der Sitzung). Messbefehl: `--bench=30 --highway --full --view=cockpit`,
   `--mirrorfps=0` schaltet die Spiegel ab.
+- Nach den sechs Teilen Cockpit bis Sound (17.11., Mac nach vielen Stunden Tests warm, Akku 48 → 45 %, Hoch,
+  `--full`, Verfolger-Kamera, Autobahn mit Verkehr) gegen den Stand vom Sitzungsbeginn (0c0e765):
+  `tools/bench_compare.sh 0c0e765 2 hoch` (immer alt zuerst): alt 63,0 / 49,4, neu 54,4 / 43,7 FPS. Weil die
+  Wärme stark und ungleichmäßig drückt (alt allein −22 % von Runde 1 zu 2), zusätzlich in der Reihenfolge
+  neu–alt–alt–neu: 60,5 / 57,0 / 45,1 / 36,9 FPS (1%-Low 40,7 / 30,8 / 24,8 / 20,5), GPU 84–91 %. Im Schnitt
+  kostet das Neue also etwa 0–5 %, genauer geht es mit warmem Mac nicht. Einzelkosten gemessen: Motorsound
+  48 kHz 0,53 ms pro Bild (22 kHz: 0,25), Rücklauf-Aufzeichnung 0,05 ms pro Physik-Schritt (Auto und
+  11 Verkehrsautos, `BENCH rueckspulen_ms`), Spiegel im Cockpit 1–2 FPS. Kontaktschatten, Lack-Tropfen
+  (nur bei Nässe) und Glas-Tropfen (nur bei Nässe) sind einzeln nicht gemessen. Offen: Messung mit kühlem
+  Mac am Netzteil (der alte Stand liegt importiert in `~/Godot-Projekte/.endlose-welt-vergleich-0c0e765`).

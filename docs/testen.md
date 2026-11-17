@@ -86,7 +86,8 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
   `--drifttest` (mit `--bench=12 --highway --car=f90 --2wd`) zeigt einen Power-Drift (`drift_1/2`),
   `--2wd` startet im 2WD-Modus, `--carfx=W,S,F` setzt Nässe, Schnee und Eis am Auto fürs Foto.
   `--levels` (mit `--bench`) misst die Pegel aller Audio-Busse, prüft das Ducking (Test-Meldung bei 10 s)
-  und gibt alle 2 s den Hall der Umgebung aus; `BENCH motorsound_ms` zeigt die Rechenzeit des Motorsounds. `--nowait` macht das
+  und gibt alle 2 s den Hall der Umgebung aus; `BENCH motorsound_ms` zeigt die Rechenzeit des Motorsounds,
+  `BENCH rueckspulen_ms` die der Rücklauf-Aufzeichnung. `--nowait` macht das
   Foto, ohne auf die Kacheln zu warten, `--jump=X,Z` springt nach dem Laden weit weg.
 - Freie Kamera: `--cam=X,Z,H --lookat=X,Z,H` (H über dem Gelände), Überblick `--fly=H --pitch=G
   --lookat=X,Z`.
