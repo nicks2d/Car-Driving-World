@@ -64,7 +64,20 @@
   `### Verbessert` und Punkten (`- **Fett** Text`, Fortsetzung eingerückt). Kommt per `include_filter` mit in
   die App (ist keine Godot-Ressource). Neue Version: Nummer an beiden Stellen erhöhen, Abschnitt oben
   anlegen, Git-Tag `vX.Y.Z`.
-- Git-Tag `v1.0.0` (17.11.2026).
+- Git-Tag `v1.0.0` (17.11.2026, Release siehe unten).
+
+## Release auf GitHub (Teil 4, 17.11.)
+
+- Release v1.0.0: https://github.com/nicks2d/Car-Driving-World/releases/tag/v1.0.0 mit
+  `Car-Driving-World-1.0.0-macOS.zip` (Download-Version, 130,6 MB) und dem 1.0.0-Abschnitt aus CHANGELOG.md als
+  Beschreibung: `gh release create v1.0.0 build/Car-Driving-World-1.0.0-macOS.zip --title "Car Driving World 1.0.0"
+  --notes-file <Abschnitt>`.
+- Vorher geprüft: keine Modelldateien im Repo und in keinem neuen Commit (`git log origin/main..main --name-only`),
+  keine privaten Daten in den Diffs (E-Mail, Pfade), alle Commits mit `Nick Aldinger
+  <279333490+nicks2d@users.noreply.github.com>` (wie `git config` im Spielordner). Der Tag `v1.0.0` zeigt auf
+  den README-Commit (nach Teil 2 gesetzt, vor dem Push auf den Stand der gebauten App umgesetzt).
+- README: Download-Abschnitt (nicht notarisiert: Rechtsklick > Öffnen bzw. Datenschutz & Sicherheit >
+  „Trotzdem öffnen“), neue Funktionen, Foto `docs/screenshots/cockpit.jpg` (M4 CSL, `--traffic=0`).
 
 ## Messungen und Bekanntes
 

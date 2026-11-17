@@ -121,7 +121,7 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Verkehr mit echten Modellen · Tempolimits, Tempomat mit ACC · Lichthupe-Rennen · Fenster,
   Kennzeichen, Pfützen, Herbstlaub · Talsperren, Wasserfälle, Landmarken-Brücken, Seeleben ·
   Entdecker-Karte, Orte-Sammlung · Chill-Modus · Mac-App „Car Driving World“ · README auf
-  Englisch, GitHub (nicks2d/Car-Driving-World)
+  Englisch, GitHub (nicks2d/Car-Driving-World), Releases mit der Download-Version
 - [x] Aufräumen: CLAUDE.md nach `docs/` aufgeteilt · Testlauf `tools/test.sh` und Welt-Prüfer
 - [x] Straßen-Bugs, breitere Rampen · Tunnel von außen dicht · Reset mit sicheren Stellen ·
   Kennzeichen an der Stelle des Originals · Autos in der Mac-App sichtbar (Export-Einstellung)
@@ -136,4 +136,4 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Flickstellen, ausgerundete Kuppen · Ruckler-Suche (BENCH langsam), Shader vorbereiten
 - [x] Ladebildschirm mit Bildern, Ladestand und Tipps · weiche Menü-Animationen · Toasts ohne Überlappung ·
   Tastenhilfe (Stand, Raststätte, Aussichtspunkt, Prüfstand) · Version 1.0.0, CHANGELOG.md, „Was ist neu“ ·
-  Mac-App in zwei Varianten (voll nur lokal, Download nur mit CC-BY-Modellen)
+  Mac-App in zwei Varianten (voll nur lokal, Download nur mit CC-BY-Modellen) · Release v1.0.0 auf GitHub

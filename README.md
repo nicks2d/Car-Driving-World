@@ -6,6 +6,8 @@
 
 <p align="center"><b>An endless, procedurally generated 3D driving game: mountain passes, country roads and motorways without a speed limit, through every season and every kind of weather.</b></p>
 
+<p align="center"><b>Version 1.0</b> · <a href="https://github.com/nicks2d/Car-Driving-World/releases/latest">Download for macOS (Apple Silicon)</a> · <a href="CHANGELOG.md">Changelog</a></p>
+
 Pick one of eight BMW M and Mercedes-AMG cars and drive into a world that never ends. Valleys, forests, rivers, lakes, dams, waterfalls and snow-capped peaks are generated as you drive, together with a road network of winding country roads, hairpin bends, bridges, tunnels, villages and long motorways with rest areas and traffic. Day turns into night, the moon goes through its phases, rain turns the roads into mirrors, and in a clear winter night the northern lights may appear. Or lean back in chill mode and let the car drive itself while the camera films it like a movie.
 
 ![A BMW M3 GTS on the motorway in autumn, with the glass HUD and navigation](docs/screenshots/hero.jpg)
@@ -13,6 +15,16 @@ Pick one of eight BMW M and Mercedes-AMG cars and drive into a world that never 
 **Author:** Nick Aldinger ([@nicks2d](https://github.com/nicks2d))
 
 > The interface is in German. The game is a desktop project built with Godot 4 and is developed and tested on macOS (Apple Silicon).
+
+## Download
+
+**[Car Driving World 1.0.0 for macOS](https://github.com/nicks2d/Car-Driving-World/releases/tag/v1.0.0)** (Apple Silicon, macOS 11 or later, about 130 MB)
+
+1. Download `Car-Driving-World-1.0.0-macOS.zip` from the release, unzip it and drag **Car Driving World.app** into *Applications*.
+2. **The app is not notarized by Apple**, so macOS will block it the first time. Right-click the app and choose **Open**, then **Open** again. If macOS still refuses: open *System Settings → Privacy & Security*, scroll down and click **Open Anyway**.
+3. The very first start takes about a minute while the shaders are prepared for your Mac; after that it loads in a few seconds.
+
+The download contains only the car models that may be shared (CC BY): the **BMW M3 (E30)**, **M3 GTS (E92)**, **M5 Competition (F90)** and **M4 CSL**, the Audi S3 in traffic and the petrol station. All other traffic is drawn with simple built-in shapes. Credits and licences are included in the download and in the game under *Garage → Credits*.
 
 ## Features
 
@@ -26,6 +38,8 @@ Pick one of eight BMW M and Mercedes-AMG cars and drive into a world that never 
 - **Landmark bridges:** long, high bridges become concrete arch bridges or suspension bridges with pylons and cables, visible from kilometres away and lit with red lamps at night
 - **Life at the lakes:** bathing spots with a jetty and a kiosk, campsites with caravans, tents and a campfire at night, and boats drifting on the water
 - **Villages** with houses, fences, street lamps and yellow town signs
+- **Forests with three levels of detail:** detailed trees with branches up close, simpler trees further away and image-based trees in the distance, blending softly into each other, with groves, clearings, forest edges, reeds and stones along the shores
+- **Rocks without repeating patterns,** grassy verges, worn tyre tracks and patched asphalt, and crests and dips rounded off like real roads, so the car stays on the ground even at 250 km/h
 
 ![The world from above in autumn](docs/screenshots/world.jpg)
 
@@ -39,7 +53,8 @@ Pick one of eight BMW M and Mercedes-AMG cars and drive into a world that never 
 - **Motorways without a speed limit:** two lanes in each direction with a hard shoulder, a central crash barrier, reflector posts, junctions with deceleration and acceleration lanes, and blue gantry signs with invented German place names. About a fifth of all roads are motorways
 - **Rest areas** about every 17–20 km with a petrol station, car and lorry parking, trees and benches
 - **Speed limits** with real German traffic signs: 50 in villages, 70 or 50 before sharp bends, 80 in tunnels on country roads, and sections of 120, 100 or "100 when wet" on the motorway. The HUD shows the current limit
-- **Bridges and viaducts** over rivers and valleys, **tunnels** through mountains with lights, concrete portals and an echo for the engine sound
+- **Bridges and viaducts** over rivers and valleys, **tunnels** through mountains with lights, concrete portals and an echo for the engine sound. Long tunnels have emergency call niches, escape route signs, jet fans, breakdown bays and a name at the portal
+- **Right of way at junctions:** priority road signs, give-way and stop signs with road markings, and traffic that waits its turn
 - **Viewpoints:** about one in five country roads has a lay-by at a beautiful spot, by a lake, on a mountain pass, at a dam or a waterfall
 
 | | |
@@ -49,10 +64,11 @@ Pick one of eight BMW M and Mercedes-AMG cars and drive into a world that never 
 
 ### Traffic
 - **Cars and lorries** drive on every road, overtake on the motorway, use the on- and off-ramps and stop at rest areas
+- **Traffic follows the clock:** quiet roads at night, rush hour in the morning and late afternoon with queues before the junctions
 - They keep their distance, follow the speed limits, slow down in villages and on wet roads and use their indicators
 - **Flash your headlights** at another car and it may accept a race to the next town sign or motorway exit
 
-### Eight cars
+### Eight cars (four in the download)
 | Car | Engine | Power | Drive | 0–100 km/h (in game) |
 |---|---|---|---|---|
 | BMW M3 (E30, 1986) | 2.3 l four-cylinder | 200 PS | Rear | 6.8 s |
@@ -70,12 +86,17 @@ Pick one of eight BMW M and Mercedes-AMG cars and drive into a world that never 
 - **Cruise control with adaptive distance:** keeps your speed, follows the car in front and can take over the speed limits
 - **Windows down** for more engine and wind noise, and your own **number plate** for each car
 - **The garage:** pick a car, its paint, the time of day, the weather, the season and the moon phase. A **dyno** in the workshop measures power and torque and compares the last three cars
+- **Three cameras** (`Tab`): a chase camera on a spring that leans into the corners, a **cockpit view** with a turning steering wheel, working instruments and live mirrors, and a first-person view at the windscreen. The body pitches and rolls, and crashes throw sparks
+- **Rewind** the last 10 seconds by holding `Backspace` (traffic included), and a **2WD mode** for both M5 (`U`) for power drifts
+- Raindrops running over paint and glass, snow on the roof and icy windows on cold mornings, indicators glowing in the real lamp glass and a welcome light when the engine starts
 
 | | |
 |---|---|
 | ![The garage with the BMW M4 CSL](docs/screenshots/garage.jpg) | ![The dyno comparing three cars](docs/screenshots/dyno.jpg) |
 
 ![Flames from the exhaust of the M3 GTS at night](docs/screenshots/flames.jpg)
+
+![The cockpit view of the BMW M4 CSL](docs/screenshots/cockpit.jpg)
 
 ### Weather, seasons and the sky
 - **Six kinds of weather:** clear, cloudy, rain, thunderstorm, fog and snow, changing smoothly every few minutes
@@ -104,8 +125,10 @@ Pick one of eight BMW M and Mercedes-AMG cars and drive into a world that never 
 
 ![Photo mode](docs/screenshots/photo-mode.jpg)
 
-### Settings
-A pause menu with five tabs: graphics (four quality presets and individual settings), display, controls (grip level, steering sensitivity, all keys can be remapped), audio and game.
+### Menus and settings
+- A **loading screen** with pictures from the game, the real loading progress and tips for keys and features
+- Soft animations in every menu, notifications that stack neatly, and **key hints** that show the right keys when you stop, at a rest area, at a viewpoint or on the dyno (can be switched off)
+- A pause menu with five tabs: graphics (four quality presets and individual settings), display, controls (grip level, steering sensitivity, all keys can be remapped), audio and game, plus a *What's new* window after every update
 
 ## Controls
 
@@ -127,6 +150,9 @@ A pause menu with five tabs: graphics (four quality presets and individual setti
 | Weather / season | `F5` / `J` |
 | Change paint / decals | `C` / `K` |
 | Time-lapse | `T` |
+| Camera (chase, cockpit, first person) | `Tab` |
+| Rewind (hold) | `Backspace` |
+| 2WD mode (M5 only, when stopped) | `U` |
 | Frame rate | `F3` |
 
 All keys except `Esc` can be changed in the settings.
@@ -141,13 +167,14 @@ The game was developed and tested on a MacBook Air with an Apple M4 chip, where 
 
 ### Building the Mac app
 
-There is no ready-made download, because the car models may not be redistributed. You can build the app for your own Mac:
+The [download](#download) is the easiest way to play. To build the app yourself:
 
 1. Add the models as described above (optional).
 2. Install the Godot 4.7.2 export templates (in Godot: *Editor → Manage Export Templates*, or put `macos.zip` and `version.txt` from the official `.tpz` into `~/Library/Application Support/Godot/export_templates/4.7.2.stable/`).
-3. Run `tools/build_mac_app.sh`. It exports the preset "macOS" from `export_presets.cfg`, keeps only the Apple Silicon code, names the app and signs it ad hoc. The result is `build/Car Driving World.app` with its own icon and splash screen. Copy it to *Applications*.
+3. Run `tools/build_mac_app.sh`. It exports the preset "macOS" from `export_presets.cfg`, keeps only the Apple Silicon code, names the app and signs it ad hoc. The result is `build/Car Driving World.app` with its own icon and splash screen (`--install` copies it to *Applications*).
+4. `tools/build_mac_app.sh --download` builds the shareable version instead: the preset "macOS Download" leaves out every model with a non-commercial or no-derivatives licence, checks the result and packs a zip with credits and licences.
 
-The app keeps its settings, maps and collections in the same folder as the game started from Godot, so nothing gets lost. Please do not share an app that contains the models.
+The app keeps its settings, maps and collections in the same folder as the game started from Godot, so nothing gets lost. Please do not share an app that contains the models with NC or ND licences.
 
 ## How it's built
 
@@ -156,7 +183,7 @@ The app keeps its settings, maps and collections in the same folder as the game 
 - **Road network:** villages on a 1.2 km grid are connected by A* pathfinding across the terrain, which produces valley roads and hairpin bends on its own. The path is then turned into straights and circular arcs like in real road design, with a maximum gradient of 10 %, and the terrain is cut and filled around it. Tunnels replace roads that would cut too deep into a mountain, and holes are left in the terrain and its collision at the portals
 - **Motorways** follow their own deterministic layout with curve radii of around 900 m and more and gradients of at most 4 %, and every road that crosses them is lifted onto a bridge or passes underneath
 - **Dams** are found where a straight line between two villages crosses a river valley that is narrow enough. The reservoir is a flood fill up to just below the crest, and the road is routed in two parts so that it runs exactly along the crest
-- **Vegetation** is modelled in code (about 150 triangles per tree) and drawn with MultiMesh, so a whole forest costs only a few draw calls
+- **Vegetation** is modelled in code and drawn with MultiMesh in three levels of detail: detailed trees up close, about 150 triangles per tree further away and impostors (pictures of each tree from eight angles, baked when the game starts) in the distance, so a whole forest costs only a few draw calls
 - **Weather** drives global shader parameters such as wetness and snow cover for the terrain, the roads and the trees. Valley fog is computed from the depth buffer along every view ray. The sky shader draws the sun, the moon with its phase, shooting stars, the rainbow and the northern lights
 - **Traffic** moves kinematically along the roads with the Intelligent Driver Model for distances, and the traffic models were simplified to three levels of detail with a custom tool
 - **Cars** are described by profiles with torque curves, gear ratios and all-wheel-drive split. The model loader splits wheels that come as one mesh, merges parts by material (from 1,213 to 33 draw calls for the M5 G90) and resizes the textures
@@ -168,6 +195,7 @@ The app keeps its settings, maps and collections in the same folder as the game 
 
 - Command-line test tools take a screenshot at any position, time of day, season, weather and moon phase, open the map, the garage or the photo mode, or let an autopilot (or chill mode) drive the roads and the motorway while measuring the frame rate
 - Claude Code used these tools to check its own work: it started the game, looked at the screenshots, compared them with the design mockups and fixed what was wrong. All screenshots in this README were taken with them
+- `tools/test.sh` runs an automatic test drive through every mode and menu and checks the log for errors, and a world checker scans large areas for roads in water, holes in tunnels and too sharp crests
 
 ## Made by
 
@@ -193,7 +221,7 @@ The code was written with **[Claude](https://claude.ai)** by Anthropic as an AI 
 - Font: [Inter](https://rsms.me/inter/) by Rasmus Andersson (SIL Open Font License)
 - Textures from [Poly Haven](https://polyhaven.com/) (CC0): leafy grass, forest ground, rock face, snow, asphalt and gravel road
 - App icon and splash screen: made for this project
-- Models from Sketchfab, **not included** in this repository and modified in the game (scaled, wheels separated, parts hidden, merged or simplified, own materials):
+- Models from Sketchfab, **not included** in this repository (only the CC BY models are part of the download) and modified in the game (scaled, wheels separated, parts hidden, merged or simplified, own materials):
   - "[[FREE] BMW M3 E30](https://sketchfab.com/3d-models/free-bmw-m3-e30-ac3c7013434e403e8faff87948caf422)" by [Martin Trafas](https://sketchfab.com/Bexxie), [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/)
   - "[2011_bmw_e92_m3_gts](https://sketchfab.com/3d-models/2011-bmw-e92-m3-gts-5ef0b693916f413ab444fe46b4456a1a)" by [Car design](https://sketchfab.com/AnswerBlue38), [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/)
   - "[Bmw M5 F90](https://sketchfab.com/3d-models/bmw-m5-f90-5478e978bd634337adc8e3dc413fbfa3)" by [RES1N](https://sketchfab.com/Resinnnn), [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/)

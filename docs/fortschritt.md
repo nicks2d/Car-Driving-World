@@ -84,3 +84,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
   „Was ist neu“ einmal pro Version, Git-Tag v1.0.0
 - [x] Teil 3 (17.11.): Mac-App in zwei Varianten: Vollversion in /Applications, Download-Version nur mit
   CC-BY-Modellen (ZIP mit Credits und Lizenzen), Garage zeigt nur vorhandene Autos, Credits nur vorhandene Modelle
+- [x] Teil 4 (17.11.): README mit Download-Abschnitt und Version 1.0, Push, Release v1.0.0 auf GitHub mit der
+  Download-Version (https://github.com/nicks2d/Car-Driving-World/releases/tag/v1.0.0)
