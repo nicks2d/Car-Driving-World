@@ -1,7 +1,8 @@
 // Gemeinsamer Code von terrain.gdshader (Gelände-Kacheln) und horizon.gdshader (Horizont-Ring).
 // Mit HORIZON_RING verwirft der Ring alles, was in einem Tunnel-Korridor unter der Röhrendecke
 // liegt (Karte tunnel_mask von TunnelMask); nur dort gibt es discard, die Kacheln bleiben
-// ohne (discard kostet auf dem Mac Leistung).
+// ohne (discard kostet auf dem Mac Leistung). Mit FADE_OUT (terrain_fade.gdshader) blendet eine alte
+// Kachel beim Wechsel der Detailstufe kurz gerastert aus.
 uniform sampler2D grass_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D grass_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D dirt_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -114,7 +115,18 @@ vec3 grade_snow(vec3 c) {
 	return c * 1.9;
 }
 
+#ifdef FADE_OUT
+// Ausblenden beim Wechsel der Detailstufe (TerrainManager): 1 = ganz da, 0 = weg, gerastert
+instance uniform float fade_out = 1.0;
+#endif
+
 void fragment() {
+#ifdef FADE_OUT
+	float threshold = fract(dot(floor(FRAGCOORD.xy), vec2(0.0625, 0.25)) + fract(FRAGCOORD.y * 0.25) * 0.5);
+	if (threshold >= fade_out) {
+		discard;
+	}
+#endif
 #ifdef HORIZON_RING
 	// In langen Tunneln stünden die abgesenkte Ring-Fläche und die Schürze am inneren Rand
 	// sonst als Wand in der Röhre

@@ -60,5 +60,25 @@
   Höhe exakt wie im Mesh (zwei Dreiecke pro Quadrat), Stämme sinken am Hang etwas ein.
 - Vertex-Farben kommen im eigenen Shader unverändert an (kein sRGB → linear). Deshalb rechnet
   `foliage.gdshader` sie selbst um, sonst sind die Bäume knallgrün.
+- Bäume in drei Stufen (17.11.): nah sehr detailliert (`VegetationMeshes.conifer_near`: Stamm mit Rinde,
+  12 Astetagen aus je 7–11 hängenden Zweigbüscheln; `broadleaf_near`: Stamm, 5 Hauptäste mit Seitenästen, 16
+  Blattbüschel), in Detailstufe 0 pro 128-m-Viertel getrennt, nah bis 170 m, dann gerastert (35 m) zur
+  mittleren Version (die bisherige nahe). Schatten wirft ein eigener, unsichtbarer Satz der mittleren
+  Version (gleiche Kosten wie vorher). Ab Detailstufe 2 Impostoren (`tree_impostors.gd`): Beim Start wird
+  jede Baumart in einem eigenen SubViewport aus 8 Blickwinkeln (leicht von oben) in ein Bild gezeichnet
+  (Farbe und Normalen, je 192 × 256 pro Winkel), ferne Bäume sind ein Viereck zur Kamera mit dem passenden
+  Bild (zwei nächste überblendet, `shaders/impostor.gdshaderinc`, mit Jahreszeit, Schnee, Wind, kahl im
+  Winter). Rinde: UV.x = 1 an Stamm und Ästen, der Shader zeichnet Furchen. Stolperfallen: Bei MultiMeshes
+  enthält MODEL_MATRIX im Fragment-Teil nicht die Drehung des Exemplars (über Varyings weitergeben); die
+  Normalen-Bilder ohne `source_color` lesen (mit sRGB-Umrechnung zeigten sie nach unten, ferne Bäume waren
+  fast schwarz); durchsichtige Ränder mit `fix_alpha_edges` füllen (sonst färben die Mipmaps dunkel).
+- Weiche Übergänge: Wechselt eine Kachel die Detailstufe, blenden die alte Gelände-Kachel und ihre Pflanzen
+  0,6 s gerastert aus (`terrain_fade.gdshader`, `foliage_fade.gdshader`, `impostor_fade.gdshader` mit
+  `fade_out` pro Knoten), statt sofort zu verschwinden. Discard nur in diesen Varianten.
+- Natürlichere Verteilung (`terrain_chunk_job.gd`): Wald in Gruppen und mit Lichtungen (`WorldGen.groves`,
+  Rauschen mit ~65 m Abstand), am Waldrand viel mehr Büsche und junge Bäume (28–55 % der Höhe), auf freien
+  Wiesen einzelne große Laubbäume. Ufer: eigenes 3-m-Raster nur an Kacheln mit Wasser in der Nähe: Schilf
+  in Gruppen (34 Halme mit Kolben, auch im flachen Wasser bis 0,45 m tief) und Ufersteine; vorher 5–20,
+  jetzt 110–160 Schilfbüschel pro Kachel am See. Schilf und Büsche nur bis Detailstufe 1.
 - Kollision von Stämmen/Felsen direkt über den PhysicsServer, ein Körper pro 64 × 64 m.
   Ein Körper mit 1000 Formen kostete 33 ms (Ruckler), so sind es ~3,5 ms pro Kachel.

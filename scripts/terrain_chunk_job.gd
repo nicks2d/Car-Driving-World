@@ -18,6 +18,8 @@ var with_vegetation: bool = false
 ## Abstand der möglichen Baumplätze und Felsplätze in Metern (kleiner = dichter)
 var tree_spacing: float = 7.0
 var rock_spacing: float = 22.0
+## Raster für Schilf und Ufersteine (Meter)
+var shore_spacing: float = 3.0
 
 # --- Ergebnisse ---
 ## Fertige Mesh-Daten für ArrayMesh.add_surface_from_arrays()
@@ -263,8 +265,17 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 	var rocks_a := PackedFloat32Array()
 	var rocks_b := PackedFloat32Array()
 	var rocks_c := PackedFloat32Array()
+	var reeds := PackedFloat32Array()
 	var tree_line := world_gen.tree_line
 	var cells := floori(chunk_size / tree_spacing)
+	# Ufer (Schilf und Steine) nur prüfen, wenn Wasser in der Nähe ist (die Abfrage kostet)
+	var near_water := not lakes.is_empty()
+	if not near_water:
+		for corner: Vector2 in [Vector2(0.5, 0.5), Vector2(0, 0), Vector2(1, 0), Vector2(0, 1), Vector2(1, 1)]:
+			var p := origin + corner * chunk_size
+			if world_gen.river_surface_near(p.x, p.y, chunk_size * 0.75) > WorldGen.NO_WATER:
+				near_water = true
+				break
 	for cz in cells:
 		for cx in cells:
 			var lx := (cx + rng.randf()) * tree_spacing
@@ -283,8 +294,19 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 			var slope := 1.0 - 1.0 / sqrt(1.0 + gradient * gradient)
 			var low := 1.0 - smoothstep(tree_line - 100.0, tree_line, h)
 			var gentle := 1.0 - smoothstep(0.25, 0.4, slope)
-			var tree_chance := world_gen.forest_density(x, z, h, slope) * 0.8 + 0.02 * low * gentle
-			var bush_chance := 0.035 * gentle * (1.0 - smoothstep(tree_line, tree_line + 120.0, h))
+			# Wald in Gruppen statt gleichmäßig, mit Lichtungen; am Waldrand Büsche und junge Bäume, auf
+			# Wiesen einzelne große Bäume (Muster aus WorldGen.groves, also immer gleich)
+			var density := world_gen.forest_density(x, z, h, slope)
+			var grove := world_gen.groves(x, z)
+			var forest := density * clampf(0.6 + grove * 0.9, 0.15, 1.4)
+			var clearing := density > 0.55 and grove < -0.5
+			if clearing:
+				forest = 0.0
+			var edge := clampf(1.0 - absf(density - 0.28) / 0.22, 0.0, 1.0)
+			if clearing and grove > -0.62:
+				edge = 1.0
+			var tree_chance := forest * 0.8 + 0.012 * low * gentle
+			var bush_chance := (0.03 + edge * 0.22) * gentle * (1.0 - smoothstep(tree_line, tree_line + 120.0, h))
 			if accept >= tree_chance + bush_chance:
 				continue
 			if _is_wet(x, z, h, lakes):
@@ -294,6 +316,11 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 				var conifer_share := clampf(0.4 + (h - 250.0) / 500.0 + world_gen.variation(x, z) * 0.3, 0.1, 0.95)
 				var conifer := kind < conifer_share
 				var height := lerpf(13.0, 27.0, size) if conifer else lerpf(9.0, 17.0, size)
+				# Am Waldrand oft junge Bäume, auf freien Wiesen eher große Laubbäume
+				if edge > 0.35 and size < 0.45:
+					height *= lerpf(0.28, 0.55, size / 0.45)
+				elif forest < 0.02 and not conifer:
+					height *= 1.15
 				# Kronenradius und Stammradius aus den Modellen (vegetation_meshes.gd)
 				var crown := height * (0.23 if conifer else 0.34)
 				var trunk := height * (0.022 if conifer else 0.035)
@@ -353,8 +380,43 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 				rocks_c.append_array(row)
 			if scale > 1.3:
 				colliders.append_array([lx, h, lz, scale * 0.45])
+	# Ufer: Schilf in Gruppen (auch im flachen Wasser) und Steine, auf einem feineren Raster nur dort,
+	# wo der Boden knapp über bzw. unter dem Wasserspiegel liegt
+	if near_water:
+		var shore_cells := floori(chunk_size / shore_spacing)
+		for cz in shore_cells:
+			for cx in shore_cells:
+				var lx := (cx + rng.randf()) * shore_spacing
+				var lz := (cz + rng.randf()) * shore_spacing
+				var accept := rng.randf()
+				var size := rng.randf()
+				var angle := rng.randf() * TAU
+				var shade := Color(rng.randf(), rng.randf(), rng.randf(), 0.0)
+				var x := origin.x + lx
+				var z := origin.y + lz
+				var h := _height_at(hs, side, lx, lz)
+				var level := _water_level(x, z, lakes)
+				if level <= WorldGen.NO_WATER:
+					continue
+				var above := h - level
+				if above < -0.45 or above > 1.4:
+					continue
+				if _blocked_by_road(x, z, 1.5, roads, lakes):
+					continue
+				# Schilf in Gruppen: dichte Stellen und Lücken entlang des Ufers
+				var clump := world_gen.groves(x * 2.3, z * 2.3)
+				if clump > 0.1 and accept < 0.9 and above < 0.9:
+					var reed_height := lerpf(1.3, 2.3, size)
+					reeds.append_array(_instance(lx, h - 0.1, lz, angle, reed_height * 1.5, reed_height, reed_height * 1.5, shade))
+				elif accept < 0.12 and above > -0.2:
+					var stone := lerpf(0.25, 0.75, size)
+					var row := _instance(lx, h - stone * 0.25, lz, angle, stone * 1.2, stone * 0.7, stone, shade)
+					match int(size * 30.0) % 3:
+						0: rocks_a.append_array(row)
+						1: rocks_b.append_array(row)
+						_: rocks_c.append_array(row)
 	vegetation = {"conifer": conifers, "broadleaf": broadleafs, "bush": bushes,
-		"rock0": rocks_a, "rock1": rocks_b, "rock2": rocks_c}
+		"rock0": rocks_a, "rock1": rocks_b, "rock2": rocks_c, "reed": reeds}
 
 
 ## Reicht etwas mit dieser Unterkante (Welthöhe) und diesem Radius in eine Tunnelröhre?
@@ -377,6 +439,15 @@ func _is_wet(x: float, z: float, h: float, lakes: Array) -> bool:
 		if lake.covers(Vector2(x, z), 15.0):
 			level = maxf(level, lake.level)
 	return level > WorldGen.NO_WATER and h < level + 1.0
+
+
+## Wasserspiegel in der Nähe (Fluss oder See), WorldGen.NO_WATER = keiner
+func _water_level(x: float, z: float, lakes: Array) -> float:
+	var level := world_gen.river_surface_near(x, z, 6.0)
+	for lake: WorldGen.Lake in lakes:
+		if lake.covers(Vector2(x, z), 6.0 if lake.pool else 30.0):
+			level = maxf(level, lake.level)
+	return level
 
 
 ## Wie nass ist der Boden hier? 1 = unter Wasser, zum Ufer hin weniger

@@ -3,13 +3,17 @@ extends RefCounted
 ## Baut die Modelle für Bäume, Büsche, Felsen und Gras im Code (keine Downloads nötig).
 ## Alle Modelle sind 1 Einheit hoch und werden pro Exemplar skaliert.
 ## Farben stecken in den Punktfarben (Vertex Colors), die Shader färben sie noch leicht um.
-## Von Bäumen gibt es eine detaillierte Version (nah) und eine sehr einfache (fern).
+## Von Bäumen gibt es drei Versionen: sehr detailliert (nah: Stamm mit Rinde, Äste, viele Blattbüschel
+## bzw. Astetagen), mittel (die bisherige nahe Version) und einfach (fern, Rückfall ohne Impostor).
+## UV.x = 1 heißt Rinde (Stamm und Äste): foliage.gdshader zeichnet dort Borke.
 
 const TRUNK_COLOR := Color(0.22, 0.16, 0.11)
 const NEEDLE_DARK := Color(0.05, 0.11, 0.05)
 const NEEDLE_LIGHT := Color(0.13, 0.23, 0.10)
 const LEAF_DARK := Color(0.10, 0.18, 0.05)
 const LEAF_LIGHT := Color(0.26, 0.38, 0.10)
+const REED_GREEN := Color(0.22, 0.32, 0.10)
+const REED_TOP := Color(0.42, 0.33, 0.16)
 
 var _verts := PackedVector3Array()
 var _normals := PackedVector3Array()
@@ -23,12 +27,92 @@ var _rng := RandomNumberGenerator.new()
 # Bäume
 # ---------------------------------------------------------------------------
 
-## Fichte: Stamm und 7 übereinander liegende, ausgefranste Kegel
+## Sehr detaillierte Fichte (nah): Stamm mit Wurzelanlauf, 12 Astetagen aus je 9–11 hängenden
+## Zweigbüscheln (flache, gezackte Kegelstücke), oben eine Spitze
+static func conifer_near() -> ArrayMesh:
+	var b := VegetationMeshes.new()
+	b._rng.seed = 13
+	b._cylinder(Vector3.ZERO, 0.03, 0.012, 0.9, 8, TRUNK_COLOR, true)
+	b._cylinder(Vector3.ZERO, 0.045, 0.028, 0.06, 8, TRUNK_COLOR.darkened(0.1), true)
+	var tiers := 12
+	for i in tiers:
+		var t := float(i) / (tiers - 1)
+		var y := 0.16 + t * 0.7
+		var radius := lerpf(0.24, 0.05, t) * b._rng.randf_range(0.9, 1.1)
+		var twigs := 11 - roundi(t * 4.0)
+		var twist := b._rng.randf() * TAU
+		for k in twigs:
+			var angle := twist + TAU * k / twigs + b._rng.randf_range(-0.15, 0.15)
+			b._twig(Vector3(0.0, y, 0.0), angle, radius * b._rng.randf_range(0.8, 1.1), TAU / twigs * 0.75,
+				lerpf(0.09, 0.05, t))
+	b._cone(Vector3(0.0, 0.84, 0.0), 0.06, 1.0, 7, NEEDLE_DARK, NEEDLE_LIGHT, 0.2)
+	return b._finish()
+
+
+## Sehr detaillierter Laubbaum (nah): Stamm mit Rinde, 5 Hauptäste mit Seitenästen, Krone aus 16
+## kleineren Blattbüscheln an den Astenden (Lücken zwischen ihnen zeigen die Äste)
+static func broadleaf_near() -> ArrayMesh:
+	var b := VegetationMeshes.new()
+	b._rng.seed = 29
+	b._cylinder(Vector3.ZERO, 0.04, 0.026, 0.48, 8, TRUNK_COLOR, true)
+	b._cylinder(Vector3.ZERO, 0.055, 0.038, 0.05, 8, TRUNK_COLOR.darkened(0.1), true)
+	var crown := Vector3(0.0, 0.64, 0.0)
+	var tips: Array[Vector3] = []
+	for k in 5:
+		var angle := TAU * k / 5.0 + b._rng.randf_range(-0.3, 0.3)
+		var start := Vector3(0.0, b._rng.randf_range(0.36, 0.48), 0.0)
+		var dir := Vector3(cos(angle) * 0.75, 1.0, sin(angle) * 0.75).normalized()
+		var length := b._rng.randf_range(0.26, 0.34)
+		var tip := start + dir * length
+		b._branch(start, tip, 0.017, 0.006)
+		tips.append(tip)
+		# Ein Seitenast zur Seite
+		var side_dir := (dir + Vector3(cos(angle + 1.2), -0.1, sin(angle + 1.2)) * 0.6).normalized()
+		var mid := start + dir * length * 0.5
+		var side_tip := mid + side_dir * length * 0.55
+		b._branch(mid, side_tip, 0.009, 0.004)
+		tips.append(side_tip)
+	# Blattbüschel: an jedem Astende und dazwischen in der Krone
+	for tip in tips:
+		b._blob(tip + Vector3(0.0, 0.03, 0.0), Vector3.ONE * b._rng.randf_range(0.1, 0.14), 1, crown, 0.22)
+	for k in 6:
+		var a := b._rng.randf() * TAU
+		var p := crown + Vector3(cos(a) * 0.15, b._rng.randf_range(0.0, 0.22), sin(a) * 0.15)
+		b._blob(p, Vector3.ONE * b._rng.randf_range(0.11, 0.15), 1, crown, 0.22)
+	return b._finish()
+
+
+## Schilf am Ufer: 34 dünne, fast senkrechte Halme mit braunen Kolben oben (1 Einheit hoch)
+static func reed() -> ArrayMesh:
+	var b := VegetationMeshes.new()
+	b._rng.seed = 41
+	for i in 34:
+		var angle := b._rng.randf() * TAU
+		var offset := Vector3(cos(angle), 0.0, sin(angle)) * b._rng.randf_range(0.0, 0.3)
+		var height := b._rng.randf_range(0.6, 1.0)
+		var lean := Vector3(cos(angle), 0.0, sin(angle)) * b._rng.randf_range(0.02, 0.1)
+		var side := Vector3(-sin(angle), 0.0, cos(angle)) * 0.012
+		var top := offset + lean + Vector3(0.0, height, 0.0)
+		var base := b._verts.size()
+		b._verts.append_array([offset - side, offset + side, top - side * 0.3, top + side * 0.3])
+		for k in 4:
+			b._normals.append((Vector3(cos(angle), 0.0, sin(angle)) + Vector3.UP * 0.3).normalized())
+		b._colors.append_array([REED_GREEN.darkened(0.3), REED_GREEN.darkened(0.3), REED_GREEN, REED_GREEN])
+		b._uvs.append_array([Vector2(0, 0), Vector2(0, 0), Vector2(0, 1), Vector2(0, 1)])
+		b._indices.append_array([base, base + 2, base + 1, base + 1, base + 2, base + 3,
+			base, base + 1, base + 2, base + 1, base + 3, base + 2])
+		# Jeder dritte Halm mit Kolben
+		if i % 3 == 0:
+			b._cylinder(top - Vector3(0.0, 0.12, 0.0), 0.018, 0.016, 0.1, 4, REED_TOP)
+	return b._finish()
+
+
+## Fichte (mittel, fern): Stamm und 7 übereinander liegende, ausgefranste Kegel
 static func conifer(detailed: bool) -> ArrayMesh:
 	var b := VegetationMeshes.new()
 	b._rng.seed = 11
 	if detailed:
-		b._cylinder(Vector3.ZERO, 0.022, 0.016, 0.3, 6, TRUNK_COLOR)
+		b._cylinder(Vector3.ZERO, 0.022, 0.016, 0.3, 6, TRUNK_COLOR, true)
 		var tiers := 7
 		for i in tiers:
 			var t := float(i) / (tiers - 1)
@@ -40,12 +124,12 @@ static func conifer(detailed: bool) -> ArrayMesh:
 	return b._finish()
 
 
-## Laubbaum: Stamm und eine Krone aus mehreren unregelmäßigen Kugeln
+## Laubbaum (mittel, fern): Stamm und eine Krone aus mehreren unregelmäßigen Kugeln
 static func broadleaf(detailed: bool) -> ArrayMesh:
 	var b := VegetationMeshes.new()
 	b._rng.seed = 23
 	if detailed:
-		b._cylinder(Vector3.ZERO, 0.035, 0.022, 0.5, 6, TRUNK_COLOR)
+		b._cylinder(Vector3.ZERO, 0.035, 0.022, 0.5, 6, TRUNK_COLOR, true)
 		var crown := Vector3(0.0, 0.62, 0.0)
 		b._blob(crown, Vector3(0.3, 0.27, 0.3), 1, crown, 0.18)
 		b._blob(crown + Vector3(0.16, 0.08, 0.05), Vector3(0.17, 0.16, 0.17), 0, crown, 0.15)
@@ -126,21 +210,75 @@ func _tri(a: int, b: int, c: int, outward: Vector3) -> void:
 		_indices.append_array([a, c, b])
 
 
-func _cylinder(base: Vector3, r_bottom: float, r_top: float, height: float, sides: int, color: Color) -> void:
+func _cylinder(base: Vector3, r_bottom: float, r_top: float, height: float, sides: int, color: Color,
+		bark: bool = false) -> void:
 	var start := _verts.size()
+	var u := 1.0 if bark else 0.0
 	for i in sides:
 		var angle := TAU * i / sides
 		var dir := Vector3(cos(angle), 0.0, sin(angle))
 		_verts.append_array([base + dir * r_bottom, base + dir * r_top + Vector3(0.0, height, 0.0)])
 		_normals.append_array([dir, dir])
 		_colors.append_array([color.darkened(0.2), color])
-		_uvs.append_array([Vector2.ZERO, Vector2(0.0, 1.0)])
+		_uvs.append_array([Vector2(u, 0.0), Vector2(u, 1.0)])
 	for i in sides:
 		var a := start + i * 2
 		var b := start + ((i + 1) % sides) * 2
 		var outward := _normals[a]
 		_tri(a, b, a + 1, outward)
 		_tri(b, b + 1, a + 1, outward)
+
+
+## Ast als schräger Kegelstumpf (5 Seiten) von a nach b, mit Rinde
+func _branch(a: Vector3, b: Vector3, r_a: float, r_b: float) -> void:
+	var axis := (b - a).normalized()
+	var side := axis.cross(Vector3.UP if absf(axis.y) < 0.95 else Vector3.RIGHT).normalized()
+	var up := side.cross(axis).normalized()
+	var start := _verts.size()
+	var sides := 5
+	for i in sides:
+		var angle := TAU * i / sides
+		var dir := side * cos(angle) + up * sin(angle)
+		_verts.append_array([a + dir * r_a, b + dir * r_b])
+		_normals.append_array([dir, dir])
+		_colors.append_array([TRUNK_COLOR.darkened(0.1), TRUNK_COLOR])
+		_uvs.append_array([Vector2(1.0, 0.0), Vector2(1.0, 1.0)])
+	for i in sides:
+		var p := start + i * 2
+		var q := start + ((i + 1) % sides) * 2
+		_tri(p, q, p + 1, _normals[p])
+		_tri(q, q + 1, p + 1, _normals[p])
+
+
+## Zweigbüschel einer Fichten-Etage: flaches, gezacktes Kegelstück vom Stamm (Höhe y) nach außen,
+## hängt zur Spitze hin nach unten. angle = Richtung, spread = Breite (Winkel), thickness = Dicke oben
+func _twig(center: Vector3, angle: float, length: float, spread: float, thickness: float) -> void:
+	var start := _verts.size()
+	var root := center + Vector3(0.0, thickness, 0.0)
+	_verts.append(root)
+	_normals.append(Vector3.UP)
+	_colors.append(NEEDLE_DARK)
+	_uvs.append(Vector2(0.0, 0.5))
+	var steps := 4
+	for k in steps + 1:
+		var a := angle - spread * 0.5 + spread * k / steps
+		var dir := Vector3(cos(a), 0.0, sin(a))
+		var reach := length * (1.0 if k % 2 == 0 else 0.82) * _rng.randf_range(0.9, 1.05)
+		var droop := -length * (0.38 if k % 2 == 0 else 0.25)
+		_verts.append(center + dir * reach + Vector3(0.0, droop, 0.0))
+		_normals.append((dir + Vector3(0.0, 0.8, 0.0)).normalized())
+		_colors.append(NEEDLE_DARK.lerp(NEEDLE_LIGHT, _rng.randf_range(0.35, 0.9)))
+		_uvs.append(Vector2(0.0, 0.0))
+	# Unterseite: Punkt unter der Wurzel
+	var below := _verts.size()
+	_verts.append(center - Vector3(0.0, thickness * 0.5, 0.0))
+	_normals.append(Vector3.DOWN)
+	_colors.append(NEEDLE_DARK.darkened(0.35))
+	_uvs.append(Vector2(0.0, 0.0))
+	var out := Vector3(cos(angle), 0.4, sin(angle))
+	for k in steps:
+		_tri(start, start + 1 + k, start + 2 + k, out)
+		_tri(below, start + 1 + k, start + 2 + k, Vector3.DOWN)
 
 
 ## Kegel mit ausgefranstem unteren Rand (Nadelbaum-Etage), mit Unterseite

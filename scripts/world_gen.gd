@@ -90,6 +90,8 @@ var _river: FastNoiseLite
 var _river_mask: FastNoiseLite
 var _forest: FastNoiseLite
 var _variation: FastNoiseLite
+## Baumgruppen und Lichtungen (Muster im Abstand von etwa 60 m)
+var _groves: FastNoiseLite
 
 var _lake_cache: Dictionary = {}
 var _lake_mutex: Mutex = Mutex.new()
@@ -180,6 +182,7 @@ func setup() -> void:
 	_river_mask = _make_noise(7, 1.0 / 16000.0, 2)
 	_forest = _make_noise(8, 1.0 / 1400.0, 3)
 	_variation = _make_noise(9, 1.0 / 700.0, 2)
+	_groves = _make_noise(21, 1.0 / 65.0, 2)
 	_is_setup = true
 
 
@@ -790,6 +793,11 @@ func forest_density(x: float, z: float, height: float, slope: float) -> float:
 	var below_line := 1.0 - smoothstep(tree_line - 120.0, tree_line, height)
 	var not_steep := 1.0 - smoothstep(0.25, 0.4, slope)
 	return base * below_line * not_steep
+
+
+## Baumgruppen (-1 bis 1, Muster im Abstand von etwa 60 m): hoch = dichte Gruppe, tief = Lücke bzw. Lichtung
+func groves(x: float, z: float) -> float:
+	return _groves.get_noise_2d(x, z)
 
 
 ## Großflächige Zufalls-Variation (-1 bis 1), z. B. für Farbe oder Dichte

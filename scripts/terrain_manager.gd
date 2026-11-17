@@ -51,6 +51,12 @@ extends Node3D
 @export var rock_spacing: float = 22.0
 ## Bis zu dieser Detailstufe werfen Bäume Schatten (0 = nur die nächsten Kacheln)
 @export_range(0, 3) var vegetation_shadow_lod: int = 0
+## Bäume in drei Stufen: sehr detailliert bis zu dieser Entfernung (Mitte einer 128-m-Zelle, Meter),
+## dahinter die mittlere Version, ab Detailstufe 2 Impostoren (Bilder). Übergang gerastert über so viele Meter.
+@export var near_tree_distance: float = 170.0
+@export var near_tree_fade: float = 35.0
+## So lange (Sekunden) blenden Gelände und Pflanzen beim Wechsel der Detailstufe über
+@export var lod_fade_time: float = 0.6
 
 var world_gen: WorldGen
 var target: Node3D
@@ -62,8 +68,16 @@ var _generation: int = 0
 var _base_lod_distances := PackedFloat32Array()
 var _base_tree_spacing: float = 0.0
 var _update_timer: float = 0.0
-## Pflanzen-Modelle: Art -> [nah, fern]
+## Pflanzen-Modelle: Art -> [nah, mittel/fern] (Bäume zusätzlich in _near_tree_meshes: sehr detailliert)
 var _veg_meshes: Dictionary = {}
+var _near_tree_meshes: Dictionary = {}
+## Ferne Bäume als Bilder (TreeImpostors) und ihre Materialien: Art -> [normal, Ausblenden]
+var _impostors: TreeImpostors
+var _impostor_materials: Dictionary = {}
+## Beim Wechsel der Detailstufe: alte Kacheln und Pflanzen blenden aus [Knoten, Zeit]
+var _fading: Array = []
+## Ausblende-Varianten der Materialien (Original -> Variante)
+var _fade_materials: Dictionary = {}
 ## Laubbäume und Büsche: wie foliage_material, aber mit Herbstfarben (deciduous = true)
 var _deciduous_material: Material
 var _bare_trees: bool = false
@@ -102,7 +116,7 @@ class Chunk:
 	## Mit welchem Stand der Einstellungen gebaut (siehe set_detail)
 	var generation: int = 0
 	var pending_generation: int = 0
-	## Bäume und Felsen: Art -> MultiMeshInstance3D
+	## Bäume und Felsen: Art -> Array der MultiMeshInstance3D (Bäume nah: mehrere Zellen und Stufen)
 	var veg_instances: Dictionary = {}
 	## Stämme und große Felsen (x, y, z, Radius) und ihre Kollisionskörper
 	var colliders: PackedFloat32Array
@@ -118,12 +132,20 @@ func start(gen: WorldGen, follow: Node3D, road_network: RoadNetwork) -> void:
 		"conifer": [VegetationMeshes.conifer(true), VegetationMeshes.conifer(false)],
 		"broadleaf": [VegetationMeshes.broadleaf(true), VegetationMeshes.broadleaf(false)],
 		"bush": [VegetationMeshes.bush(), VegetationMeshes.bush()],
+		"reed": [VegetationMeshes.reed(), VegetationMeshes.reed()],
 		"rock0": [VegetationMeshes.rock(3), VegetationMeshes.rock(3)],
 		"rock1": [VegetationMeshes.rock(8), VegetationMeshes.rock(8)],
 		"rock2": [VegetationMeshes.rock(15), VegetationMeshes.rock(15)],
 	}
+	_near_tree_meshes = {"conifer": VegetationMeshes.conifer_near(), "broadleaf": VegetationMeshes.broadleaf_near()}
 	_deciduous_material = foliage_material.duplicate()
 	(_deciduous_material as ShaderMaterial).set_shader_parameter("deciduous", true)
+	# Impostoren im Hintergrund backen; bis dahin haben ferne Kacheln die einfachen Bäume
+	_impostors = TreeImpostors.new()
+	add_child(_impostors)
+	_impostors.baked.connect(_on_impostors_baked)
+	var noise: Texture2D = (foliage_material as ShaderMaterial).get_shader_parameter("leaf_noise")
+	_impostors.bake.call_deferred(_near_tree_meshes, noise)
 	_trunk_shape.radius = 0.4
 	_trunk_shape.height = 6.0
 	_rock_shape.radius = 1.0
@@ -139,6 +161,7 @@ func _process(delta: float) -> void:
 		var now := moved / delta if moved.length() < 100.0 else Vector2.ZERO
 		_velocity = _velocity.lerp(now, clampf(delta * 3.0, 0.0, 1.0))
 	_last_target = here
+	_update_fading(delta)
 	_update_timer -= delta
 	if _collect_finished_jobs() > 0 or _update_timer <= 0.0:
 		_update_timer = update_interval
@@ -278,6 +301,14 @@ func _apply_job(chunk: Chunk) -> void:
 	chunk.job = null
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, job.arrays)
+	# Wechsel der Detailstufe: die alte Kachel blendet kurz gerastert aus (kein sichtbares Aufploppen)
+	if chunk.mesh_instance and chunk.mesh_instance.mesh and chunk.lod >= 0 and chunk.lod != job.lod:
+		var old := MeshInstance3D.new()
+		old.mesh = chunk.mesh_instance.mesh
+		old.position = chunk.mesh_instance.position
+		old.cast_shadow = chunk.mesh_instance.cast_shadow
+		add_child(old)
+		_start_fade(old, terrain_material)
 	if chunk.mesh_instance == null:
 		chunk.mesh_instance = MeshInstance3D.new()
 		chunk.mesh_instance.material_override = terrain_material
@@ -319,35 +350,159 @@ func _apply_water(chunk: Chunk, job: TerrainChunkJob) -> void:
 
 
 func _apply_vegetation(chunk: Chunk, job: TerrainChunkJob) -> void:
-	var near := job.lod <= 1
-	for kind: String in chunk.veg_instances.keys():
-		var buffer: PackedFloat32Array = job.vegetation.get(kind, PackedFloat32Array())
-		if buffer.is_empty() or (kind == "bush" and not near):
-			chunk.veg_instances[kind].queue_free()
-			chunk.veg_instances.erase(kind)
+	# Alte Pflanzen: beim Wechsel der Detailstufe kurz gerastert ausblenden, sonst gleich weg
+	var lod_changed := chunk.lod >= 0 and chunk.lod != job.lod
+	for nodes: Array in chunk.veg_instances.values():
+		for node: GeometryInstance3D in nodes:
+			if lod_changed and node.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
+				_start_fade(node, node.material_override)
+			else:
+				node.queue_free()
+	chunk.veg_instances.clear()
 	for kind: String in job.vegetation:
 		var buffer: PackedFloat32Array = job.vegetation[kind]
-		# Büsche nur in der Nähe, in der Ferne sieht man sie ohnehin nicht
-		if buffer.is_empty() or (kind == "bush" and not near):
+		if buffer.is_empty():
 			continue
-		var multimesh := MultiMesh.new()
-		multimesh.transform_format = MultiMesh.TRANSFORM_3D
-		multimesh.use_custom_data = true
-		multimesh.mesh = _veg_meshes[kind][0 if near else 1]
-		multimesh.instance_count = int(buffer.size() / 16.0)
-		multimesh.buffer = buffer
-		var instance: MultiMeshInstance3D = chunk.veg_instances.get(kind)
-		if instance == null:
-			instance = MultiMeshInstance3D.new()
-			instance.material_override = _material_for(kind)
-			instance.position = chunk.mesh_instance.position
-			add_child(instance)
-			chunk.veg_instances[kind] = instance
-		instance.multimesh = multimesh
-		# Schatten nur bei den nächsten Kacheln: Ein MultiMesh wirft immer als Ganzes Schatten,
-		# und Schatten gibt es ohnehin nur bis ca. 300 m. Das spart viel Rechenzeit.
-		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if job.lod <= vegetation_shadow_lod \
-			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var tree := kind == "conifer" or kind == "broadleaf"
+		# Büsche und Schilf nur in der Nähe, in der Ferne sieht man sie ohnehin nicht
+		if (kind == "bush" or kind == "reed") and job.lod > 1:
+			continue
+		var nodes: Array = []
+		if tree and job.lod == 0:
+			nodes = _near_trees(chunk, kind, buffer)
+		elif tree and job.lod >= 2 and _impostors.ready_to_use:
+			nodes = [_veg_instance(chunk, buffer, _impostors.quad_mesh(), _impostor_material(kind, false))]
+		else:
+			var mesh: Mesh = _veg_meshes[kind][0 if job.lod <= 1 else 1]
+			var instance := _veg_instance(chunk, buffer, mesh, _material_for(kind))
+			# Schatten nur bei den nächsten Kacheln (Büsche, Felsen)
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if job.lod <= vegetation_shadow_lod \
+				else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			nodes = [instance]
+		chunk.veg_instances[kind] = nodes
+
+
+## Bäume in der nächsten Detailstufe: pro 128-m-Zelle die sehr detaillierte Version (nah) und die mittlere
+## (dahinter), gerastert übergeblendet (Sichtweiten mit Übergang). Schatten wirft ein eigener, unsichtbarer
+## Satz mit der mittleren Version für die ganze Kachel: so kosten die Schatten nicht mehr als vorher.
+func _near_trees(chunk: Chunk, kind: String, buffer: PackedFloat32Array) -> Array:
+	var nodes: Array = []
+	var half := chunk_size * 0.5
+	var count := int(buffer.size() / 16.0)
+	var material := _material_for(kind)
+	for quarter in 4:
+		var part := PackedFloat32Array()
+		for i in count:
+			var lx := buffer[i * 16 + 3]
+			var lz := buffer[i * 16 + 11]
+			if (1 if lx >= half else 0) + (2 if lz >= half else 0) == quarter:
+				part.append_array(buffer.slice(i * 16, i * 16 + 16))
+		if part.is_empty():
+			continue
+		var near := _veg_instance(chunk, part, _near_tree_meshes[kind], material)
+		near.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		near.visibility_range_end = near_tree_distance
+		near.visibility_range_end_margin = near_tree_fade
+		near.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		var mid := _veg_instance(chunk, part, _veg_meshes[kind][0], material)
+		mid.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mid.visibility_range_begin = near_tree_distance
+		mid.visibility_range_begin_margin = near_tree_fade
+		mid.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		nodes.append_array([near, mid])
+	if vegetation_shadow_lod >= 0:
+		var shadow := _veg_instance(chunk, buffer, _veg_meshes[kind][0], material)
+		shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		nodes.append(shadow)
+	return nodes
+
+
+## Ein MultiMesh für diese Pflanzen (16 Werte pro Exemplar: Lage und Zufallswerte)
+func _veg_instance(chunk: Chunk, buffer: PackedFloat32Array, mesh: Mesh, material: Material) -> MultiMeshInstance3D:
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_custom_data = true
+	multimesh.mesh = mesh
+	multimesh.instance_count = int(buffer.size() / 16.0)
+	multimesh.buffer = buffer
+	var instance := MultiMeshInstance3D.new()
+	instance.multimesh = multimesh
+	instance.material_override = material
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.position = chunk.mesh_instance.position
+	add_child(instance)
+	return instance
+
+
+## Impostor-Material einer Baumart (fade = Variante zum Ausblenden)
+func _impostor_material(kind: String, fade: bool) -> ShaderMaterial:
+	if not _impostor_materials.has(kind):
+		var noise: Texture2D = (foliage_material as ShaderMaterial).get_shader_parameter("leaf_noise")
+		var normal := _impostors.material_for(kind, kind == "broadleaf", noise, false)
+		var fading := _impostors.material_for(kind, kind == "broadleaf", noise, true)
+		_impostor_materials[kind] = [normal, fading]
+		_fade_materials[normal] = fading
+		for material: ShaderMaterial in [normal, fading]:
+			material.set_shader_parameter("bare", kind == "broadleaf" and _bare_trees)
+	return _impostor_materials[kind][1 if fade else 0]
+
+
+## Impostoren fertig: ferne Kacheln bekommen sie sofort (statt der einfachen Bäume)
+func _on_impostors_baked() -> void:
+	for chunk: Chunk in _chunks.values():
+		if chunk.lod < 2:
+			continue
+		for kind: String in ["conifer", "broadleaf"]:
+			for node: MultiMeshInstance3D in chunk.veg_instances.get(kind, []):
+				node.multimesh.mesh = _impostors.quad_mesh()
+				node.material_override = _impostor_material(kind, false)
+
+
+## Knoten gerastert ausblenden (über lod_fade_time), dann freigeben. material = sein Material; ohne passende
+## Ausblende-Variante wird er gleich freigegeben.
+func _start_fade(node: GeometryInstance3D, material: Material) -> void:
+	var fade_material := _fade_material(material)
+	if fade_material == null:
+		node.queue_free()
+		return
+	node.material_override = fade_material
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.set_instance_shader_parameter("fade_out", 1.0)
+	_fading.append([node, 0.0])
+
+
+func _fade_material(material: Material) -> Material:
+	if material == null:
+		return null
+	if _fade_materials.has(material):
+		return _fade_materials[material]
+	var shader_material := material as ShaderMaterial
+	if shader_material == null:
+		return null
+	var variant: Shader = null
+	if shader_material.shader.resource_path == "res://shaders/foliage.gdshader":
+		variant = preload("res://shaders/foliage_fade.gdshader")
+	elif shader_material.shader.resource_path == "res://shaders/terrain.gdshader":
+		variant = preload("res://shaders/terrain_fade.gdshader")
+	if variant == null:
+		return null
+	var copy := shader_material.duplicate() as ShaderMaterial
+	copy.shader = variant
+	_fade_materials[material] = copy
+	return copy
+
+
+func _update_fading(delta: float) -> void:
+	for k in range(_fading.size() - 1, -1, -1):
+		var entry: Array = _fading[k]
+		var node: GeometryInstance3D = entry[0]
+		entry[1] = float(entry[1]) + delta
+		if not is_instance_valid(node) or float(entry[1]) >= lod_fade_time:
+			if is_instance_valid(node):
+				node.queue_free()
+			_fading.remove_at(k)
+			continue
+		node.set_instance_shader_parameter("fade_out", 1.0 - float(entry[1]) / lod_fade_time)
 
 
 func _material_for(kind: String) -> Material:
@@ -366,10 +521,13 @@ func set_bare_trees(bare: bool) -> void:
 	if bare == _bare_trees or _deciduous_material == null:
 		return
 	_bare_trees = bare
+	if _impostor_materials.has("broadleaf"):
+		for material: ShaderMaterial in _impostor_materials["broadleaf"]:
+			material.set_shader_parameter("bare", bare)
 	for chunk: Chunk in _chunks.values():
-		var instance: MultiMeshInstance3D = chunk.veg_instances.get("broadleaf")
-		if instance:
-			instance.material_override = _material_for("broadleaf")
+		for instance: MultiMeshInstance3D in chunk.veg_instances.get("broadleaf", []):
+			if instance.multimesh.mesh != _impostors.quad_mesh():
+				instance.material_override = _material_for("broadleaf")
 
 
 ## Kollision für Baumstämme und große Felsen, direkt im PhysicsServer (ohne Tausende Nodes).
@@ -445,8 +603,9 @@ func _remove_chunk(chunk: Chunk) -> void:
 	if chunk.water_instance:
 		chunk.water_instance.queue_free()
 		chunk.water_instance = null
-	for instance: MultiMeshInstance3D in chunk.veg_instances.values():
-		instance.queue_free()
+	for nodes: Array in chunk.veg_instances.values():
+		for instance: MultiMeshInstance3D in nodes:
+			instance.queue_free()
 	chunk.veg_instances.clear()
 	_free_vegetation_collision(chunk)
 	if chunk.body:

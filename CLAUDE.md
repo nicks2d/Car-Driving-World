@@ -131,4 +131,5 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   2WD-Modus der M5, Zurückspulen bis 10 s (mit Verkehr) · Tropfen, Schnee und Eis am Auto,
   Kontaktschatten · Sound 48 kHz, Limiter, Ducking, Hall der Umgebung
 - [x] Vorfahrt an Kreuzungen (Schilder, Haltelinien, KI wartet) · Verkehr nach Uhrzeit, Berufsverkehr, Stau ·
-  Tunnel-Ausstattung (SOS, Fluchtweg, Ventilatoren, Pannenbuchten, Name)
+  Tunnel-Ausstattung (SOS, Fluchtweg, Ventilatoren, Pannenbuchten, Name) · Bäume in 3 Stufen mit
+  Impostoren, weiche LOD-Übergänge, Waldränder, Lichtungen, Schilf

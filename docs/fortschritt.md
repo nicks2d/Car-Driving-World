@@ -72,3 +72,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
   Verkehr nach Uhrzeit mit Berufsverkehr und Stau vor Anschlussstellen
 - [x] Teil 2 (17.11.): Tunnel-Ausstattung (Notrufnischen, Fluchtweg-Schilder, Ventilatoren, Pannenbuchten,
   Tunnelname am Portal)
+- [x] Teil 3 (17.11.): Bäume in drei Stufen (detailliert, mittel, Impostor), weiche Übergänge zwischen den
+  Detailstufen, Baumgruppen, Lichtungen, Waldränder, Schilf und Steine am Ufer
