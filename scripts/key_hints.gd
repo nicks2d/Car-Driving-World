@@ -44,13 +44,12 @@ var _stopped_time: float = 0.0
 var _context_time: float = 0.0
 var _check_timer: float = 0.0
 ## In Testläufen nur mit --hints (sonst stünde die Hilfe auf jedem Testfoto)
-var _allowed: bool = true
+var _hints_arg: bool = false
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if debug_tools and debug_tools.is_active():
-		_allowed = OS.get_cmdline_user_args().has("--hints")
+	_hints_arg = OS.get_cmdline_user_args().has("--hints")
 
 
 func _process(delta: float) -> void:
@@ -73,7 +72,10 @@ func _process(delta: float) -> void:
 
 ## Gerade gar keine Hilfe? (abgeschaltet, Menü offen, Chill-Modus, Zurückspulen, HUD aus)
 func _hidden() -> bool:
-	if not _allowed or settings == null or not settings.get_value("spiel", "tastenhilfe") or car == null:
+	if settings == null or not settings.get_value("spiel", "tastenhilfe") or car == null:
+		return true
+	# Testlauf? (erst hier fragen: DebugTools liest die Argumente nach diesem Knoten ein)
+	if debug_tools and debug_tools.is_active() and not _hints_arg:
 		return true
 	if dyno and dyno.is_open:
 		return false

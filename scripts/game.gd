@@ -19,6 +19,8 @@ const APP_TITLE := "Car Driving World"
 @export var water: WaterManager
 @export var grass: GrassManager
 @export var weather: Weather
+## Fenster „Was ist neu“ (einmal pro Version beim Start)
+@export var whats_new: WhatsNew
 
 var world_is_ready: bool = false
 var _car_on_road: bool = false
@@ -110,6 +112,8 @@ func _timed_process(delta: float) -> void:
 			debug_tools.on_world_ready(self)
 			if garage and not debug_tools.is_active():
 				garage.open()
+			if whats_new:
+				whats_new.show_if_new()
 
 
 ## Fortschrittsbalken im Ladebildschirm: erst die Straßen rund um den Start, dann die Gelände-Kacheln am

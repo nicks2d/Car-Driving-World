@@ -25,6 +25,7 @@
 [ext_resource type="Script" path="res://scripts/car_reset.gd" id="95_reset"]
 [ext_resource type="Script" path="res://scripts/loading_screen.gd" id="96_loading"]
 [ext_resource type="Script" path="res://scripts/key_hints.gd" id="97_hints"]
+[ext_resource type="Script" path="res://scripts/whats_new.gd" id="98_whatsnew"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
@@ -267,13 +268,14 @@ shader_parameter/variation_noise = SubResource("NoiseTexture2D_variation")
 shader_parameter/far_mode = true
 shader_parameter/sink_into_chunks = true
 
-[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water", "grass", "garage", "map_tiles", "weather")]
+[node name="Main" type="Node3D" node_paths=PackedStringArray("terrain", "horizon", "car", "loading_screen", "debug_tools", "day_night", "roads", "water", "grass", "garage", "map_tiles", "weather", "whats_new")]
 script = ExtResource("1_game")
 world_gen = SubResource("WorldGen_main")
 terrain = NodePath("Terrain")
 horizon = NodePath("HorizonRing")
 car = NodePath("Car")
 loading_screen = NodePath("Loading/LoadingScreen")
+whats_new = NodePath("WhatsNew")
 debug_tools = NodePath("DebugTools")
 day_night = NodePath("DayNight")
 garage = NodePath("Garage")
@@ -596,8 +598,9 @@ speedometer = NodePath("../HUD/Speedometer")
 fps_label = NodePath("../HUD/FpsLabel")
 debug_tools = NodePath("../DebugTools")
 
-[node name="PauseMenu" type="CanvasLayer" parent="." node_paths=PackedStringArray("settings", "garage", "big_map", "photo_mode", "hud", "weather", "chill_mode")]
+[node name="PauseMenu" type="CanvasLayer" parent="." node_paths=PackedStringArray("settings", "garage", "big_map", "photo_mode", "hud", "weather", "chill_mode", "whats_new")]
 script = ExtResource("78_pause")
+whats_new = NodePath("../WhatsNew")
 chill_mode = NodePath("../ChillMode")
 settings = NodePath("../Settings")
 garage = NodePath("../Garage")
@@ -697,3 +700,7 @@ script = ExtResource("91_soundmix")
 car = NodePath("../Car")
 navigation = NodePath("../Navigation")
 tunnel_effects = NodePath("../TunnelEffects")
+
+[node name="WhatsNew" type="CanvasLayer" parent="." node_paths=PackedStringArray("debug_tools")]
+script = ExtResource("98_whatsnew")
+debug_tools = NodePath("../DebugTools")

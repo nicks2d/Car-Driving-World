@@ -4,7 +4,7 @@
 
 - Mac-App „Car Driving World“ (Teil 6): bauen mit `tools/build_mac_app.sh` → `build/Car Driving
   World.app` (`/build/` ist in .gitignore). Export-Vorlage `export_presets.cfg` („macOS“): Bundle-ID
-  `io.github.nicks2d.cardrivingworld`, Version 1.0, Architektur „universal“ (die offizielle Vorlage
+  `io.github.nicks2d.cardrivingworld`, Version 1.0.0, Architektur „universal“ (die offizielle Vorlage
   hat nur Universal-Programme, „arm64“ bricht ab). Das Skript macht danach mit `lipo -thin arm64`
   eine reine Apple-Silicon-App, setzt CFBundleName/CFBundleDisplayName auf „Car Driving World“
   (Godot nimmt den Projektnamen) und signiert ad-hoc neu (`codesign --sign -`). Filter: ohne Original-GLBs von Verkehr und Tankstelle (es reichen
@@ -26,6 +26,17 @@
   `Game.APP_TITLE` („Car Driving World“).
 - Exportierte Projekte: `DirAccess.get_files_at("res://…")` sieht dort nur die umgewandelten
   Dateien. Deshalb sucht `CarModel.model_path` die .glb mit `ResourceLoader.list_directory`.
+
+## Version und Changelog
+
+- Versionsnummer an zwei Stellen gleich halten: `project.godot` → `application/config/version` (Pausemenü,
+  „Was ist neu“, `WhatsNew.version()`) und `export_presets.cfg` → `application/short_version` und
+  `application/version` (Finder > Informationen, „Über Car Driving World“). Stand: 1.0.0.
+- `CHANGELOG.md` im Projektordner: neueste Version oben, Abschnitte `## 1.0.0 – Datum` mit `### Neu` /
+  `### Verbessert` und Punkten (`- **Fett** Text`, Fortsetzung eingerückt). Kommt per `include_filter` mit in
+  die App (ist keine Godot-Ressource). Neue Version: Nummer an beiden Stellen erhöhen, Abschnitt oben
+  anlegen, Git-Tag `vX.Y.Z`.
+- Git-Tag `v1.0.0` (17.11.2026).
 
 ## Messungen und Bekanntes
 

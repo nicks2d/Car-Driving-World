@@ -83,7 +83,7 @@ bis dahin Platzhalter. Automodelle liegen wegen ihrer Lizenzen nie im Repo
 | HUD, alle Tasten, Garage, Karte/Navi, Entdecker-Karte, Fotomodus, Chill-Modus, Einstellungen | `docs/hud-menues.md` |
 | FPS messen, Qualitätsstufen, Messungen | `docs/leistung.md` |
 | Testbefehle, Testlauf, Prüfwerkzeuge | `docs/testen.md` |
-| Mac-App bauen, Logo, README-Bilder | `docs/mac-app.md` |
+| Mac-App bauen, Version und Changelog, Logo, README-Bilder | `docs/mac-app.md` |
 | Alle erledigten Aufgaben im Detail, ursprüngliche Meilensteine | `docs/fortschritt.md` |
 
 ## Wichtigste Tasten
@@ -135,4 +135,4 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Impostoren, weiche LOD-Übergänge, Waldränder, Lichtungen, Schilf · Fels ohne Wiederholung, Grasrand,
   Flickstellen, ausgerundete Kuppen · Ruckler-Suche (BENCH langsam), Shader vorbereiten
 - [x] Ladebildschirm mit Bildern, Ladestand und Tipps · weiche Menü-Animationen · Toasts ohne Überlappung ·
-  Tastenhilfe (Stand, Raststätte, Aussichtspunkt, Prüfstand)
+  Tastenhilfe (Stand, Raststätte, Aussichtspunkt, Prüfstand) · Version 1.0.0, CHANGELOG.md, „Was ist neu“

@@ -13,6 +13,8 @@ extends CanvasLayer
 @export var hud: CanvasLayer
 @export var weather: Weather
 @export var chill_mode: ChillMode
+## Fenster „Was ist neu“ (Knopf unten rechts)
+@export var whats_new: WhatsNew
 
 const MAIN_SIZE := Vector2(440.0, 668.0)
 const SETTINGS_SIZE := Vector2(1200.0, 800.0)
@@ -185,7 +187,26 @@ func _build_main() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(spacer)
-	box.add_child(UiStyle.label("Esc  weiterfahren", 14, "medium", UiStyle.TEXT_FAINT))
+	# Unten: Esc-Hinweis, rechts Versionsnummer mit „Was ist neu?“
+	var footer := HBoxContainer.new()
+	box.add_child(footer)
+	var esc_hint := UiStyle.label("Esc  weiterfahren", 14, "medium", UiStyle.TEXT_FAINT)
+	esc_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	esc_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	footer.add_child(esc_hint)
+	var version_button := Button.new()
+	version_button.text = "Version %s · Was ist neu?" % WhatsNew.version()
+	version_button.flat = true
+	version_button.focus_mode = Control.FOCUS_NONE
+	version_button.add_theme_font_override("font", UiStyle.font("medium"))
+	version_button.add_theme_font_size_override("font_size", 14)
+	version_button.add_theme_color_override("font_color", UiStyle.TEXT_FAINT)
+	version_button.add_theme_color_override("font_hover_color", UiStyle.TEXT)
+	version_button.add_theme_color_override("font_pressed_color", UiStyle.TEXT)
+	version_button.pressed.connect(func() -> void:
+		if whats_new:
+			whats_new.open())
+	footer.add_child(version_button)
 
 
 func _build_settings() -> void:

@@ -80,3 +80,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
   Shader vorher übersetzen, dünne Teile in der Ferne ausgeblendet. Occlusion Culling noch nicht.
 - [x] Teil 1 (17.11.): Ladebildschirm mit wechselnden Bildern, echtem Ladestand und Tipps, weiche
   Animationen in Menüs und HUD, Meldungen ohne Überlappung, Tastenhilfe (abschaltbar)
+- [x] Teil 2 (17.11.): Version 1.0.0 (Pausemenü, App-Info), CHANGELOG.md aus der Git-Geschichte, Fenster
+  „Was ist neu“ einmal pro Version, Git-Tag v1.0.0

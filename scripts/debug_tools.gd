@@ -123,6 +123,7 @@ extends Node
 ## --noimpostor   ferne Bäume als einfache Modelle statt Impostoren, zum Messen der Kosten
 ## --2wd          mit 2WD-Modus starten (nur Autos mit two_wd_switch, z. B. --car=f90)
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
+## --whatsnew    Foto mit dem Fenster „Was ist neu“ (sonst nie in Testläufen)
 ## --hints       Tastenhilfe auch im Testlauf zeigen (sonst aus, damit sie nicht auf jedem Foto steht)
 ## --midfade=S   mit --pause/--map/--garage/--photo: das Menü erst S Sekunden vor dem Foto öffnen (z. B. 0.08:
 ##                Foto mitten in der Einblende-Animation)
@@ -144,6 +145,7 @@ var volumetric_fog: bool = false
 var _shot_name: String = ""
 var _load_shot: float = -1.0
 var _mid_fade: float = -1.0
+var _whats_new: bool = false
 var _no_wait: bool = false
 var _no_hud: bool = false
 ## Auf der Autobahn starten?
@@ -334,6 +336,8 @@ func _ready() -> void:
 		match parts[0]:
 			"shot":
 				_shot_name = value
+			"whatsnew":
+				_whats_new = true
 			"midfade":
 				_mid_fade = float(value)
 			"loadshot":
@@ -1456,7 +1460,7 @@ func _prepare_shot() -> void:
 	if _traffic_view_type != "":
 		(_game.get_node("Traffic") as Traffic).spawn_lineup(14.0, _traffic_view_type)
 	# Fotomodus und große Karte halten das Spiel an, das Foto muss trotzdem ausgelöst werden
-	if _photo or _open_map or _open_garage or _pause_page >= 0:
+	if _photo or _open_map or _open_garage or _pause_page >= 0 or _whats_new:
 		process_mode = Node.PROCESS_MODE_ALWAYS
 	if _mid_fade < 0.0:
 		_open_shot_menus()
@@ -1489,6 +1493,8 @@ func _open_shot_menus() -> void:
 		var photo := _game.get_node("PhotoMode") as PhotoMode
 		photo.open()
 		photo.set_filter(_photo_filter)
+	if _whats_new:
+		(_game.get_node("WhatsNew") as WhatsNew).open()
 
 
 ## Kreuzungsfoto: nächste Kreuzung mit dieser Regel, dort ein KI-Auto 45 m vor die Haltelinie

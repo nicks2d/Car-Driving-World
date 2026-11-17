@@ -115,7 +115,7 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
   `--chill` (mit `--bench`), `--quality=niedrig|mittel|hoch|ultra`, `--nohud`, `--hide=A,B`,
   `--quitafter=S` (normaler Start mit Garage und Spielständen, beendet sich nach S Sekunden).
 - Oberfläche: `--loadshot=S` (Foto des Ladebildschirms nach S Sekunden), `--midfade=S` (Menü erst S Sekunden
-  vor dem Foto öffnen: mitten in der Animation), `--hints` (Tastenhilfe auch im Testlauf), z. B.
+  vor dem Foto öffnen: mitten in der Animation), `--hints` (Tastenhilfe auch im Testlauf), `--whatsnew` (Fenster „Was ist neu“), z. B.
   `--shot=hinweise --hints --wait=4` oder `--shot=menu_mitte --pause=0 --midfade=0.08`.
 
 ## Prüfwerkzeuge (`tools/`)

@@ -62,6 +62,17 @@
 - Testen: `--midfade=S` öffnet das Menü (`--pause`, `--map`, `--garage`, `--photo`) erst S Sekunden vor
   dem Foto, z. B. `--pause=0 --midfade=0.08` für ein Foto mitten in der Animation.
 
+## Was ist neu
+
+- `whats_new.gd` (Knoten WhatsNew, Ebene 36, über der Garage): zeigt den Abschnitt der aktuellen Version aus
+  `CHANGELOG.md` (einfaches Markdown → BBCode: Überschriften in Akzentfarbe, Punkte, Fett). Erscheint einmal
+  pro Version beim Start nach dem Laden (auch beim allerersten Start) über der Garage, nie in Testläufen
+  (nichts, was mit Argumenten oder ohne Bildschirm startet: Welt-Prüfer, `--quitafter` usw.);
+  gemerkt in `user://einstellungen.cfg` ([info] version_gesehen). Esc oder Enter schließt (in `_input`, also
+  vor der Garage darunter).
+- Pausemenü unten rechts: „Version 1.0.0 · Was ist neu?“ öffnet das Fenster jederzeit wieder.
+- Testen: `--whatsnew` (Foto mit dem Fenster, speichert nichts).
+
 ## Tastenhilfe
 
 - `key_hints.gd` (Knoten Messages/KeyHints, unten Mitte, läuft auch bei angehaltenem Spiel): Glas-Leiste
@@ -74,7 +85,7 @@
 - Ein Hinweis bleibt 12 s, dann blendet er aus, bis sich die Lage ändert. Aus bei offenen Menüs,
   Chill-Modus, Zurückspulen und ausgeblendetem HUD (sofort geprüft), der Ort alle 0,25 s.
 - Abschaltbar: Einstellungen > Spiel > Tastenhilfe (`spiel/tastenhilfe`). In Testläufen aus, außer mit
-  `--hints`.
+  `--hints` (erst beim Zeichnen gefragt: DebugTools liest die Argumente nach diesem Knoten ein).
 
 ## Garage
 
