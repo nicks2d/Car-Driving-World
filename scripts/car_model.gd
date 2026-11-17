@@ -214,6 +214,12 @@ func _physics_process(_delta: float) -> void:
 
 
 func _process(_delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(_delta)
+	FrameCosts.add("Automodell", started)
+
+
+func _timed_process(_delta: float) -> void:
 	if _loading_path != "":
 		_check_loading()
 		return

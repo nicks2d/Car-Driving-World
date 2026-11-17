@@ -33,6 +33,12 @@ var _time: float = 0.0
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Seeleben", started)
+
+
+func _timed_process(delta: float) -> void:
 	if car == null or world_gen == null or roads == null:
 		return
 	_time += delta

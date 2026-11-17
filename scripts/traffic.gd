@@ -275,6 +275,12 @@ func car_count() -> int:
 
 
 func _physics_process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_physics_process(delta)
+	FrameCosts.add("Verkehr", started)
+
+
+func _timed_physics_process(delta: float) -> void:
 	if rewinding:
 		return
 	_upgrade_parked(delta)

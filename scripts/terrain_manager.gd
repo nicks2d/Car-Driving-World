@@ -78,6 +78,8 @@ var _impostor_materials: Dictionary = {}
 var _fading: Array = []
 ## Ausblende-Varianten der Materialien (Original -> Variante)
 var _fade_materials: Dictionary = {}
+## Höhenbereich der Pflanzen der Kachel, die gerade eingebaut wird (für die Kiste der MultiMeshes)
+var _veg_height_range := Vector2.ZERO
 ## Laubbäume und Büsche: wie foliage_material, aber mit Herbstfarben (deciduous = true)
 var _deciduous_material: Material
 var _bare_trees: bool = false
@@ -152,6 +154,12 @@ func start(gen: WorldGen, follow: Node3D, road_network: RoadNetwork) -> void:
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Gelände", started)
+
+
+func _timed_process(delta: float) -> void:
 	if world_gen == null or target == null:
 		return
 	# Tempo messen (weich, ein Sprung zählt nicht)
@@ -297,6 +305,7 @@ func _collect_finished_jobs() -> int:
 
 
 func _apply_job(chunk: Chunk) -> void:
+	var started := Time.get_ticks_usec()
 	var job := chunk.job
 	chunk.job = null
 	var mesh := ArrayMesh.new()
@@ -317,7 +326,11 @@ func _apply_job(chunk: Chunk) -> void:
 	chunk.mesh_instance.mesh = mesh
 	_mask_dirty = true
 	_apply_water(chunk, job)
+	FrameCosts.add("Gelände: Mesh", started)
+	started = Time.get_ticks_usec()
 	_apply_vegetation(chunk, job)
+	FrameCosts.add("Gelände: Pflanzen", started)
+	started = Time.get_ticks_usec()
 	chunk.lod = job.lod
 	var rebuilt := chunk.generation != chunk.pending_generation
 	chunk.generation = chunk.pending_generation
@@ -350,6 +363,8 @@ func _apply_water(chunk: Chunk, job: TerrainChunkJob) -> void:
 
 
 func _apply_vegetation(chunk: Chunk, job: TerrainChunkJob) -> void:
+	_veg_height_range = job.vegetation_height_range if job.vegetation_height_range.x <= job.vegetation_height_range.y \
+		else Vector2(0.0, 2000.0)
 	# Alte Pflanzen: beim Wechsel der Detailstufe kurz gerastert ausblenden, sonst gleich weg
 	var lod_changed := chunk.lod >= 0 and chunk.lod != job.lod
 	for nodes: Array in chunk.veg_instances.values():
@@ -369,7 +384,7 @@ func _apply_vegetation(chunk: Chunk, job: TerrainChunkJob) -> void:
 			continue
 		var nodes: Array = []
 		if tree and job.lod == 0:
-			nodes = _near_trees(chunk, kind, buffer)
+			nodes = _near_trees(chunk, kind, buffer, job.tree_quarters.get(kind, []))
 		elif tree and job.lod >= 2 and _impostors.ready_to_use:
 			nodes = [_veg_instance(chunk, buffer, _impostors.quad_mesh(), _impostor_material(kind, false))]
 		else:
@@ -385,18 +400,10 @@ func _apply_vegetation(chunk: Chunk, job: TerrainChunkJob) -> void:
 ## Bäume in der nächsten Detailstufe: pro 128-m-Zelle die sehr detaillierte Version (nah) und die mittlere
 ## (dahinter), gerastert übergeblendet (Sichtweiten mit Übergang). Schatten wirft ein eigener, unsichtbarer
 ## Satz mit der mittleren Version für die ganze Kachel: so kosten die Schatten nicht mehr als vorher.
-func _near_trees(chunk: Chunk, kind: String, buffer: PackedFloat32Array) -> Array:
+func _near_trees(chunk: Chunk, kind: String, buffer: PackedFloat32Array, quarters: Array) -> Array:
 	var nodes: Array = []
-	var half := chunk_size * 0.5
-	var count := int(buffer.size() / 16.0)
 	var material := _material_for(kind)
-	for quarter in 4:
-		var part := PackedFloat32Array()
-		for i in count:
-			var lx := buffer[i * 16 + 3]
-			var lz := buffer[i * 16 + 11]
-			if (1 if lx >= half else 0) + (2 if lz >= half else 0) == quarter:
-				part.append_array(buffer.slice(i * 16, i * 16 + 16))
+	for part: PackedFloat32Array in quarters:
 		if part.is_empty():
 			continue
 		var near := _veg_instance(chunk, part, _near_tree_meshes[kind], material)
@@ -423,6 +430,12 @@ func _veg_instance(chunk: Chunk, buffer: PackedFloat32Array, mesh: Mesh, materia
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_custom_data = true
 	multimesh.mesh = mesh
+	# Kiste vorgeben: Sonst rechnet Godot sie beim Einbauen aus allen Exemplaren aus und wartet dafür auf den
+	# Render-Thread (gemessen bis 19 ms pro MultiMesh). Kachelfläche mit Rand, Höhe aus dem Auftrag plus
+	# höchster Baum.
+	var range := _veg_height_range
+	multimesh.custom_aabb = AABB(Vector3(-25.0, range.x - 6.0, -25.0), Vector3(chunk_size + 50.0, range.y - range.x + 40.0,
+		chunk_size + 50.0))
 	multimesh.instance_count = int(buffer.size() / 16.0)
 	multimesh.buffer = buffer
 	var instance := MultiMeshInstance3D.new()
@@ -567,7 +580,9 @@ func _free_vegetation_collision(chunk: Chunk) -> void:
 
 func _update_collision(chunk: Chunk, distance: float) -> void:
 	if distance < collision_distance and chunk.body == null and chunk.grid_size > 0:
+		var started := Time.get_ticks_usec()
 		_create_collision(chunk)
+		FrameCosts.add("Gelände: Kollision", started)
 	elif distance > collision_distance + 80.0 and chunk.body != null:
 		chunk.body.queue_free()
 		chunk.body = null

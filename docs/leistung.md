@@ -85,3 +85,28 @@ mindestens 60. Einzelne Kosten (SSR, Glas, Modelle …) stehen auch bei ihrem Th
   11 Verkehrsautos, `BENCH rueckspulen_ms`), Spiegel im Cockpit 1–2 FPS. Kontaktschatten, Lack-Tropfen
   (nur bei Nässe) und Glas-Tropfen (nur bei Nässe) sind einzeln nicht gemessen. Offen: Messung mit kühlem
   Mac am Netzteil (der alte Stand liegt importiert in `~/Godot-Projekte/.endlose-welt-vergleich-0c0e765`).
+
+## Ruckler suchen und Shader vorbereiten (17.11.)
+
+- Ruckler-Suche (`scripts/frame_costs.gd`, `FrameCosts`): Die großen Teile (Gelände, Straßen, Gras, Verkehr,
+  Horizont, Karten, Tag/Nacht, Motorsound …) messen ihre Zeit pro Bild; jeder Benchmark gibt am Ende die 12
+  langsamsten Bilder mit Aufschlüsselung aus (`BENCH langsam N: ms | Teil ms, …`, ab 1 ms). Ergebnis
+  (Autobahn, Hoch, warm): Die meisten langsamen Bilder (26–30 ms) haben unter 2 ms Skriptzeit, sind also von der
+  Grafikkarte begrenzt (dichte Ansichten). Echte Ruckler: Gras-Felder einbauen bis 14 ms (wenn viele zugleich
+  fertig wurden), Gelände-Pflanzen einbauen 10–15 ms pro Kachel, Verkehrsautos mit Modell bis 25–36 ms.
+- Gemacht: Gras baut höchstens 2 fertige Felder pro Bild ein (`max_builds_per_frame`); die nahen Bäume werden
+  im Hintergrund-Auftrag nach Vierteln aufgeteilt (vorher im Hauptthread); MultiMeshes der Pflanzen bekommen
+  ihre Kiste vorgegeben (`custom_aabb`, Höhenbereich aus dem Auftrag). Das Einbauen eines MultiMesh-Knotens
+  kostet trotzdem noch bis 10–19 ms (vermutlich wartet Godot dabei auf den Render-Thread); offen.
+- Shader vorbereiten (`scripts/shader_warmup.gd`): hinter dem Ladebildschirm 6 Bilder lang kleine Flächen mit
+  allen später gebrauchten Shadern (Regen auf den Scheiben, Tropfen/Schnee auf dem Lack, Ausblend-Varianten,
+  Impostoren, Tunnel-Ventilatoren, Leuchten, Spiegel) und Regen-/Schnee-Partikeln. Test `--bench=16 --highway
+  --rainat=10` (Regen setzt nach 10 s ein), `--nowarmup` zum Vergleich: Godot 4.7 übersetzt ohnehin vieles im
+  Hintergrund; beim Regenbeginn mit Vorbereitung höchstens 27–29 ms, ohne 35–36 ms (eine Messung, streut).
+- Flimmern: Leitplanken nur bis 700 m, Leitpfosten bis 320 m (`rail_distance`, `post_distance`); ferne Bäume
+  sind Impostoren mit Mipmaps (keine dünnen Äste mehr in der Ferne), MetalFX Temporal glättet Kanten. Ein
+  Video-Vergleich fehlt (Fotos zeigen kein Flimmern).
+- Nicht gemacht: Occlusion Culling. Die Messung zeigt, dass die langsamen Bilder von der Grafikkarte begrenzt
+  sind; Verdecker für das Gelände müssten mit jeder nachgeladenen Kachel neu eingebaut werden (Godot baut dann
+  seine Verdecker-Struktur neu, das droht neue Ruckler). Das wäre ein eigener, größerer Schritt mit Messung im
+  Tal, Tunnel und Dorf.

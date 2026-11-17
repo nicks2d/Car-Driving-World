@@ -6,6 +6,8 @@ extends Node3D
 ## angezeigt. Ferne Felder werden wieder entfernt.
 
 @export var grass_material: Material
+## Höchstens so viele fertige Gras-Felder werden pro Bild eingebaut
+@export var max_builds_per_frame: int = 2
 ## Bis zu dieser Entfernung wächst Gras (passend zu fade_end im grass.gdshader)
 @export var radius: float = 56.0
 ## Kantenlänge eines Gras-Felds in Metern (muss die Kachelgröße glatt teilen)
@@ -106,9 +108,17 @@ func start(gen: WorldGen, follow: Node3D, terrain_manager: TerrainManager, road_
 
 
 func _process(_delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(_delta)
+	FrameCosts.add("Gras", started)
+
+
+func _timed_process(_delta: float) -> void:
 	if world_gen == null:
 		return
+	var started := Time.get_ticks_usec()
 	_collect_finished()
+	FrameCosts.add("Gras: Einbauen", started)
 	var p := Vector2(target.global_position.x, target.global_position.z)
 	var reach := ceili(radius / patch_size)
 	var center := Vector2i(floori(p.x / patch_size), floori(p.y / patch_size))
@@ -153,7 +163,9 @@ func _start_job(coord: Vector2i) -> void:
 	var fine := terrain.fine_heights(chunk_coord)
 	if fine.is_empty():
 		return
+	var started := Time.get_ticks_usec()
 	var road_data := roads.segments_for_rect(Rect2(origin, Vector2(patch_size, patch_size)))
+	FrameCosts.add("Gras: Straßen abfragen", started)
 	if road_data.is_empty():
 		return
 	var job := GrassJob.new()
@@ -175,10 +187,15 @@ func _start_job(coord: Vector2i) -> void:
 
 
 func _collect_finished() -> void:
+	var built := 0
 	for coord: Vector2i in _patches.keys():
 		var patch: Patch = _patches[coord]
 		if patch.task_id == -1 or not WorkerThreadPool.is_task_completed(patch.task_id):
 			continue
+		# Höchstens so viele Felder pro Bild einbauen (sonst ruckelt es, wenn viele zugleich fertig werden)
+		if built >= max_builds_per_frame:
+			break
+		built += 1
 		WorkerThreadPool.wait_for_task_completion(patch.task_id)
 		patch.task_id = -1
 		_running -= 1

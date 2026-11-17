@@ -117,6 +117,8 @@ extends Node
 ##                Tunnel in der Nähe, Kamera 7 m davor im Tunnel (z. B. --pos=-4145,4246 im 2.980-m-Tunnel)
 ## --edgeview     Kamera am rechten Straßenrand (1,2 m hoch), Blick schräg nach vorne auf Bankett, Grasrand und
 ##                Fahrspuren (Landstraße: das Auto steht auf der rechten Spur)
+## --rainat=S     mit --bench: nach S Sekunden setzt Regen ein (erster Regen: ruckelt es beim Übersetzen der
+##                Shader? Siehe BENCH langsam); --nowarmup schaltet das Vorab-Übersetzen ab (Vergleich)
 ## --2wd          mit 2WD-Modus starten (nur Autos mit two_wd_switch, z. B. --car=f90)
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
@@ -213,6 +215,8 @@ var _game: Node3D
 var _state: String = "idle"
 var _timer: float = 0.0
 var _frame_times: PackedFloat32Array = PackedFloat32Array()
+## Je Bild: [Dauer, Rechenzeit der Teile (FrameCosts)]
+var _frame_costs: Array = []
 var _gpu_times: PackedFloat32Array = PackedFloat32Array()
 var _cpu_times: PackedFloat32Array = PackedFloat32Array()
 var _process_times: PackedFloat32Array = PackedFloat32Array()
@@ -275,6 +279,7 @@ var _rewind_test: bool = false
 var _rewind_step: int = 0
 var _rewind_mark := Vector3.ZERO
 var _two_wd: bool = false
+var _rain_at: float = -1.0
 var _edge_view: bool = false
 ## Abheben bei hohem Tempo (Benchmark): Sekunden über 150 km/h, davon ohne Bodenkontakt bzw. mit 1–3 Rädern
 var _fast_time: float = 0.0
@@ -383,6 +388,8 @@ func _ready() -> void:
 				_rewind_test = true
 			"2wd":
 				_two_wd = true
+			"rainat":
+				_rain_at = float(value)
 			"edgeview":
 				_edge_view = true
 			"tunnelshot":
@@ -708,6 +715,9 @@ func _process(delta: float) -> void:
 		"bench":
 			_timer += delta
 			_frame_times.append(delta)
+			# Rechenzeit der Teile im letzten Bild (FrameCosts): die schlechtesten Bilder merken
+			var costs := FrameCosts.take()
+			_frame_costs.append([delta, costs])
 			if delta > 0.025:
 				print("Langsames Bild bei %.1f s: %.0f ms (Kacheln in Arbeit: %d)" % [_timer, delta * 1000.0, _game.terrain.pending_count()])
 			var viewport_rid := get_viewport().get_viewport_rid()
@@ -725,6 +735,10 @@ func _process(delta: float) -> void:
 				_save_image("bench_%d" % int(_timer))
 			if _reset_test:
 				_update_reset_test()
+			if _rain_at >= 0.0 and _timer >= _rain_at:
+				_rain_at = -1.0
+				(_game.get_node("Weather") as Weather).set_mode(Weather.Kind.RAIN, true, false)
+				print("Regen setzt ein bei %.1f s" % _timer)
 			if _crash_test:
 				_update_crash_test(delta)
 			if _rewind_test:
@@ -1619,6 +1633,18 @@ func _print_bench() -> void:
 	if _levels:
 		_print_levels()
 	var rewind := _game.get_node_or_null("Rewind") as Rewind
+	# Die 12 langsamsten Bilder mit den teuersten Teilen (ab 1 ms)
+	var slowest := _frame_costs.duplicate()
+	slowest.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	for k in mini(12, slowest.size()):
+		var parts: Array[String] = []
+		var costs: Dictionary = slowest[k][1]
+		var names := costs.keys()
+		names.sort_custom(func(a: String, b: String) -> bool: return costs[a] > costs[b])
+		for part: String in names:
+			if costs[part] >= 1000:
+				parts.append("%s %.1f" % [part, costs[part] / 1000.0])
+		print("BENCH langsam %d: %.1f ms | %s" % [k + 1, slowest[k][0] * 1000.0, ", ".join(parts) if not parts.is_empty() else "Skripte unter 1 ms"])
 	if _fast_time > 0.0:
 		print("BENCH abheben: %.1f s über 150 km/h, davon %.2f s ohne Bodenkontakt (zuletzt bei %s), %.2f s mit 1–3 Rädern" % [
 			_fast_time, _airborne_time, _airborne_at.round(), _light_time])

@@ -93,7 +93,10 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
   `--tunnelshot=sos|sign|bay|fan` fotografiert die Ausstattung langer Tunnel (siehe `tunnel.md`).
   `--edgeview` setzt die Kamera an den rechten Straßenrand. `BENCH abheben` (bei jedem Benchmark) zählt die Zeit
   über 150 km/h ohne Bodenkontakt. Welt-Prüfer: Zeile `KUPPEN` (Halbmesser der Kuppen und Senken),
-  `--profile=X,Z` druckt das Höhenprofil um eine Stelle. `--nowait` macht das
+  `--profile=X,Z` druckt das Höhenprofil um eine Stelle.
+  Jeder Benchmark druckt `BENCH langsam 1–12` (langsamste Bilder mit Rechenzeit der Teile, `FrameCosts`).
+  `--rainat=S` lässt im Benchmark nach S Sekunden Regen einsetzen, `--nowarmup` schaltet das Vorab-Übersetzen
+  der Shader ab. `--nowait` macht das
   Foto, ohne auf die Kacheln zu warten, `--jump=X,Z` springt nach dem Laden weit weg.
 - Freie Kamera: `--cam=X,Z,H --lookat=X,Z,H` (H über dem Gelände), Überblick `--fly=H --pitch=G
   --lookat=X,Z`.

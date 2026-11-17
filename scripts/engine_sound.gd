@@ -166,6 +166,12 @@ func _update_exhaust(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Motorsound", started)
+
+
+func _timed_process(delta: float) -> void:
 	if _playback == null or _car.profile == null:
 		return
 	var started := Time.get_ticks_usec()

@@ -133,4 +133,4 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
 - [x] Vorfahrt an Kreuzungen (Schilder, Haltelinien, KI wartet) · Verkehr nach Uhrzeit, Berufsverkehr, Stau ·
   Tunnel-Ausstattung (SOS, Fluchtweg, Ventilatoren, Pannenbuchten, Name) · Bäume in 3 Stufen mit
   Impostoren, weiche LOD-Übergänge, Waldränder, Lichtungen, Schilf · Fels ohne Wiederholung, Grasrand,
-  Flickstellen, ausgerundete Kuppen
+  Flickstellen, ausgerundete Kuppen · Ruckler-Suche (BENCH langsam), Shader vorbereiten

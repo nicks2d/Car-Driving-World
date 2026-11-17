@@ -78,6 +78,12 @@ func _testing() -> bool:
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Entdecker", started)
+
+
+func _timed_process(delta: float) -> void:
 	# Fertigen Auftrag abholen, nächsten starten
 	if _task >= 0 and WorkerThreadPool.is_task_completed(_task):
 		WorkerThreadPool.wait_for_task_completion(_task)

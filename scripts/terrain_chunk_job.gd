@@ -37,6 +37,11 @@ var water_arrays: Array = []
 var skirt_bottoms := PackedFloat32Array()
 ## Pflanzen und Felsen: Art -> MultiMesh-Puffer (je Exemplar 12 Zahlen Transform + 4 Zufallswerte)
 var vegetation: Dictionary = {}
+## Höhenbereich aller Pflanzen der Kachel (unterste Basis, oberste Basis): für die Kiste (AABB) der MultiMeshes,
+## damit Godot sie beim Einbauen nicht selbst ausrechnen muss
+var vegetation_height_range := Vector2(INF, -INF)
+## Detailstufe 0: Bäume nach 128-m-Vierteln (Art -> 4 Puffer), für die sehr detaillierten nahen Bäume
+var tree_quarters: Dictionary = {}
 ## Hindernisse für die Kollision: je 4 Zahlen (x, y, z, Radius) relativ zur Kachel
 var colliders: PackedFloat32Array = PackedFloat32Array()
 
@@ -417,6 +422,25 @@ func _place_vegetation(origin: Vector2, hs: PackedFloat32Array, side: int, lakes
 						_: rocks_c.append_array(row)
 	vegetation = {"conifer": conifers, "broadleaf": broadleafs, "bush": bushes,
 		"rock0": rocks_a, "rock1": rocks_b, "rock2": rocks_c, "reed": reeds}
+	for kind: String in vegetation:
+		var buffer: PackedFloat32Array = vegetation[kind]
+		for i in int(buffer.size() / 16.0):
+			var y := buffer[i * 16 + 7]
+			vegetation_height_range = Vector2(minf(vegetation_height_range.x, y), maxf(vegetation_height_range.y, y))
+	# Für die nächste Detailstufe: Bäume schon hier nach 128-m-Vierteln aufteilen (im Hauptthread kostete
+	# das bis zu 13 ms pro Kachel)
+	if lod == 0:
+		for kind: String in ["conifer", "broadleaf"]:
+			var buffer: PackedFloat32Array = vegetation[kind]
+			var half := chunk_size * 0.5
+			var quarters: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array(), PackedFloat32Array(),
+				PackedFloat32Array()]
+			for i in int(buffer.size() / 16.0):
+				var quarter := (1 if buffer[i * 16 + 3] >= half else 0) + (2 if buffer[i * 16 + 11] >= half else 0)
+				var part := quarters[quarter]
+				part.append_array(buffer.slice(i * 16, i * 16 + 16))
+				quarters[quarter] = part
+			tree_quarters[kind] = quarters
 
 
 ## Reicht etwas mit dieser Unterkante (Welthöhe) und diesem Radius in eine Tunnelröhre?

@@ -134,6 +134,12 @@ func start(gen: WorldGen, follow: Node3D, terrain_manager: TerrainManager) -> vo
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Horizont", started)
+
+
+func _timed_process(delta: float) -> void:
 	if world_gen == null or target == null:
 		return
 	_update_tunnel_mask(delta)

@@ -142,6 +142,12 @@ func turn_after_next() -> Dictionary:
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Navi", started)
+
+
+func _timed_process(delta: float) -> void:
 	message_timer = maxf(message_timer - delta, 0.0)
 	if not has_target or route_points.is_empty() or car == null:
 		return

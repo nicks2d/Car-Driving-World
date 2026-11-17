@@ -102,6 +102,12 @@ func get_tile(level: int, tx: int, tz: int) -> Texture2D:
 
 
 func _process(_delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(_delta)
+	FrameCosts.add("Kartenkacheln", started)
+
+
+func _timed_process(_delta: float) -> void:
 	for key: Vector3i in _jobs.keys():
 		var job: TileJob = _jobs[key]
 		if not WorkerThreadPool.is_task_completed(job.task_id):

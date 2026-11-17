@@ -29,6 +29,10 @@ extends Node3D
 @export var landmark_distance: float = 6000.0
 ## Material für Leitplanken (Metall)
 @export var rail_material: Material
+## Leitplanken und Leitpfosten nur bis zu dieser Entfernung zeigen (Meter): Weiter weg sind sie nur wenige
+## Bildpunkte breit und flimmern
+@export var rail_distance: float = 700.0
+@export var post_distance: float = 320.0
 @export_group("Dörfer")
 ## Dörfer: so viele echte Lichter an den nächsten Straßenlaternen (nachts), bis zu dieser
 ## Entfernung; Häuser werfen bis village_shadow_distance Schatten
@@ -294,6 +298,12 @@ func _key_exists(key: Vector3i) -> bool:
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Straßen", started)
+
+
+func _timed_process(delta: float) -> void:
 	if world_gen == null or target == null:
 		return
 	# Tempo messen (weich, ein Sprung zählt nicht)
@@ -1790,6 +1800,9 @@ func _update_visuals() -> void:
 					var rails := MeshInstance3D.new()
 					rails.mesh = rail_mesh
 					rails.material_override = rail_material
+					# Dünne Teile flimmern in der Ferne: Leitplanken nur bis 700 m
+					rails.visibility_range_end = rail_distance
+					rails.visibility_range_end_margin = 50.0
 					entry.mesh_instance.add_child(rails)
 				# Leitpfosten und Schilder (Autobahn)
 				if not segment.posts.is_empty():
@@ -2736,6 +2749,8 @@ func _make_posts(segment: RoadSegment) -> MultiMeshInstance3D:
 	var instance := MultiMeshInstance3D.new()
 	instance.multimesh = multimesh
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.visibility_range_end = post_distance
+	instance.visibility_range_end_margin = 30.0
 	return instance
 
 

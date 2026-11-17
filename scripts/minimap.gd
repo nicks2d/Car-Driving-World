@@ -62,6 +62,12 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Minikarte", started)
+
+
+func _timed_process(delta: float) -> void:
 	if car == null:
 		return
 	# Zoom nach Tempo, weich nachgeführt

@@ -66,10 +66,22 @@ func _ready() -> void:
 	water.start(world_gen, car, roads)
 	grass.start(world_gen, car, terrain, roads)
 	loading_screen.visible = true
+	# Shader, die erst später gebraucht werden (Regen, Tunnel, Übergänge …), hinter dem Ladebildschirm übersetzen
+	if not OS.get_cmdline_user_args().has("--nowarmup"):
+		var warmup := ShaderWarmup.new()
+		add_child(warmup)
+		var extra: Array[Material] = [terrain.foliage_material, roads.road_material]
+		warmup.start(get_viewport().get_camera_3d(), extra)
 	# Die Garage öffnet sich, sobald die Welt geladen ist (siehe _process)
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Spiel", started)
+
+
+func _timed_process(delta: float) -> void:
 	if world_is_ready:
 		_check_for_jump()
 		return

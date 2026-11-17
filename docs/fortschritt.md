@@ -76,3 +76,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
   Detailstufen, Baumgruppen, Lichtungen, Waldränder, Schilf und Steine am Ufer
 - [x] Teil 4 (17.11.): Fels ohne sichtbare Wiederholung, Grasrand am Bankett, Reifenspuren, Flickstellen,
   Kuppen und Senken ausgerundet (bei 250 km/h kein Abheben mehr)
+- [x] Teil 5 (17.11., teilweise): Ruckler-Suche pro Bild, Gras und Bäume ruckeln weniger beim Nachladen,
+  Shader vorher übersetzen, dünne Teile in der Ferne ausgeblendet. Occlusion Culling noch nicht.

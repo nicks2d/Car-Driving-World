@@ -267,6 +267,12 @@ static func _sign_spot(segment: RoadSegment, i: int, d: int) -> int:
 # ---------------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Tempolimits", started)
+
+
+func _timed_process(delta: float) -> void:
 	if roads == null or car == null:
 		return
 	_timer -= delta

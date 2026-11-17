@@ -43,6 +43,12 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Niederschlag", started)
+
+
+func _timed_process(delta: float) -> void:
 	if camera == null:
 		return
 	var p := camera.global_position

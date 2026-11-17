@@ -174,6 +174,12 @@ func _set_parts_visible(on: bool) -> void:
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Cockpit", started)
+
+
+func _timed_process(delta: float) -> void:
 	var camera := get_viewport().get_camera_3d() as FollowCamera
 	var now := camera != null and camera.is_inside_car() and _car.profile != null
 	if now and not _built and not _model.is_loading():

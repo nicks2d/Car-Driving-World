@@ -117,6 +117,12 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	var started := Time.get_ticks_usec()
+	_timed_process(delta)
+	FrameCosts.add("Tag/Nacht", started)
+
+
+func _timed_process(delta: float) -> void:
 	var hours_per_second := 24.0 / (day_length_minutes * 60.0)
 	var advance := 0.0
 	if Input.is_action_pressed("time_warp"):
