@@ -78,3 +78,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
   Kuppen und Senken ausgerundet (bei 250 km/h kein Abheben mehr)
 - [x] Teil 5 (17.11., teilweise): Ruckler-Suche pro Bild, Gras und Bäume ruckeln weniger beim Nachladen,
   Shader vorher übersetzen, dünne Teile in der Ferne ausgeblendet. Occlusion Culling noch nicht.
+- [x] Teil 1 (17.11.): Ladebildschirm mit wechselnden Bildern, echtem Ladestand und Tipps, weiche
+  Animationen in Menüs und HUD, Meldungen ohne Überlappung, Tastenhilfe (abschaltbar)

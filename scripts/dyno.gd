@@ -192,6 +192,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if is_open and event.is_action_pressed("ui_cancel"):
 		close()
 		get_viewport().set_input_as_handled()
+	elif is_open and event.is_action_pressed("ui_accept"):
+		# Enter startet den Messlauf (wie der Knopf)
+		start_run()
+		get_viewport().set_input_as_handled()
 
 
 # ---------------------------------------------------------------------------

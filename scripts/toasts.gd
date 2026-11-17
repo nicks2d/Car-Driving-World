@@ -2,6 +2,8 @@ class_name Toasts
 extends Control
 ## Meldungen oben links (Entwurf „Glas“): Symbol, Titel, Unterzeile, rechts optional ein
 ## Tastenhinweis. Sie gleiten ein, bleiben ein paar Sekunden und blenden wieder aus.
+## Sie stapeln sich ohne Überlappung: Eine neue kommt von oben, ältere werden dabei mit nach unten
+## geschoben, und zu viele alte blenden aus, statt einfach zu verschwinden.
 ## Melden kann jeder: Toasts.post(get_tree(), "rain", "Regen setzt ein", "Straße wird nass")
 
 ## So lange bleibt eine Meldung stehen (Sekunden)
@@ -26,7 +28,7 @@ class Toast:
 	var key: String
 	var key_label: String
 	var age: float = 0.0
-	var y: float = -100.0
+	var y: float = 0.0
 
 var _toasts: Array[Toast] = []
 
@@ -63,8 +65,17 @@ func show_toast(icon: String, title: String, subtitle: String = "", key: String 
 	toast.glass.show_behind_parent = true
 	toast.glass.modulate.a = 0.0
 	add_child(toast.glass)
+	# Startet eine Reihe über der obersten (gleitet von dort an ihren Platz)
+	toast.y = (_toasts[0].y if not _toasts.is_empty() else 0.0) - (HEIGHT + GAP)
 	_toasts.push_front(toast)
-	while _toasts.size() > max_visible:
+	# Zu viele: die ältesten blenden aus (stehen dabei noch unten im Stapel)
+	var active := 0
+	for other in _toasts:
+		if other.age < show_seconds:
+			active += 1
+			if active > max_visible:
+				other.age = show_seconds
+	while _toasts.size() > max_visible + 2:
 		var old: Toast = _toasts.pop_back()
 		old.glass.queue_free()
 
@@ -78,11 +89,13 @@ func _process(delta: float) -> void:
 		if toast.age > show_seconds + FADE:
 			toast.glass.queue_free()
 			_toasts.remove_at(i)
-	# Neue oben, ältere rutschen weich nach unten
+	# Neue oben, ältere rutschen weich nach unten, nie in die Meldung darüber hinein
 	for i in _toasts.size():
 		var toast := _toasts[i]
 		var target_y := i * (HEIGHT + GAP)
-		toast.y = target_y if toast.y < -50.0 else lerpf(toast.y, target_y, clampf(delta * 10.0, 0.0, 1.0))
+		toast.y = lerpf(toast.y, target_y, clampf(delta * 10.0, 0.0, 1.0))
+		if i > 0:
+			toast.y = maxf(toast.y, _toasts[i - 1].y + HEIGHT + GAP)
 		var fade_in := clampf(toast.age / FADE, 0.0, 1.0)
 		var fade_out := clampf((show_seconds + FADE - toast.age) / FADE, 0.0, 1.0)
 		toast.glass.modulate.a = minf(fade_in, fade_out)

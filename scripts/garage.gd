@@ -251,11 +251,11 @@ func open() -> void:
 	if is_open:
 		return
 	is_open = true
-	visible = true
+	UiFade.set_shown(self, true)
 	get_tree().paused = true
 	if hud:
 		_hud_was_visible = hud.visible
-		hud.visible = false
+		UiFade.set_shown(hud, false)
 	_camera.current = true
 	for i in cars.size():
 		if car and cars[i] == car.profile:
@@ -279,14 +279,14 @@ func close(drive: bool) -> void:
 		car.apply_profile(cars[_selected])
 		_apply_paint_to_car()
 	is_open = false
-	visible = false
+	UiFade.set_shown(self, false)
 	_has_driven = true
 	var model := car.get_node_or_null("Model") as CarModel if car else null
 	if model:
 		model.end_welcome()
 	_camera.current = false
 	if hud:
-		hud.visible = _hud_was_visible
+		UiFade.set_shown(hud, _hud_was_visible)
 	# Neues Auto: aufrecht und etwas angehoben an derselben Stelle absetzen
 	if _selected != _open_selected:
 		var spot := Transform3D(Basis(Vector3.UP, atan2(car.global_basis.z.x, car.global_basis.z.z)),

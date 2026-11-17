@@ -75,11 +75,11 @@ func open() -> void:
 	if is_open:
 		return
 	is_open = true
-	visible = true
+	UiFade.set_shown(self, true)
 	get_tree().paused = true
 	if hud:
 		_hud_was_visible = hud.visible
-		hud.visible = false
+		UiFade.set_shown(hud, false)
 	# Start dort, wo die Fahrkamera gerade ist
 	var current := get_viewport().get_camera_3d()
 	if current:
@@ -104,13 +104,13 @@ func close() -> void:
 	if not is_open:
 		return
 	is_open = false
-	visible = false
+	UiFade.set_shown(self, false)
 	_dragging = false
 	_camera.current = false
 	if day_night:
 		day_night.set_time(_time_before)
 	if hud:
-		hud.visible = _hud_was_visible
+		UiFade.set_shown(hud, _hud_was_visible)
 	get_tree().paused = false
 
 

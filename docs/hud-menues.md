@@ -32,6 +32,49 @@
   Ausschnitt lieferte in dieser Anordnung nur Schwarz.
 - Testen: `--nohud` blendet das HUD aus, `--hide=Minimap,Speedometer` einzelne Teile. Messungen
   streuen stark mit der Temperatur des Macs: immer abwechselnd mit/ohne messen.
+- Meldungen (Toasts) stapeln sich ohne Überlappung: Eine neue startet eine Reihe über der obersten und
+  gleitet an Platz 1, ältere werden mit nach unten geschoben (jede liegt immer mindestens 68 + 12 px
+  unter der darüber). Mehr als 3 auf einmal: die ältesten blenden aus (0,3 s), statt zu verschwinden.
+
+## Ladebildschirm
+
+- `loading_screen.gd` (Knoten Loading/LoadingScreen, Ebene 40): Bilder aus `assets/loading/` (Fotos aus
+  dem README, nur Autos mit CC-BY-Lizenz) wechseln alle 5 s mit 1,2 s Überblendung und langsamem Zoom
+  (1,0 → 1,08), unten Titel, ein Tipp alle 4,5 s (15 Tipps, Tasten mit der aktuellen Belegung über
+  `GameSettings.action_key`) und ein Fortschrittsbalken mit Prozent und Status.
+- Ladestand (`game.gd` → `_update_loading`): 40 % Straßen rund um den Start
+  (`RoadNetwork.area_progress`, je Abschnitt nach Stand: berechnet 35 %, geprüft 70 %, Mesh 100 %,
+  verworfene zählen als fertig), 45 % Gelände-Kacheln mit Kollision am Auto
+  (`TerrainManager.area_progress`), 15 % Fernsicht (Horizont-Ring). Status „Auto wird geladen …“, solange
+  das Modell noch lädt. Der Balken zählt nie rückwärts und gleitet weich nach. Am Ende blendet der
+  Bildschirm in 0,5 s aus (in Testläufen sofort weg, damit Fotos nichts davon zeigen).
+- Testen: `--loadshot=S` speichert S Sekunden nach dem Start `laden.png` (falls noch geladen wird).
+
+## Animationen
+
+- `ui_fade.gd` (`UiFade.set_shown(ebene, an)`): Pausemenü, Garage, große Karte, Fotomodus und HUD blenden
+  in 0,18 s ein und 0,22 s aus (Deckkraft der obersten Flächen der Ebene, Tween läuft auch bei
+  angehaltenem Spiel). `is_open` wechselt sofort, nur das Bild läuft nach; beim Ausblenden fängt eine
+  unsichtbare Fläche die Klicks ab und der Tastatur-Fokus wird losgelassen. Gegenrichtung mitten in der
+  Animation geht vom aktuellen Stand weiter. Reiter in den Einstellungen und der Wechsel Pause ↔
+  Einstellungen blenden weich ein (`UiFade.swap_in`).
+- Achtung: Im Tween keine Lambdas, die den Tween selbst festhalten (Kreis → „ObjectDB instances leaked“).
+- Testen: `--midfade=S` öffnet das Menü (`--pause`, `--map`, `--garage`, `--photo`) erst S Sekunden vor
+  dem Foto, z. B. `--pause=0 --midfade=0.08` für ein Foto mitten in der Animation.
+
+## Tastenhilfe
+
+- `key_hints.gd` (Knoten Messages/KeyHints, unten Mitte, läuft auch bei angehaltenem Spiel): Glas-Leiste
+  mit Tastenkästchen, Tasten immer in der aktuellen Belegung.
+  - Auto steht 1,5 s: G Garage · P Foto · M Karte · Tab Kamera
+  - Raststätte (Parkplatz, Teil 0 der Rastanlage, unter 12 km/h): Auto wechseln, T halten (Zeit vergeht),
+    Foto
+  - Aussichtspunkt (Parkbucht im Umkreis von 25 m, unter 12 km/h): Fotomodus, Karte
+  - Prüfstand: Enter Messlauf starten (neu: Enter startet den Lauf), Esc zurück zur Garage
+- Ein Hinweis bleibt 12 s, dann blendet er aus, bis sich die Lage ändert. Aus bei offenen Menüs,
+  Chill-Modus, Zurückspulen und ausgeblendetem HUD (sofort geprüft), der Ort alle 0,25 s.
+- Abschaltbar: Einstellungen > Spiel > Tastenhilfe (`spiel/tastenhilfe`). In Testläufen aus, außer mit
+  `--hints`.
 
 ## Garage
 
@@ -154,4 +197,5 @@
   `keyboard_get_label_from_physical`, Doppelbelegung wird rot angezeigt, Esc bleibt frei).
 - Audio-Busse (`default_bus_layout.tres`): Master, Motor (alle Auto-Geräusche, über den
   Tunnel-Bus mit Hall), Umgebung (Regen, Wind, Donner), Musik (vorbereitet, noch keine Musik).
-  Spiel: HUD-Farbe, Sportauspuff, km/h oder mph (Tacho), automatisches Wetter, Tageslänge.
+  Spiel: HUD-Farbe, Sportauspuff, km/h oder mph (Tacho), automatisches Wetter, Tageslänge,
+  Tastenhilfe.

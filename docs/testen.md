@@ -114,6 +114,9 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
 - Menüs und Modi: `--garage`, `--map`, `--photo --filter=N`, `--pause=0..5`, `--collection=0|1`,
   `--chill` (mit `--bench`), `--quality=niedrig|mittel|hoch|ultra`, `--nohud`, `--hide=A,B`,
   `--quitafter=S` (normaler Start mit Garage und Spielständen, beendet sich nach S Sekunden).
+- Oberfläche: `--loadshot=S` (Foto des Ladebildschirms nach S Sekunden), `--midfade=S` (Menü erst S Sekunden
+  vor dem Foto öffnen: mitten in der Animation), `--hints` (Tastenhilfe auch im Testlauf), z. B.
+  `--shot=hinweise --hints --wait=4` oder `--shot=menu_mitte --pause=0 --midfade=0.08`.
 
 ## Prüfwerkzeuge (`tools/`)
 

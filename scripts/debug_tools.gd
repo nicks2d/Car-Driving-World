@@ -123,6 +123,11 @@ extends Node
 ## --noimpostor   ferne Bäume als einfache Modelle statt Impostoren, zum Messen der Kosten
 ## --2wd          mit 2WD-Modus starten (nur Autos mit two_wd_switch, z. B. --car=f90)
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
+## --hints       Tastenhilfe auch im Testlauf zeigen (sonst aus, damit sie nicht auf jedem Foto steht)
+## --midfade=S   mit --pause/--map/--garage/--photo: das Menü erst S Sekunden vor dem Foto öffnen (z. B. 0.08:
+##                Foto mitten in der Einblende-Animation)
+## --loadshot=S   S Sekunden nach dem Start ein Foto des Ladebildschirms (laden.png), falls noch geladen wird;
+##                danach geht es normal weiter (z. B. mit --shot)
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
 ##                Audio, Spiel
 
@@ -137,6 +142,8 @@ var time_of_day: float = -1.0
 var volumetric_fog: bool = false
 
 var _shot_name: String = ""
+var _load_shot: float = -1.0
+var _mid_fade: float = -1.0
 var _no_wait: bool = false
 var _no_hud: bool = false
 ## Auf der Autobahn starten?
@@ -327,6 +334,10 @@ func _ready() -> void:
 		match parts[0]:
 			"shot":
 				_shot_name = value
+			"midfade":
+				_mid_fade = float(value)
+			"loadshot":
+				_load_shot = float(value) if value != "" else 2.0
 			"pos":
 				var xz := value.split(",")
 				start_position = Vector2(float(xz[0]), float(xz[1]))
@@ -622,6 +633,9 @@ func _start_bench() -> void:
 
 
 func _process(delta: float) -> void:
+	if _load_shot >= 0.0 and Time.get_ticks_msec() - _load_start_msec > _load_shot * 1000.0:
+		_load_shot = -1.0
+		_save_image("laden")
 	if _quit_after > 0.0 and Time.get_ticks_msec() > _quit_after * 1000.0:
 		_quit_after = -1.0
 		print("Beende nach --quitafter")
@@ -679,6 +693,9 @@ func _process(delta: float) -> void:
 				_place_free_camera()
 			if _traffic_view_type != "":
 				_place_traffic_view_camera()
+			if _mid_fade >= 0.0 and _timer <= _mid_fade:
+				_mid_fade = -1.0
+				_open_shot_menus()
 			if _timer <= 0.0:
 				_state = "done"
 				_take_screenshot()
@@ -1441,9 +1458,8 @@ func _prepare_shot() -> void:
 	# Fotomodus und große Karte halten das Spiel an, das Foto muss trotzdem ausgelöst werden
 	if _photo or _open_map or _open_garage or _pause_page >= 0:
 		process_mode = Node.PROCESS_MODE_ALWAYS
-	# Mit Benchmark erst am Ende (Karte mit Nebel nach der Fahrt, Orte-Sammlung)
-	if _open_garage and _bench_seconds <= 0.0:
-		_open_garage_now()
+	if _mid_fade < 0.0:
+		_open_shot_menus()
 	if not _dyno_cars.is_empty():
 		var garage := _game.get_node("Garage") as Garage
 		garage.open_dyno()
@@ -1454,6 +1470,14 @@ func _prepare_shot() -> void:
 			_recorder = AudioEffectRecord.new()
 			AudioServer.add_bus_effect(AudioServer.get_bus_index("Master"), _recorder)
 			_recorder.set_recording_active(true)
+
+
+
+## Menüs fürs Foto öffnen (sofort beim Vorbereiten oder mit --midfade kurz vor dem Foto)
+func _open_shot_menus() -> void:
+	# Mit Benchmark erst am Ende (Karte mit Nebel nach der Fahrt, Orte-Sammlung)
+	if _open_garage and _bench_seconds <= 0.0:
+		_open_garage_now()
 	if _pause_page >= 0:
 		var menu := _game.get_node("PauseMenu") as PauseMenu
 		menu.open()

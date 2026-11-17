@@ -47,7 +47,7 @@ const DEFAULTS := {
 	"anzeige": {"vollbild": false, "aufloesung": "1280x720", "vsync": true, "fps_limit": 0, "fps_anzeige": false},
 	"steuerung": {"grip": "sport", "lenkung": 1.0, "tempolimit": true},
 	"audio": {"gesamt": 1.0, "motor": 1.0, "umgebung": 1.0, "musik": 0.8},
-	"spiel": {"einheit": "kmh", "tageslaenge": 10.0, "entdecker": true, "chill_zeit": 1},
+	"spiel": {"einheit": "kmh", "tageslaenge": 10.0, "entdecker": true, "chill_zeit": 1, "tastenhilfe": true},
 }
 ## Einstellungen, die etwas neu bauen (verzögert anwenden)
 const HEAVY: Array[String] = ["sichtweite", "vegetation", "gras"]
@@ -277,6 +277,15 @@ func key_of(action: String) -> int:
 	return 0
 
 
+## Name der Taste, mit der eine Aktion gerade belegt ist (z. B. „G“ für die Garage), für Hinweise und Tipps
+static func action_key(action: String) -> String:
+	for event in InputMap.action_get_events(action):
+		var key := event as InputEventKey
+		if key:
+			return key_name(key.physical_keycode if key.physical_keycode != 0 else key.keycode)
+	return "—"
+
+
 ## Name einer Taste so, wie sie auf der Tastatur steht (deutsches Layout: Z/Y richtig)
 static func key_name(code: int) -> String:
 	if code == 0:
@@ -286,6 +295,9 @@ static func key_name(code: int) -> String:
 		KEY_LEFT: "←", KEY_RIGHT: "→", KEY_META: "Cmd", KEY_CAPSLOCK: "Feststell"}
 	if names.has(code):
 		return names[code]
+	# Ohne Bildschirm (Welt-Prüfer, --headless) gibt es kein Tastatur-Layout: dann den einfachen Namen
+	if DisplayServer.get_name() == "headless":
+		return OS.get_keycode_string(code as Key)
 	var label := DisplayServer.keyboard_get_label_from_physical(code as Key)
 	return OS.get_keycode_string(label if label != KEY_NONE else code as Key)
 

@@ -55,11 +55,11 @@ func open() -> void:
 	if is_open:
 		return
 	is_open = true
-	visible = true
+	UiFade.set_shown(self, true)
 	get_tree().paused = true
 	if hud:
 		_hud_was_visible = hud.visible
-		hud.visible = false
+		UiFade.set_shown(hud, false)
 	_quit_armed = false
 	_quit_button.text = "Spiel beenden"
 	for button in _primary_buttons:
@@ -71,11 +71,11 @@ func close() -> void:
 	if not is_open:
 		return
 	is_open = false
-	visible = false
+	UiFade.set_shown(self, false)
 	_waiting_action = ""
 	get_tree().paused = false
 	if hud:
-		hud.visible = _hud_was_visible
+		UiFade.set_shown(hud, _hud_was_visible)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -111,6 +111,8 @@ func _input(event: InputEvent) -> void:
 
 func _show_main() -> void:
 	_waiting_action = ""
+	if not _main.visible:
+		UiFade.swap_in(_main)
 	_main.visible = true
 	_settings_panel.visible = false
 
@@ -123,6 +125,8 @@ func show_settings_tab(index: int) -> void:
 
 func _show_settings() -> void:
 	_main.visible = false
+	if not _settings_panel.visible:
+		UiFade.swap_in(_settings_panel)
 	_settings_panel.visible = true
 	_show_tab(_tab)
 
@@ -244,6 +248,8 @@ func _show_tab(index: int) -> void:
 		_scroll.scroll_vertical = scroll
 	else:
 		_scroll.scroll_vertical = 0
+		# Anderer Reiter: Inhalt weich einblenden
+		UiFade.swap_in(_content)
 
 
 func _on_settings_changed() -> void:
@@ -360,6 +366,8 @@ func _fill_game() -> void:
 	_choice_row("Chill-Modus: Zeitraffer", "So schnell vergeht die Zeit, während das Auto von selbst fährt", "spiel",
 		"chill_zeit", ["Normal", "4-fach", "12-fach"], [1, 4, 12])
 	_toggle_row("Entdecker-Karte", "Karte zeigt nur, wo du schon warst; der Rest liegt im Nebel", "spiel", "entdecker")
+	_toggle_row("Tastenhilfe", "Passende Tasten unten einblenden: im Stand, an Raststätten, Aussichtspunkten, Prüfstand",
+		"spiel", "tastenhilfe")
 
 
 # ---------------------------------------------------------------------------

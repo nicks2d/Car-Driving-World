@@ -134,3 +134,5 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Tunnel-Ausstattung (SOS, Fluchtweg, Ventilatoren, Pannenbuchten, Name) · Bäume in 3 Stufen mit
   Impostoren, weiche LOD-Übergänge, Waldränder, Lichtungen, Schilf · Fels ohne Wiederholung, Grasrand,
   Flickstellen, ausgerundete Kuppen · Ruckler-Suche (BENCH langsam), Shader vorbereiten
+- [x] Ladebildschirm mit Bildern, Ladestand und Tipps · weiche Menü-Animationen · Toasts ohne Überlappung ·
+  Tastenhilfe (Stand, Raststätte, Aussichtspunkt, Prüfstand)

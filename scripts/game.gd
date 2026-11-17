@@ -90,12 +90,17 @@ func _timed_process(delta: float) -> void:
 	if world_is_ready:
 		_check_for_jump()
 		return
+	_update_loading()
 	if not _car_on_road:
 		_place_car_on_road(delta)
 		return
 	if terrain.is_area_ready(car.global_position) and horizon.is_ready_at(car.global_position):
 		world_is_ready = true
-		loading_screen.visible = false
+		var screen := loading_screen as LoadingScreen
+		if screen:
+			screen.finish(not debug_tools.is_active())
+		else:
+			loading_screen.visible = false
 		car.freeze = false
 		_last_car_position = car.global_position
 		# Test-Werkzeuge nur beim ersten Mal starten (nicht nach jedem Sprung).
@@ -105,6 +110,26 @@ func _timed_process(delta: float) -> void:
 			debug_tools.on_world_ready(self)
 			if garage and not debug_tools.is_active():
 				garage.open()
+
+
+## Fortschrittsbalken im Ladebildschirm: erst die Straßen rund um den Start, dann die Gelände-Kacheln am
+## Auto, dann die Fernsicht (Horizont-Ring); das Automodell lädt nebenher
+func _update_loading() -> void:
+	var screen := loading_screen as LoadingScreen
+	if screen == null:
+		return
+	var road := 1.0 if _car_on_road else roads.area_progress(_start_point, 1200.0)
+	var ground := terrain.area_progress(car.global_position) if _car_on_road else 0.0
+	var far := 1.0 if _car_on_road and horizon.is_ready_at(car.global_position) else 0.0
+	var model := car.get_node_or_null("Model") as CarModel
+	var status := "Straßen werden geplant …"
+	if _car_on_road:
+		status = "Gelände, Bäume und Wasser werden erzeugt …"
+		if ground >= 1.0:
+			status = "Fernsicht wird berechnet …"
+	if model and model.is_loading() and road >= 1.0:
+		status = "Auto wird geladen …"
+	screen.set_progress(road * 0.4 + ground * 0.45 + far * 0.15, status)
 
 
 ## Ist das Auto gerade weit gesprungen (Reset, Teleport) und fehlt dort noch Gelände?

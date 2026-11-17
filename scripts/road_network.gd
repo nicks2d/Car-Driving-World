@@ -630,6 +630,25 @@ func is_area_ready(center: Vector2, radius: float) -> bool:
 	return true
 
 
+## Anteil der fertigen Straßenabschnitte rund um eine Stelle (0–1), für den Fortschrittsbalken beim Laden
+func area_progress(center: Vector2, radius: float) -> float:
+	var rect := Rect2(center - Vector2(radius, radius), Vector2(radius, radius) * 2.0)
+	# Jeder gebrauchte Abschnitt zählt nach seinem Stand: berechnet, geprüft, Mesh fertig
+	const SHARES: Array[float] = [0.0, 0.35, 0.5, 0.7, 0.85, 1.0]
+	var total := 0
+	var done := 0.0
+	for key in _edges_touching(rect):
+		var entry: Entry = _entries.get(key)
+		if entry == null or not entry.needed:
+			continue
+		if entry.state != State.BUILDING and _distance_to_rect(center, entry.segment.bounds) >= radius:
+			continue
+		total += 1
+		# Verworfene Abschnitte sind fertig (sie werden nie gebaut)
+		done += 1.0 if entry.state == State.CHECKED and not entry.kept else SHARES[entry.state]
+	return done / total if total > 0 else 0.0
+
+
 ## Nächste Stelle auf einer Straße. preferred_forward wählt die passende Fahrtrichtung.
 ## Ergebnis: {"found": bool, "transform": Transform3D}
 func nearest_road_transform(near: Vector3, preferred_forward: Vector3 = Vector3.ZERO, highway_only: bool = false) -> Dictionary:

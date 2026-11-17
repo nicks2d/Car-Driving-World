@@ -682,6 +682,27 @@ func is_area_ready(position_3d: Vector3) -> bool:
 	return true
 
 
+## Anteil der Kacheln rund um eine Stelle, die schon mit Kollision fertig sind (0–1), für den Ladebalken
+func area_progress(position_3d: Vector3) -> float:
+	if world_gen == null:
+		return 0.0
+	var center := Vector2(position_3d.x, position_3d.z)
+	var reach := ceili(collision_distance / chunk_size)
+	var center_coord := Vector2i(floori(center.x / chunk_size), floori(center.y / chunk_size))
+	var total := 0
+	var done := 0
+	for dz in range(-reach, reach + 1):
+		for dx in range(-reach, reach + 1):
+			var coord := center_coord + Vector2i(dx, dz)
+			if _distance_to_chunk(center, coord) > collision_distance * 0.5:
+				continue
+			total += 1
+			var chunk: Chunk = _chunks.get(coord)
+			if chunk != null and chunk.body != null:
+				done += 1
+	return float(done) / total if total > 0 else 1.0
+
+
 ## Wie viele Kacheln noch auf ihre (neue) Detailstufe warten
 func pending_count() -> int:
 	if target == null:

@@ -23,6 +23,8 @@
 [ext_resource type="Script" path="res://scripts/exploration.gd" id="93_explore"]
 [ext_resource type="Script" path="res://scripts/chill_mode.gd" id="94_chill"]
 [ext_resource type="Script" path="res://scripts/car_reset.gd" id="95_reset"]
+[ext_resource type="Script" path="res://scripts/loading_screen.gd" id="96_loading"]
+[ext_resource type="Script" path="res://scripts/key_hints.gd" id="97_hints"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_diff_1k.jpg" id="11_grass_a"]
 [ext_resource type="Texture2D" path="res://assets/textures/leafy_grass/leafy_grass_nor_gl_1k.jpg" id="12_grass_n"]
 [ext_resource type="Texture2D" path="res://assets/textures/forrest_ground_01/forrest_ground_01_diff_1k.jpg" id="13_dirt_a"]
@@ -47,7 +49,6 @@
 [ext_resource type="Script" path="res://scripts/speedometer.gd" id="50_speedo"]
 [ext_resource type="Script" path="res://scripts/status_chips.gd" id="70_chips"]
 [ext_resource type="Script" path="res://scripts/toasts.gd" id="71_toasts"]
-[ext_resource type="FontFile" path="res://assets/fonts/Inter-SemiBold.ttf" id="72_inter_semibold"]
 [ext_resource type="Shader" path="res://shaders/reflector.gdshader" id="73_reflector"]
 [ext_resource type="Script" path="res://scripts/garage.gd" id="51_garage"]
 [ext_resource type="Script" path="res://scripts/car_profile.gd" id="57_profile"]
@@ -453,6 +454,35 @@ offset_bottom = 300.0
 mouse_filter = 2
 script = ExtResource("71_toasts")
 
+[node name="KeyHints" type="Control" parent="Messages" node_paths=PackedStringArray("car", "roads", "viewpoints", "dyno", "settings", "hud", "garage", "pause_menu", "big_map", "photo_mode", "chill_mode", "rewind", "debug_tools")]
+layout_mode = 3
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -420.0
+offset_top = -100.0
+offset_right = 420.0
+offset_bottom = -44.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("97_hints")
+car = NodePath("../../Car")
+roads = NodePath("../../Roads")
+viewpoints = NodePath("../../Viewpoints")
+dyno = NodePath("../../Dyno")
+settings = NodePath("../../Settings")
+hud = NodePath("../../HUD")
+garage = NodePath("../../Garage")
+pause_menu = NodePath("../../PauseMenu")
+big_map = NodePath("../../BigMap")
+photo_mode = NodePath("../../PhotoMode")
+chill_mode = NodePath("../../ChillMode")
+rewind = NodePath("../../Rewind")
+debug_tools = NodePath("../../DebugTools")
+
 [node name="Loading" type="CanvasLayer" parent="."]
 layer = 40
 
@@ -462,26 +492,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.043, 0.059, 0.086, 1)
-
-[node name="Label" type="Label" parent="Loading/LoadingScreen"]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -300.0
-offset_top = -30.0
-offset_right = 300.0
-offset_bottom = 30.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_colors/font_color = Color(1, 1, 1, 0.7)
-theme_override_fonts/font = ExtResource("72_inter_semibold")
-theme_override_font_sizes/font_size = 22
-text = "Welt wird erzeugt …"
-horizontal_alignment = 1
-vertical_alignment = 1
+color = Color(0.02, 0.03, 0.05, 1)
+script = ExtResource("96_loading")
 
 [node name="DebugTools" type="Node" parent="." node_paths=PackedStringArray("camera")]
 script = ExtResource("9_debug")

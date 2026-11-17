@@ -56,7 +56,7 @@ func _ready() -> void:
 
 func open() -> void:
 	is_open = true
-	visible = true
+	UiFade.set_shown(self, true)
 	get_tree().paused = true
 	_map.center = Vector2(car.global_position.x, car.global_position.z)
 	_map.meters_per_pixel = start_meters_per_pixel
@@ -64,7 +64,7 @@ func open() -> void:
 
 func close() -> void:
 	is_open = false
-	visible = false
+	UiFade.set_shown(self, false)
 	get_tree().paused = false
 
 
