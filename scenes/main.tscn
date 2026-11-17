@@ -75,6 +75,7 @@
 [ext_resource type="Script" path="res://scripts/game_settings.gd" id="77_settings"]
 [ext_resource type="Script" path="res://scripts/pause_menu.gd" id="78_pause"]
 [ext_resource type="Script" path="res://scripts/rewind.gd" id="90_rewind"]
+[ext_resource type="Script" path="res://scripts/sound_mix.gd" id="91_soundmix"]
 
 [sub_resource type="Resource" id="WorldGen_main"]
 script = ExtResource("2_worldgen")
@@ -678,3 +679,9 @@ script = ExtResource("90_rewind")
 car = NodePath("../Car")
 camera = NodePath("../Camera")
 traffic = NodePath("../Traffic")
+
+[node name="SoundMix" type="Node" parent="." node_paths=PackedStringArray("car", "navigation", "tunnel_effects")]
+script = ExtResource("91_soundmix")
+car = NodePath("../Car")
+navigation = NodePath("../Navigation")
+tunnel_effects = NodePath("../TunnelEffects")

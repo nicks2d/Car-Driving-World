@@ -35,6 +35,8 @@ var _toasts: Array[Toast] = []
 static func post(tree: SceneTree, icon: String, title: String, subtitle: String = "", key: String = "",
 		key_label: String = "") -> void:
 	tree.call_group("toasts", "show_toast", icon, title, subtitle, key, key_label)
+	# Signalton und kurz leiser (SoundMix)
+	tree.call_group("announcements", "announce", "toast")
 
 
 func _ready() -> void:

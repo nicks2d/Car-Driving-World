@@ -134,7 +134,9 @@
 
 ## Sound, Pops & Bangs, Turbo, Flammen
 
-- Sound prozedural (`engine_sound.gd`, AudioStreamGenerator 22 kHz): Tabelle mit 6 Zündungen
+- Sound prozedural (`engine_sound.gd`, AudioStreamGenerator, seit 17.11. 48 kHz statt 22 kHz, Projekt-
+  Abtastrate ebenfalls 48 kHz; kostet 0,49–0,53 ms pro Bild statt 0,25 ms, im Benchmark als
+  `BENCH motorsound_ms`): Tabelle mit 6 Zündungen
   pro Arbeitsspiel (720°), je Zylinder etwas andere Lautstärke, Abspielrate = Drehzahl/120.
   Last-/Schub-Tabelle überblendet, dazu Ansaugrauschen, Turbo, Begrenzer, Schaltknall, Quietschen.
 - Pops & Bangs (`engine_sound.gd`): Gas schnell weg (von > 0,5 auf < 0,15) über 3000/min →
@@ -325,6 +327,28 @@
   so klein, dass er ganz unter dem Auto lag und nichts zu sehen war; mit einem roten Test-Decal gefunden.
 - Test-Fotos: `--carfx=W,S,F` setzt nass, Schnee, Eis fest (z. B. `--carfx=-1,1,-1 --weather=snow
   --season=winter` für Schnee auf dem Auto, `--carfx=-1,-1,1 --season=winter --time=7.5` für Eis).
+
+## Sound-Mix: Limiter, Ansagen, Hall der Umgebung (17.11.)
+
+- `scripts/sound_mix.gd` (Knoten SoundMix in main.tscn). Busse: Master (mit Limiter), Motor, Umgebung,
+  Musik (aus `default_bus_layout.tres`), dazu zur Laufzeit Tunnel (TunnelEffects), Hall und Ansagen. Die
+  Geräusche des Autos laufen Hall → Tunnel → Motor → Master.
+- Limiter (AudioEffectHardLimiter auf dem Master, Grenze −1 dB, Loslassen 0,12 s): In einer Aufnahme bei
+  Gewitter auf der Autobahn (40 s) lag die Spitze bei −1,5 dB, keine Probe übersteuert.
+- Ansagen: Jede Meldung (Toasts.post) und jeder Navi-Hinweis (nächste Abbiegung unter 400 m und unter
+  80 m) spielt einen kurzen Signalton auf dem Bus „Ansagen“ (Meldung zwei leise Töne 880/1320 Hz, Navi
+  drei Töne 660/990/1320 Hz, mit Glocken-Oberton, im Code berechnet) und senkt Umgebung und Musik
+  1,6 s lang um 9 dB (in 0,15 s leiser, in 0,6 s wieder lauter; über AudioEffectAmplify, die Regler der
+  Einstellungen bleiben unberührt). Gesprochene Ansagen gibt es (noch) nicht. Gemessen: Umgebung bei
+  Gewitter 1 s vor einer Meldung −12,7 dB, danach −23,7 dB.
+- Hall der Umgebung: Alle 0,2 s 8 Strahlen waagerecht (30 m, 1,2 m über dem Auto) und einer nach oben.
+  Nähere Wände zählen mehr, ein Dach (Brücke, Unterführung) extra; daraus „Enge“ 0–1 (geglättet) und
+  mittlerer Wandabstand. Reverb auf dem Bus „Hall“: Anteil bis 0,24 (Tunnel 0,45), Raumgröße 0,3–0,75 nach
+  Wandabstand, 40 ms Vorverzögerung; im Tunnel aus (dort der Tunnel-Hall). Auf offener Autobahn 0, an
+  Einschnitten und Hängen 0,15–0,6.
+- Pegel angeglichen (Messung `--bench=25 --highway --levels`, Mittel/Spitze je Bus, dazu `--record`):
+  Motor bei Autobahnfahrt −12,8 dB, Regen vorher −16,7 dB, Gewitter −11,8 dB (lauter als der Motor). Regen
+  deshalb 2 dB leiser (`rain_volume_db` −10): Gewitter jetzt −13,2 dB. Master im Mittel −9 bis −12 dB.
 
 ## Prüfstand
 

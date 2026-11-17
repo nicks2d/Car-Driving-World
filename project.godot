@@ -21,6 +21,10 @@ boot_splash/use_filter=true
 config/icon="res://assets/icon/icon.png"
 config/macos_native_icon="res://assets/icon/icon.icns"
 
+[audio]
+
+driver/mix_rate=48000
+
 [display]
 
 window/size/viewport_width=1600

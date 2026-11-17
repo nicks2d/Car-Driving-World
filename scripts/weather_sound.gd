@@ -5,7 +5,7 @@ extends Node
 ## Die Klänge werden beim Start im Hintergrund (WorkerThreadPool) berechnet.
 
 @export var mix_rate: int = 22050
-@export var rain_volume_db: float = -8.0
+@export var rain_volume_db: float = -10.0
 @export var wind_volume_db: float = -12.0
 @export var thunder_volume_db: float = -1.0
 

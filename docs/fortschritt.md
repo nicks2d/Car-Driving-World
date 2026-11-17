@@ -66,3 +66,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
 - [x] Teil 4 (16.11.): 2WD-Modus für beide M5 (Taste U, Drift 4° → 30°), Zurückspulen bis 10 s mit Verkehr
 - [x] Teil 5 (17.11.): Regentropfen auf Lack und Scheiben, Schnee auf dem Auto, vereiste Scheiben am kalten
   Morgen, weicher Kontaktschatten unter eigenem Auto und Verkehr
+- [x] Teil 6 (17.11.): Motorsound 48 kHz, Limiter, Signalton mit Ducking bei Ansagen, Hall der Umgebung,
+  Pegel per Messung angeglichen

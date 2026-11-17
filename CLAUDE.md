@@ -77,7 +77,7 @@ bis dahin Platzhalter. Automodelle liegen wegen ihrer Lizenzen nie im Repo
 | Autobahn, Anschlussstellen, Rampen, Streifen, Raststätten | `docs/autobahn.md` |
 | Tunnel (Entstehung, Röhre, Löcher im Gelände, Prüfwerkzeug) | `docs/tunnel.md` |
 | Flüsse, Seen, Talsperren, Wasserfälle, Landmarken-Brücken, Seeleben | `docs/wasser.md` |
-| Fahrphysik, Profile, Modelle, Licht, Sound, Kennzeichen, Prüfstand, Cockpit-Sicht | `docs/autos.md` |
+| Fahrphysik, Profile, Modelle, Licht, Sound-Mix, Kennzeichen, Prüfstand, Cockpit, Rücklauf | `docs/autos.md` |
 | KI-Verkehr, Tempolimits, Schilder, Tempomat, Rennen | `docs/verkehr.md` |
 | Wetter, Jahreszeiten, Himmel, Mond, Polarlicht, Wolkenschatten | `docs/wetter-himmel.md` |
 | HUD, alle Tasten, Garage, Karte/Navi, Entdecker-Karte, Fotomodus, Chill-Modus, Einstellungen | `docs/hud-menues.md` |
@@ -129,4 +129,4 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Kamera mit Feder, Karosserie nickt und wankt, Kollisionen mit Funken und Schleifen ·
   Blinker im Lampenglas, Begrüßungslicht, Scheinwerfer mit Hell-Dunkel-Grenze ·
   2WD-Modus der M5, Zurückspulen bis 10 s (mit Verkehr) · Tropfen, Schnee und Eis am Auto,
-  Kontaktschatten
+  Kontaktschatten · Sound 48 kHz, Limiter, Ducking, Hall der Umgebung

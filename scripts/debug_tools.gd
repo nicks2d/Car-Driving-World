@@ -107,6 +107,8 @@ extends Node
 ##                (Power-Drift, z. B. mit --car=f90 --2wd), Fotos drift_1 und drift_2, größter Driftwinkel
 ## --carfx=W,S,F  Wetter am Auto fürs Foto fest setzen: nass, Schnee, Eis (je 0–1, -1 = berechnen),
 ##                z. B. --carfx=1,-1,-1 für Tropfen ohne Regen oder --carfx=-1,1,-1 für Schnee auf dem Auto
+## --levels       mit --bench: Pegel jedes Audio-Busses messen (Spitze und Mittel in dB, Anteil der Bilder
+##                über -1 dB auf dem Master vor dem Limiter) und mit SoundMix-Hall alle 2 s ausgeben
 ## --2wd          mit 2WD-Modus starten (nur Autos mit two_wd_switch, z. B. --car=f90)
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
@@ -265,6 +267,15 @@ var _rewind_test: bool = false
 var _rewind_step: int = 0
 var _rewind_mark := Vector3.ZERO
 var _two_wd: bool = false
+## Pegel-Messung (--levels): je Bus [Summe der Pegel, Anzahl, Spitze], Bilder mit Master über -1 dB
+var _levels: bool = false
+var _level_stats: Dictionary = {}
+var _level_loud: int = 0
+var _level_timer: float = 0.0
+## Ducking-Prüfung: Pegel der Umgebung 1 s vor und 1 s nach einer Test-Meldung bei 10 s [Summe, Anzahl]
+var _duck_before := Vector2.ZERO
+var _duck_after := Vector2.ZERO
+var _duck_posted: bool = false
 ## Wetter am Auto (--carfx): nass, Schnee, Eis, negativ = berechnen
 var _car_fx := Vector3(-1.0, -1.0, -1.0)
 ## Drift-Test (--drifttest): Schritt, Zeitpunkt des Gasgebens, größter Driftwinkel
@@ -353,6 +364,8 @@ func _ready() -> void:
 				_rewind_test = true
 			"2wd":
 				_two_wd = true
+			"levels":
+				_levels = true
 			"carfx":
 				var fx := value.split(",")
 				_car_fx = Vector3(float(fx[0]), float(fx[1]) if fx.size() > 1 else -1.0, float(fx[2]) if fx.size() > 2 else -1.0)
@@ -681,6 +694,8 @@ func _process(delta: float) -> void:
 				_update_crash_test(delta)
 			if _rewind_test:
 				_update_rewind_test()
+			if _levels:
+				_measure_levels(delta)
 			if _drift_test:
 				_update_drift_test()
 			if _windows_at >= 0.0 and _timer >= _windows_at:
@@ -806,6 +821,46 @@ func _update_drift_test() -> void:
 					Input.action_release(action)
 				print("Drift-Test: größter Driftwinkel %.0f°" % _drift_max)
 				_drift_step = 4
+
+
+## Pegel aller Busse messen (Spitze links/rechts, je Bild), dazu alle 2 s den Hall der Umgebung
+func _measure_levels(delta: float) -> void:
+	for bus in AudioServer.bus_count:
+		var bus_name := AudioServer.get_bus_name(bus)
+		var level := maxf(AudioServer.get_bus_peak_volume_left_db(bus, 0), AudioServer.get_bus_peak_volume_right_db(bus, 0))
+		if level < -100.0:
+			continue
+		var stats: Array = _level_stats.get(bus_name, [0.0, 0, -200.0])
+		stats[0] = float(stats[0]) + level
+		stats[1] = int(stats[1]) + 1
+		stats[2] = maxf(stats[2], level)
+		_level_stats[bus_name] = stats
+	# Ducking prüfen: bei 10 s eine Meldung, Umgebung davor und danach vergleichen
+	var ambience := AudioServer.get_bus_index("Umgebung")
+	var ambience_db := AudioServer.get_bus_peak_volume_left_db(ambience, 0)
+	if _timer > 9.0 and _timer < 10.0:
+		_duck_before += Vector2(ambience_db, 1.0)
+	elif _timer >= 10.0 and not _duck_posted:
+		_duck_posted = true
+		Toasts.post(get_tree(), "check", "Pegel-Test", "Signalton und Ducking")
+	elif _timer > 10.2 and _timer < 11.2:
+		_duck_after += Vector2(ambience_db, 1.0)
+	_level_timer -= delta
+	if _level_timer <= 0.0:
+		_level_timer = 2.0
+		var mix := _game.get_node_or_null("SoundMix") as SoundMix
+		if mix:
+			print("Pegel: Hall der Umgebung %.2f (Wände %.0f %% der Reichweite weg), %.0f km/h" % [mix.enclosure,
+				mix.wall_distance * 100.0, _game.car.linear_velocity.length() * 3.6])
+
+
+func _print_levels() -> void:
+	if _duck_before.y > 0.0 and _duck_after.y > 0.0:
+		print("BENCH Ducking: Umgebung 1 s vor der Meldung %.1f dB, danach %.1f dB" % [_duck_before.x / _duck_before.y,
+			_duck_after.x / _duck_after.y])
+	for bus_name: String in _level_stats:
+		var stats: Array = _level_stats[bus_name]
+		print("BENCH Pegel %-9s Mittel %6.1f dB  Spitze %6.1f dB" % [bus_name, float(stats[0]) / int(stats[1]), stats[2]])
 
 
 ## Rücklauf-Test: bei 7 s die Lage merken, bei 12 s 2,5 s lang zurückspulen (doppelt so schnell = 5 s),
@@ -1448,6 +1503,12 @@ func _print_bench() -> void:
 	print("BENCH gpu_ms avg=%.2f p99=%.2f | cpu_ms avg=%.2f p99=%.2f" % [
 		_average(_gpu_times), _percentile(_gpu_times, 0.99), _average(_cpu_times), _percentile(_cpu_times, 0.99)])
 	print("BENCH window=%s screen_scale=%.1f" % [DisplayServer.window_get_size(), DisplayServer.screen_get_scale()])
+	if _levels:
+		_print_levels()
+	var engine_sound: Node = _game.car.get_node_or_null("EngineSound")
+	if engine_sound:
+		print("BENCH motorsound_ms avg=%.3f (Abtastrate %d Hz)" % [engine_sound.call("average_cost_ms"),
+			int(engine_sound.get("mix_rate"))])
 	print("BENCH autopilot: %.0f m gefahren (%.0f km/h im Schnitt, max. %.0f km/h, davon %.0f m im Tunnel), max. %.1f m neben der Straßenmitte, min. Aufrecht-Wert %.2f" % [
 		_distance_driven, _distance_driven / maxf(_timer, 0.1) * 3.6, _top_speed * 3.6, _tunnel_driven, _max_off_road, _lowest_up])
 	var puddles := _game.get_node_or_null("Puddles") as Puddles

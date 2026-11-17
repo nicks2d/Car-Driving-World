@@ -25,8 +25,8 @@ signal popped(strength: float)
 ## So schnell baut der Turbo Ladedruck auf und ab (Anteil pro Sekunde)
 @export var spool_rate: float = 1.4
 @export var spool_down_rate: float = 4.0
-## Abtastrate: 22050 reicht für einen Motor und spart Rechenzeit
-@export var mix_rate: float = 22050.0
+## Abtastrate: 48 kHz (klarere Obertöne, Pops und Turbo; kostet 0,53 statt 0,25 ms pro Bild bei 22 kHz)
+@export var mix_rate: float = 48000.0
 
 const TABLE_SIZE: int = 2048
 
@@ -57,6 +57,9 @@ var _blow_low: float = 0.0
 var _rpm: float = 900.0
 var _load: float = 0.0
 var _squeal: float = 0.0
+## Rechenzeit des Klangs (für den Benchmark): Summe in Mikrosekunden und Anzahl Bilder
+var cost_usec: int = 0
+var cost_frames: int = 0
 
 
 func _ready() -> void:
@@ -165,6 +168,18 @@ func _update_exhaust(delta: float) -> void:
 func _process(delta: float) -> void:
 	if _playback == null or _car.profile == null:
 		return
+	var started := Time.get_ticks_usec()
+	_fill(delta)
+	cost_usec += Time.get_ticks_usec() - started
+	cost_frames += 1
+
+
+## Mittlere Rechenzeit des Klangs pro Bild in Millisekunden
+func average_cost_ms() -> float:
+	return cost_usec / 1000.0 / maxf(cost_frames, 1)
+
+
+func _fill(delta: float) -> void:
 	_update_exhaust(delta)
 	var frames := _playback.get_frames_available()
 	if frames <= 0:
