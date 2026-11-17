@@ -1051,6 +1051,19 @@ func _junction(cell: Vector2i) -> RoadJunction:
 	return junction
 
 
+## Für Test-Fotos: Ausstattungs-Stellen langer Tunnel in der Nähe [Art, Lage (Welt), Richtung in den Tunnel]
+func tunnel_spots_near(p: Vector3, radius: float) -> Array:
+	var result: Array = []
+	for entry: Entry in _entries.values():
+		if entry.segment == null or entry.segment.tunnel_details == null:
+			continue
+		for spot: Array in entry.segment.tunnel_details.spots:
+			var world: Vector3 = entry.segment.origin + (spot[1] as Vector3)
+			if world.distance_to(p) < radius:
+				result.append([spot[0], world, spot[2]])
+	return result
+
+
 ## Kreuzungen, deren Mitte näher als radius an p liegt (nur schon angelegte; für Tests)
 func junctions_near(p: Vector3, radius: float) -> Array[RoadJunction]:
 	var result: Array[RoadJunction] = []
@@ -1785,6 +1798,9 @@ func _update_visuals() -> void:
 					bay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 					entry.mesh_instance.add_child(bay)
 					_add_viewpoint_props(segment, entry.mesh_instance)
+				# Ausstattung langer Tunnel (Schilder, Nischen, Ventilatoren, Namensschilder)
+				if segment.tunnel_details:
+					_add_tunnel_details(segment, entry.mesh_instance)
 				# Deckenlampen leuchten selbst und werfen keinen Schatten
 				if not segment.lamp_arrays.is_empty():
 					var lamp_mesh := ArrayMesh.new()
@@ -1913,6 +1929,9 @@ func _add_signs(segment: RoadSegment, key: Vector3i, parent: Node3D) -> void:
 
 
 var _limit_sign_material: ShaderMaterial
+var _tunnel_detail_material: StandardMaterial3D
+var _fan_material: StandardMaterial3D
+var _rotor_material: ShaderMaterial
 var _landmark_lamp: StandardMaterial3D
 
 
@@ -1947,6 +1966,81 @@ func _add_sign_instance(signs: TrafficSigns, parent: Node3D) -> void:
 		text.double_sided = false
 		text.transform = Transform3D(label[2], label[1])
 		parent.add_child(text)
+
+
+## Ausstattung eines langen Tunnels einbauen: leuchtende Teile als ein Mesh (ohne Licht gezeichnet),
+## Ventilatoren als MultiMesh (Gehäuse und drehende Läufer), Schrift als Label3D (nur in der Nähe sichtbar)
+func _add_tunnel_details(segment: RoadSegment, parent: Node3D) -> void:
+	var details := segment.tunnel_details
+	var arrays := details.mesh_arrays()
+	if not arrays.is_empty():
+		if _tunnel_detail_material == null:
+			_tunnel_detail_material = StandardMaterial3D.new()
+			_tunnel_detail_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			_tunnel_detail_material.vertex_color_use_as_albedo = true
+			_tunnel_detail_material.vertex_color_is_srgb = true
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		var panels := MeshInstance3D.new()
+		panels.mesh = mesh
+		panels.material_override = _tunnel_detail_material
+		panels.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(panels)
+	if not details.fans.is_empty():
+		if _fan_material == null:
+			_fan_material = StandardMaterial3D.new()
+			_fan_material.albedo_color = Color(0.62, 0.63, 0.64)
+			_fan_material.metallic = 0.25
+			_fan_material.roughness = 0.5
+			# Die Deckenlampen hängen darüber: von unten wären die Gehäuse sonst fast schwarz
+			_fan_material.emission_enabled = true
+			_fan_material.emission = Color(0.09, 0.09, 0.1)
+			_rotor_material = ShaderMaterial.new()
+			_rotor_material.shader = load("res://shaders/tunnel_fan.gdshader")
+		for part in 2:
+			var multimesh := MultiMesh.new()
+			multimesh.transform_format = MultiMesh.TRANSFORM_3D
+			multimesh.mesh = TunnelDetails.housing_mesh() if part == 0 else TunnelDetails.rotor_mesh()
+			multimesh.instance_count = details.fans.size()
+			for k in details.fans.size():
+				multimesh.set_instance_transform(k, details.fans[k])
+			var instance := MultiMeshInstance3D.new()
+			instance.multimesh = multimesh
+			instance.material_override = _fan_material if part == 0 else _rotor_material
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			parent.add_child(instance)
+	for label: Array in details.labels:
+		parent.add_child(_tunnel_label(label[0], label[1], label[2], label[3], label[4], 120.0))
+	# Tunnelname: Ortsname der Gegend am Portal
+	for spot: Array in details.name_spots:
+		var world: Vector3 = segment.origin + (spot[0] as Vector3)
+		var name := highways.place_name(Vector2i(floori(world.x / cell_size), floori(world.z / cell_size)))
+		var length: float = spot[2]
+		var text := "Tunnel %s" % name
+		if length > 0.0:
+			text += "\n%s m" % _thousands(roundi(length))
+		parent.add_child(_tunnel_label(text, spot[0], spot[1], 72, Color(0.97, 0.97, 0.97), 400.0))
+
+
+func _tunnel_label(text: String, position: Vector3, basis: Basis, size: int, color: Color, reach: float) -> Label3D:
+	var label := Label3D.new()
+	label.text = text
+	label.font = UiStyle.font("semibold")
+	label.font_size = size
+	label.pixel_size = 0.004
+	label.modulate = color
+	label.outline_size = 0
+	label.double_sided = false
+	label.line_spacing = -4.0
+	label.visibility_range_end = reach
+	label.transform = Transform3D(basis, position)
+	return label
+
+
+## Zahl mit Tausenderpunkt (2.980)
+func _thousands(value: int) -> String:
+	var text := str(value)
+	return text.substr(0, text.length() - 3) + "." + text.substr(text.length() - 3) if value >= 1000 else text
 
 
 ## Landmarken-Brücke (Bogen, Pylone, Seile) zeigen, solange sie in landmark_distance liegt, auch

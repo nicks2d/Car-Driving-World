@@ -113,6 +113,8 @@ extends Node
 ##                KI-Auto kommt auf dem Arm mit dem Schild an und wartet an der Haltelinie (zum Foto wartet es
 ##                länger als sonst); Kamera schräg hinter dem Auto, Blick auf Linie, Schild und Kreuzung. Gut mit --pos nahe
 ##                einer solchen Kreuzung (z. B. --pos=-2105,-776 für Stopp, --pos=-683,463 für Vorfahrt gewähren)
+## --tunnelshot=ART Foto der Tunnel-Ausstattung: nächste Stelle dieser Art (sos, sign, bay, fan) im langen
+##                Tunnel in der Nähe, Kamera 7 m davor im Tunnel (z. B. --pos=-4145,4246 im 2.980-m-Tunnel)
 ## --2wd          mit 2WD-Modus starten (nur Autos mit two_wd_switch, z. B. --car=f90)
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
@@ -274,6 +276,8 @@ var _two_wd: bool = false
 ## Kreuzungsfoto (--junctionshot): gewünschte Regel, das wartende Auto
 var _junction_rule: int = -1
 var _junction_car: Traffic.TrafficCar
+## Tunnel-Foto (--tunnelshot): gesuchte Art
+var _tunnel_shot: String = ""
 ## Pegel-Messung (--levels): je Bus [Summe der Pegel, Anzahl, Spitze], Bilder mit Master über -1 dB
 var _levels: bool = false
 var _level_stats: Dictionary = {}
@@ -371,6 +375,8 @@ func _ready() -> void:
 				_rewind_test = true
 			"2wd":
 				_two_wd = true
+			"tunnelshot":
+				_tunnel_shot = value
 			"junctionshot":
 				_junction_rule = RoadJunction.RULE_YIELD if value == "yield" else RoadJunction.RULE_STOP
 			"levels":
@@ -1368,6 +1374,8 @@ func _acc_speed(car: VehicleBody3D, speed: float, target_speed: float) -> float:
 func _prepare_shot() -> void:
 	if _junction_rule >= 0:
 		_spawn_junction_car()
+	if _tunnel_shot != "":
+		_place_tunnel_camera()
 	var weather := _game.get_node("Weather") as Weather
 	if _rainbow:
 		weather.start_rainbow()
@@ -1429,6 +1437,29 @@ func _spawn_junction_car() -> void:
 	print("Kreuzungsfoto: Kreuzung bei %s, Arm %d, Auto %s" % [best.center.round(), best_arm, _junction_car != null])
 	# Etwas länger warten, bis es an der Linie steht
 	_timer = maxf(_timer, 9.0)
+
+
+## Kamera vor die nächste Tunnel-Ausstattung der gesuchten Art (in den Tunnel hinein versetzt, Blick schräg)
+func _place_tunnel_camera() -> void:
+	var roads := _game.get_node("Roads") as RoadNetwork
+	var best: Array = []
+	for spot: Array in roads.tunnel_spots_near(_game.car.global_position, 2500.0):
+		if spot[0] == _tunnel_shot and (best.is_empty() or (spot[1] as Vector3).distance_to(_game.car.global_position)
+				< (best[1] as Vector3).distance_to(_game.car.global_position)):
+			best = spot
+	if best.is_empty():
+		print("Tunnel-Foto: keine Stelle „%s“ in der Nähe" % _tunnel_shot)
+		return
+	var wall: Vector3 = best[1]
+	var inward: Vector3 = best[2]
+	var along := inward.cross(Vector3.UP).normalized()
+	var height := 6.0 if _tunnel_shot == "fan" else 1.8
+	var eye := wall + inward * 6.5 + along * 5.0 + Vector3.UP * 1.7
+	var target := wall + Vector3.UP * height + (inward * 3.0 if _tunnel_shot == "fan" else Vector3.ZERO)
+	camera.set_physics_process(false)
+	camera.global_transform = Transform3D(Basis.looking_at(target - eye), eye)
+	camera.reset_physics_interpolation()
+	print("Tunnel-Foto: %s bei %s" % [_tunnel_shot, wall.round()])
 
 
 func _place_junction_camera() -> void:

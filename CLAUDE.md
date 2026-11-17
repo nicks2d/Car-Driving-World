@@ -75,7 +75,7 @@ bis dahin Platzhalter. Automodelle liegen wegen ihrer Lizenzen nie im Repo
 | Gelände, Kacheln, Horizont-Ring, Bäume, Gras, Felsen | `docs/gelaende.md` |
 | Landstraßen, Wegsuche, Kreuzungen, Leitplanken, Dörfer, Aussichtspunkte | `docs/strassen.md` |
 | Autobahn, Anschlussstellen, Rampen, Streifen, Raststätten | `docs/autobahn.md` |
-| Tunnel (Entstehung, Röhre, Löcher im Gelände, Prüfwerkzeug) | `docs/tunnel.md` |
+| Tunnel (Entstehung, Röhre, Ausstattung, Löcher im Gelände, Prüfwerkzeug) | `docs/tunnel.md` |
 | Flüsse, Seen, Talsperren, Wasserfälle, Landmarken-Brücken, Seeleben | `docs/wasser.md` |
 | Fahrphysik, Profile, Modelle, Licht, Sound-Mix, Kennzeichen, Prüfstand, Cockpit, Rücklauf | `docs/autos.md` |
 | KI-Verkehr, Tempolimits, Schilder, Tempomat, Rennen | `docs/verkehr.md` |
@@ -130,4 +130,5 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Blinker im Lampenglas, Begrüßungslicht, Scheinwerfer mit Hell-Dunkel-Grenze ·
   2WD-Modus der M5, Zurückspulen bis 10 s (mit Verkehr) · Tropfen, Schnee und Eis am Auto,
   Kontaktschatten · Sound 48 kHz, Limiter, Ducking, Hall der Umgebung
-- [x] Vorfahrt an Kreuzungen (Schilder, Haltelinien, KI wartet) · Verkehr nach Uhrzeit, Berufsverkehr, Stau
+- [x] Vorfahrt an Kreuzungen (Schilder, Haltelinien, KI wartet) · Verkehr nach Uhrzeit, Berufsverkehr, Stau ·
+  Tunnel-Ausstattung (SOS, Fluchtweg, Ventilatoren, Pannenbuchten, Name)

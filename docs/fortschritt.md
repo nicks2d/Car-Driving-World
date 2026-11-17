@@ -70,3 +70,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
   Pegel per Messung angeglichen
 - [x] Teil 1 (17.11.): Vorfahrt an Kreuzungen (Raute, Vorfahrt gewähren, Stopp, Haltelinien, KI wartet),
   Verkehr nach Uhrzeit mit Berufsverkehr und Stau vor Anschlussstellen
+- [x] Teil 2 (17.11.): Tunnel-Ausstattung (Notrufnischen, Fluchtweg-Schilder, Ventilatoren, Pannenbuchten,
+  Tunnelname am Portal)

@@ -83,6 +83,30 @@
   Portal, 500 m lang), innen `--pos=-1798,-8254 --heading=-64`. Leistung im Vollbild: Tunnel-
   strecke 67 FPS, Startstrecke 66,8 (Mac warm). Im Fenster begrenzt macOS auf 60 (V-Sync).
 
+## Ausstattung langer Tunnel (17.11.)
+
+- `scripts/tunnel_details.gd` (`TunnelDetails`), gebaut mit der Röhre in `RoadSegment.build` (im
+  Hintergrund), eingebaut von `RoadNetwork._add_tunnel_details`. Nur Tunnelbereiche ab 400 m, 60 m Abstand
+  zu den Portalen.
+- Notrufnischen alle 150 m an beiden Wänden: orangefarbene Kabine 0,9 × 2,1 m mit Rahmen, darüber eine
+  leuchtende Tafel mit rotem „SOS“. Fluchtweg-Schilder alle 50 m dazwischen an beiden Wänden: grüne Tafel
+  1,9 × 0,42 m auf 1,6 m Höhe mit „← 2881 m | 100 m →“ (Pfeile entlang der Röhre, Entfernung zum Portal in
+  dieser Richtung; geht der Tunnel im nächsten Abschnitt weiter, fehlt diese Richtung).
+- Strahlventilatoren paarweise unter der Decke alle 300 m (ab 110 m): Gehäuse 4 m lang als MultiMesh, die
+  Läufer drehen sich im Shader (`shaders/tunnel_fan.gdshader`, 0,45–0,75 Umdrehungen pro Sekunde, keine CPU).
+  Gehäuse mit etwas Eigenleuchten, sonst sind sie von unten schwarz (die Lampen hängen darüber).
+- Pannenbuchten alle 600 m in Tunneln ab 900 m, abwechselnd links und rechts: Die Röhre wird dort 2,5 m
+  breiter (40 m voll, je 15 m Übergang; `_tube_shape`/`_tube_profile` mit Verbreiterung, das Gewölbe spannt
+  sich breiter), mit Boden und Wand-Kollision. Bleibt unter dem Deckel (`TunnelShell.REACH` 3,5 m).
+- Tunnelname über jedem Portal: blaue Tafel 6 × 1,5 m mit weißem Rand, „Tunnel Name“ (Ortsname der Zelle am
+  Portal, `HighwayLayout.place_name`) und die Länge mit Tausenderpunkt.
+- Kosten: Tafeln und Kabinen sind ein Mesh pro Abschnitt (ohne Licht, Punktfarben in sRGB:
+  `vertex_color_is_srgb`, sonst blass), Schrift als Label3D (nur bis 120 m sichtbar, Namen bis 400 m), keine
+  zusätzlichen Lichter.
+- Foto-Werkzeug: `--tunnelshot=sos|sign|bay|fan` (Kamera vor die nächste Stelle dieser Art). Im langen Tunnel
+  `--pos=-4145,4246`, Pannenbucht `--pos=-3904,4256` (echte Lichter gibt es nur ums Auto, weiter weg ist es
+  dunkel). Geprüft: Welt-Prüfer am Start, am 2.980-m- und am Autobahn-Tunnel je 0 Stellen, Tunnel-Prüfer 0.
+
 ## Von außen fest: Deckel, Stirnwand, Sockel (13.11.)
 
 - Problem: Die Röhre hatte nur innen an den Wänden Kollision (bis 2,5 m), das Gewölbe gar keine.

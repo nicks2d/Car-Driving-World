@@ -149,6 +149,9 @@ var tunnel_ranges: Array[Vector2i] = []
 ## Mesh-Daten für Tunnelröhren und Portale (Beton, mit Punktfarben) und für die Deckenlampen
 var tunnel_arrays: Array = []
 var lamp_arrays: Array = []
+## Ausstattung langer Tunnel (Notrufnischen, Fluchtweg-Schilder, Ventilatoren, Namensschilder), siehe
+## TunnelDetails; null = keine
+var tunnel_details: TunnelDetails
 ## Aussichtspunkt mit Parkbucht (Viewpoints.find_spot), leer = keiner; dazu die Fläche
 var viewpoint: Dictionary = {}
 var bay_arrays: Array = []
@@ -1431,8 +1434,15 @@ func build_mesh(first: int, last: int) -> void:
 		_place_posts(first, last, lefts)
 	rail_arrays = _take_quads()
 	tunnel_lights = PackedVector3Array()
+	tunnel_details = null
 	for r in tunnel_ranges:
-		_build_tube(r, lefts)
+		# Pannenbuchten machen die Röhre stellenweise breiter
+		var bay_list := TunnelDetails.bays(self, r)
+		_build_tube(r, lefts, bay_list)
+		var details := TunnelDetails.new() if tunnel_details == null else tunnel_details
+		details.build(self, r, lefts, bay_list)
+		if not details.verts.is_empty() or not details.fans.is_empty():
+			tunnel_details = details
 		# Läuft der Tunnel am Ende des Abschnitts weiter (Autobahn), dort kein Portal
 		if r.x > 0:
 			_build_portal(r.x, -direction_at(r.x), lefts[r.x])
@@ -1698,6 +1708,8 @@ func _build_rails(first: int, last: int, lefts: PackedVector3Array) -> void:
 const WALL_LIGHT := Color(0.74, 0.74, 0.7)
 const WALL_STRIPE := Color(0.9, 0.42, 0.08)
 const WALL_DARK := Color(0.3, 0.3, 0.31)
+## Boden der Pannenbuchten im Tunnel (Asphalt)
+const BAY_FLOOR := Color(0.26, 0.26, 0.27)
 const PORTAL_COLOR := Color(0.6, 0.59, 0.55)
 const COLLAR_COLOR := Color(0.5, 0.5, 0.47)
 ## Portal: Rand um die Öffnung (Breite, wie weit er vorsteht) und Stirnwand (seitlich, oben)
@@ -1716,26 +1728,29 @@ func tube_half_width() -> float:
 
 
 ## Form der Röhre im Querschnitt: [seitlicher Abstand und Höhe, Normale nach innen] von der
-## linken Wand unten über den Scheitel bis zur rechten Wand unten (positiv = links)
-func _tube_shape() -> Array:
+## linken Wand unten über den Scheitel bis zur rechten Wand unten (positiv = links). extra_left/right:
+## so viel weiter steht die Wand auf dieser Seite (Pannenbucht), das Gewölbe spannt sich dann breiter.
+func _tube_shape(extra_left: float = 0.0, extra_right: float = 0.0) -> Array:
 	var w := tube_half_width()
 	var rise := TUBE_APEX - TUBE_WALL
-	var shape: Array = [[Vector2(w, -0.1), Vector2(-1.0, 0.0)]]
+	var middle := (extra_left - extra_right) * 0.5
+	var half := w + (extra_left + extra_right) * 0.5
+	var shape: Array = [[Vector2(w + extra_left, -0.1), Vector2(-1.0, 0.0)]]
 	var steps := 12
 	for k in steps + 1:
 		var a := PI * k / steps
-		var normal := -Vector2(cos(a) * rise, sin(a) * w).normalized()
-		shape.append([Vector2(w * cos(a), TUBE_WALL + rise * sin(a)), normal])
-	shape.append([Vector2(-w, -0.1), Vector2(1.0, 0.0)])
+		var normal := -Vector2(cos(a) * rise, sin(a) * half).normalized()
+		shape.append([Vector2(middle + half * cos(a), TUBE_WALL + rise * sin(a)), normal])
+	shape.append([Vector2(-w - extra_right, -0.1), Vector2(1.0, 0.0)])
 	return shape
 
 
 ## Querschnitt mit Farben: unten helle Verkleidung, ein farbiger Streifen, darüber Beton.
 ## Doppelte Punkte an den Farbgrenzen, damit die Grenzen scharf sind.
-func _tube_profile() -> Array:
-	var w := tube_half_width()
+func _tube_profile(extra_left: float = 0.0, extra_right: float = 0.0) -> Array:
 	var result: Array = []  # [Position, Normale, Farbe]
 	for sgn: float in [1.0, -1.0]:
+		var w := tube_half_width() + (extra_left if sgn > 0.0 else extra_right)
 		var wall: Array = [[-0.1, WALL_LIGHT], [3.0, WALL_LIGHT], [3.0, WALL_STRIPE], [3.25, WALL_STRIPE],
 			[3.25, WALL_DARK], [TUBE_WALL, WALL_DARK]]
 		if sgn < 0.0:
@@ -1746,7 +1761,7 @@ func _tube_profile() -> Array:
 		if sgn > 0.0:
 			result.append_array(side)
 			# Gewölbe
-			var shape := _tube_shape()
+			var shape := _tube_shape(extra_left, extra_right)
 			for k in range(2, shape.size() - 2):
 				result.append([shape[k][0], shape[k][1], WALL_DARK])
 		else:
@@ -1754,14 +1769,20 @@ func _tube_profile() -> Array:
 	return result
 
 
-## Röhre von Portal zu Portal, mit Kollision für die Wände
-func _build_tube(r: Vector2i, lefts: PackedVector3Array) -> void:
-	var profile := _tube_profile()
-	var count := profile.size()
+## Röhre von Portal zu Portal, mit Kollision für die Wände. In Pannenbuchten (bay_list, TunnelDetails.bays)
+## steht die Wand auf einer Seite weiter weg, dort gibt es zusätzlich Boden (Mesh und Kollision).
+func _build_tube(r: Vector2i, lefts: PackedVector3Array, bay_list: Array = []) -> void:
+	var distances := TunnelDetails.along(self, r)
+	var extras: Array[Vector2] = []
+	for i in range(r.x, r.y + 1):
+		var at := distances[i - r.x]
+		extras.append(Vector2(TunnelDetails.widen(bay_list, at, 1.0), TunnelDetails.widen(bay_list, at, -1.0)))
+	var count := _tube_profile().size()
 	var base := _b_verts.size()
 	for i in range(r.x, r.y + 1):
 		var left := lefts[i]
-		for entry: Array in profile:
+		var extra := extras[i - r.x]
+		for entry: Array in _tube_profile(extra.x, extra.y):
 			var pos: Vector2 = entry[0]
 			var normal: Vector2 = entry[1]
 			_b_verts.append(side_point(i, left, pos.x, pos.y) - origin)
@@ -1772,15 +1793,26 @@ func _build_tube(r: Vector2i, lefts: PackedVector3Array) -> void:
 			var a := base + i * count + k
 			var b := a + count
 			_add_quad_indices(a, b, b + 1, a + 1, _b_normals[a])
-	# Kollision: beide Wände bis 2,5 m Höhe
+	# Kollision: beide Wände bis 2,5 m Höhe; in Pannenbuchten Boden bis zur Wand
 	var w := tube_half_width()
 	for i in range(r.x, r.y):
+		var e0 := extras[i - r.x]
+		var e1 := extras[i + 1 - r.x]
 		for sgn: float in [1.0, -1.0]:
-			var a0 := side_point(i, lefts[i], w * sgn, -0.1)
-			var a1 := side_point(i + 1, lefts[i + 1], w * sgn, -0.1)
-			var b0 := side_point(i, lefts[i], w * sgn, 2.5)
-			var b1 := side_point(i + 1, lefts[i + 1], w * sgn, 2.5)
+			var x0 := (w + (e0.x if sgn > 0.0 else e0.y)) * sgn
+			var x1 := (w + (e1.x if sgn > 0.0 else e1.y)) * sgn
+			var a0 := side_point(i, lefts[i], x0, -0.1)
+			var a1 := side_point(i + 1, lefts[i + 1], x1, -0.1)
+			var b0 := side_point(i, lefts[i], x0, 2.5)
+			var b1 := side_point(i + 1, lefts[i + 1], x1, 2.5)
 			collision_faces.append_array([a0, a1, b1, a0, b1, b0])
+			if absf(x0) > w + 0.01 or absf(x1) > w + 0.01:
+				var f0 := side_point(i, lefts[i], (w - 0.6) * sgn, -0.04)
+				var f1 := side_point(i + 1, lefts[i + 1], (w - 0.6) * sgn, -0.04)
+				var g0 := side_point(i, lefts[i], x0, -0.04)
+				var g1 := side_point(i + 1, lefts[i + 1], x1, -0.04)
+				collision_faces.append_array([f0, g0, g1, f0, g1, f1])
+				_tquad(f0 - origin, g0 - origin, g1 - origin, f1 - origin, Vector3.UP, BAY_FLOOR)
 
 
 ## Portal am Punkt p: ein Betonkragen um die Öffnung und eine Stirnwand, die den Hang abfängt.
