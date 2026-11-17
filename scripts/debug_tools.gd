@@ -109,6 +109,10 @@ extends Node
 ##                z. B. --carfx=1,-1,-1 für Tropfen ohne Regen oder --carfx=-1,1,-1 für Schnee auf dem Auto
 ## --levels       mit --bench: Pegel jedes Audio-Busses messen (Spitze und Mittel in dB, Anteil der Bilder
 ##                über -1 dB auf dem Master vor dem Limiter) und mit SoundMix-Hall alle 2 s ausgeben
+## --junctionshot[=yield] Foto einer Kreuzung: die nächste mit Stoppschild (bzw. „Vorfahrt gewähren“), ein
+##                KI-Auto kommt auf dem Arm mit dem Schild an und wartet an der Haltelinie (zum Foto wartet es
+##                länger als sonst); Kamera schräg hinter dem Auto, Blick auf Linie, Schild und Kreuzung. Gut mit --pos nahe
+##                einer solchen Kreuzung (z. B. --pos=-2105,-776 für Stopp, --pos=-683,463 für Vorfahrt gewähren)
 ## --2wd          mit 2WD-Modus starten (nur Autos mit two_wd_switch, z. B. --car=f90)
 ## --noplate      Kennzeichen aus (wie Garage „Kein Kennzeichen“), z. B. mit --carview fürs Foto
 ## --pause=N      Foto mit Pausemenü: 0 = Hauptseite, 1–5 = Reiter Grafik, Anzeige, Steuerung,
@@ -267,6 +271,9 @@ var _rewind_test: bool = false
 var _rewind_step: int = 0
 var _rewind_mark := Vector3.ZERO
 var _two_wd: bool = false
+## Kreuzungsfoto (--junctionshot): gewünschte Regel, das wartende Auto
+var _junction_rule: int = -1
+var _junction_car: Traffic.TrafficCar
 ## Pegel-Messung (--levels): je Bus [Summe der Pegel, Anzahl, Spitze], Bilder mit Master über -1 dB
 var _levels: bool = false
 var _level_stats: Dictionary = {}
@@ -364,6 +371,8 @@ func _ready() -> void:
 				_rewind_test = true
 			"2wd":
 				_two_wd = true
+			"junctionshot":
+				_junction_rule = RoadJunction.RULE_YIELD if value == "yield" else RoadJunction.RULE_STOP
 			"levels":
 				_levels = true
 			"carfx":
@@ -628,6 +637,8 @@ func _process(delta: float) -> void:
 				_place_fly_camera()
 			if _car_view >= 0.0:
 				_place_car_view_camera()
+			if _junction_car:
+				_place_junction_camera()
 			if _has_sign_camera:
 				camera.global_transform = _sign_camera
 				camera.reset_physics_interpolation()
@@ -1355,6 +1366,8 @@ func _acc_speed(car: VehicleBody3D, speed: float, target_speed: float) -> float:
 
 ## Kurz vor dem Foto: Navi-Ziel setzen, Fotomodus öffnen (wenn gewünscht)
 func _prepare_shot() -> void:
+	if _junction_rule >= 0:
+		_spawn_junction_car()
 	var weather := _game.get_node("Weather") as Weather
 	if _rainbow:
 		weather.start_rainbow()
@@ -1393,6 +1406,40 @@ func _prepare_shot() -> void:
 		var photo := _game.get_node("PhotoMode") as PhotoMode
 		photo.open()
 		photo.set_filter(_photo_filter)
+
+
+## Kreuzungsfoto: nächste Kreuzung mit dieser Regel, dort ein KI-Auto 45 m vor die Haltelinie
+func _spawn_junction_car() -> void:
+	var roads := _game.get_node("Roads") as RoadNetwork
+	var traffic := _game.get_node("Traffic") as Traffic
+	var best: RoadJunction = null
+	var best_arm := -1
+	for junction in roads.junctions_near(_game.car.global_position, 3000.0):
+		for k in junction.rules.size():
+			if junction.rules[k] == _junction_rule and (junction.arms[k][0] as RoadSegment).kind == RoadSegment.Kind.ROAD:
+				if best == null or junction.center.distance_to(_game.car.global_position) < best.center.distance_to(_game.car.global_position):
+					best = junction
+					best_arm = k
+	if best == null:
+		print("Kreuzungsfoto: keine passende Kreuzung in der Nähe")
+		return
+	traffic.stop_wait = 1000.0
+	traffic.max_wait = 1000.0
+	_junction_car = traffic.spawn_on_arm(best, best_arm, 45.0)
+	print("Kreuzungsfoto: Kreuzung bei %s, Arm %d, Auto %s" % [best.center.round(), best_arm, _junction_car != null])
+	# Etwas länger warten, bis es an der Linie steht
+	_timer = maxf(_timer, 9.0)
+
+
+func _place_junction_camera() -> void:
+	var c := _junction_car
+	var forward := Vector3(c.forward.x, 0.0, c.forward.z).normalized()
+	var right := forward.cross(Vector3.UP).normalized()
+	camera.set_physics_process(false)
+	var eye := c.position - forward * 9.0 + right * 3.5 + Vector3.UP * 2.4
+	var target := c.position + forward * 9.0 + right * 1.5 + Vector3.UP * 1.2
+	camera.global_transform = Transform3D(Basis.looking_at(target - eye), eye)
+	camera.reset_physics_interpolation()
 
 
 ## Überblicks-Kamera: hoch über und hinter dem Auto, Blick in Fahrtrichtung
@@ -1506,6 +1553,13 @@ func _print_bench() -> void:
 	if _levels:
 		_print_levels()
 	var rewind := _game.get_node_or_null("Rewind") as Rewind
+	var traffic := _game.get_node_or_null("Traffic") as Traffic
+	if traffic:
+		var factors := traffic.time_factor()
+		var stats := traffic.highway_stats()
+		print("BENCH verkehr: %d Autos am Ende (Autobahn %d von gewünscht %.0f, davon %d unter 50 km/h; Landstraße gewünscht %.0f), Faktor Autobahn %.2f, Landstraße %.2f, Berufsverkehr %s" % [
+			traffic.car_count(), stats.x, traffic.get("_wanted_highway"), stats.y, traffic.get("_wanted_road"),
+			factors.x, factors.y, traffic.is_rush_hour()])
 	if rewind and rewind.cost_steps > 0:
 		print("BENCH rueckspulen_ms avg=%.3f pro Physik-Schritt (Aufzeichnung Auto und Verkehr, %d Verkehrsautos)" % [
 			rewind.cost_usec / 1000.0 / rewind.cost_steps, (_game.get_node("Traffic") as Traffic).car_count()])

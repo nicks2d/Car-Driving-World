@@ -87,7 +87,9 @@ einzelne Themen (Orte, Koordinaten) stehen in der jeweiligen Themen-Datei unter 
   `--2wd` startet im 2WD-Modus, `--carfx=W,S,F` setzt Nässe, Schnee und Eis am Auto fürs Foto.
   `--levels` (mit `--bench`) misst die Pegel aller Audio-Busse, prüft das Ducking (Test-Meldung bei 10 s)
   und gibt alle 2 s den Hall der Umgebung aus; `BENCH motorsound_ms` zeigt die Rechenzeit des Motorsounds,
-  `BENCH rueckspulen_ms` die der Rücklauf-Aufzeichnung. `--nowait` macht das
+  `BENCH rueckspulen_ms` die der Rücklauf-Aufzeichnung.
+  `--junctionshot[=yield]` fotografiert eine Kreuzung mit wartendem KI-Auto, `BENCH verkehr` zeigt die Zahl der
+  Autos (Autobahn, im Stau) und den Faktor der Uhrzeit. `--nowait` macht das
   Foto, ohne auf die Kacheln zu warten, `--jump=X,Z` springt nach dem Laden weit weg.
 - Freie Kamera: `--cam=X,Z,H --lookat=X,Z,H` (H über dem Gelände), Überblick `--fly=H --pitch=G
   --lookat=X,Z`.

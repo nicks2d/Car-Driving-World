@@ -16,6 +16,10 @@ extends Node3D
 ## mit Licht.
 ## Stößt der Spieler mit einem zusammen, bleibt es mit Warnblinker stehen und fährt nach ein
 ## paar Sekunden weiter.
+## Vorfahrt (RoadJunction.rules): An Stoppschildern halten die Autos an der Haltelinie, warten und fahren,
+## wenn die Kreuzung frei ist; bei „Vorfahrt gewähren“ warten sie nur, wenn jemand auf der Vorfahrtstraße
+## kommt. Die Verkehrsdichte hängt von der Uhrzeit ab (Berufsverkehr morgens und nachmittags, nachts
+## wenig), im Berufsverkehr stockt es vor manchen Anschlussstellen.
 
 @export var roads: RoadNetwork
 @export var car: Car
@@ -24,12 +28,32 @@ extends Node3D
 @export var debug_tools: DebugTools
 ## Dichte: 0 = aus, 0.5 = wenig, 1 = normal (Einstellungen)
 @export_range(0.0, 1.0) var density: float = 1.0
-@export var max_cars: int = 25
+@export var max_cars: int = 40
 ## Bis zu dieser Entfernung (m) haben Verkehrsautos einen weichen Kontaktschatten (ContactShadow)
 @export var contact_shadow_distance: float = 70.0
 ## Ein Auto pro so viele Meter je Fahrtrichtung (Landstraße, Autobahn)
-@export var road_spacing: float = 2500.0
-@export var highway_spacing: float = 450.0
+@export var road_spacing: float = 2100.0
+@export var highway_spacing: float = 380.0
+
+@export_group("Tageszeit")
+## Faktor auf die Dichte über den Tag: [Uhrzeit, Autobahn, Landstraße], dazwischen weich
+@export var time_factors: Array[Vector3] = [Vector3(0.0, 0.3, 0.3), Vector3(5.0, 0.3, 0.3),
+	Vector3(6.5, 2.6, 1.3), Vector3(7.75, 3.0, 1.4), Vector3(9.0, 2.6, 1.3), Vector3(9.75, 1.0, 1.0),
+	Vector3(15.5, 1.0, 1.0), Vector3(16.25, 2.6, 1.3), Vector3(17.5, 3.0, 1.4), Vector3(19.0, 2.4, 1.25),
+	Vector3(20.0, 0.9, 0.8), Vector3(22.0, 0.5, 0.45), Vector3(24.0, 0.3, 0.3)]
+## Ab diesem Autobahn-Faktor ist Berufsverkehr: Dann stockt es vor manchen Anschlussstellen (Anteil)
+@export var rush_factor: float = 2.0
+@export_range(0.0, 1.0) var jam_share: float = 0.45
+## Stau-Abschnitt vor der Anschlussstelle (Meter vor dem Ende des Autobahn-Stücks) und Tempo darin (km/h)
+@export var jam_zone := Vector2(1100.0, 150.0)
+@export var jam_speed_kmh := Vector2(12.0, 70.0)
+
+@export_group("Vorfahrt")
+## So lange stehen Autos am Stoppschild mindestens (Sekunden); höchstens so lange warten sie überhaupt
+@export var stop_wait: float = 1.5
+@export var max_wait: float = 9.0
+## Kommt auf der Vorfahrtstraße jemand in weniger als so vielen Sekunden an, wird gewartet
+@export var yield_gap: float = 4.5
 ## Autos entstehen in diesem Abstand vom Spieler (näher als spawn_hidden nur hinter der Kamera)
 @export var spawn_min: float = 280.0
 @export var spawn_hidden: float = 650.0
@@ -178,12 +202,25 @@ class TrafficCar:
 	var shown_left: bool = false
 	var shown_right: bool = false
 	var shown_shadow: bool = false
+	## Vorfahrt an der nächsten Kreuzung: für welches Stück berechnet, Kreuzung, Arm, Regel, Wartezeit,
+	## darf fahren
+	var rule_leg: Leg
+	var rule_junction: RoadJunction
+	var rule: int = 0
+	var wait_timer: float = 0.0
+	var cleared: bool = false
+	## Stau vor der Anschlussstelle am Ende dieses Autobahn-Stücks (für welches Stück, gibt es einen)
+	var jam_leg: Leg
+	var jam: bool = false
 	## Zurückspulen (Rewind): seit wann es aufgezeichnet wird und der Fahrzustand je Physik-Schritt [Zeit, Zustand]
 	var born: float = -1.0
 	var snapshots: Array = []
 
 
 var _cars: Array[TrafficCar] = []
+## Gewünschte Zahl Autos auf Landstraßen und Autobahnen (aus Straßenlänge und Uhrzeit)
+var _wanted_road: float = 0.0
+var _wanted_highway: float = 0.0
 ## Wird gerade zurückgespult? Dann fährt der Verkehr nicht selbst, Rewind stellt die Lage ein
 var rewinding: bool = false
 var _rng := RandomNumberGenerator.new()
@@ -258,7 +295,9 @@ func _physics_process(delta: float) -> void:
 		_wanted = _wanted_count()
 	_spawn_timer -= delta
 	if _spawn_timer <= 0.0:
-		_spawn_timer = 0.1 if _fill_timer > 0.0 else 0.4
+		# Fehlen viele (Berufsverkehr, schnelle Fahrt), schneller nachfüllen
+		var missing := _wanted - _cars.size()
+		_spawn_timer = 0.1 if _fill_timer > 0.0 else (0.2 if missing > 6 else 0.4)
 		if _cars.size() < _wanted:
 			_try_spawn()
 	for traffic_car in _cars.duplicate():
@@ -292,21 +331,49 @@ func _wanted_count() -> int:
 			road_length += length
 		else:
 			highway_length += length
-	var wanted := (road_length * 2.0 / road_spacing + highway_length * 2.0 / highway_spacing) * density
-	return mini(roundi(wanted), max_cars)
+	var factors := time_factor()
+	_wanted_road = road_length * 2.0 / road_spacing * factors.y * density
+	_wanted_highway = highway_length * 2.0 / highway_spacing * factors.x * density
+	return mini(roundi(_wanted_road + _wanted_highway), max_cars)
+
+
+## Faktor auf die Verkehrsdichte zur aktuellen Uhrzeit: x = Autobahn, y = Landstraße
+func time_factor() -> Vector2:
+	var hour := day_night.time_of_day if day_night else 12.0
+	for k in range(1, time_factors.size()):
+		var a := time_factors[k - 1]
+		var b := time_factors[k]
+		if hour <= b.x:
+			var t := smoothstep(a.x, b.x, hour)
+			return Vector2(lerpf(a.y, b.y, t), lerpf(a.z, b.z, t))
+	return Vector2(time_factors[0].y, time_factors[0].z)
+
+
+## Gerade Berufsverkehr auf der Autobahn?
+func is_rush_hour() -> bool:
+	return time_factor().x >= rush_factor
 
 
 func _try_spawn() -> void:
 	var p := car.global_position
 	var options: Array = []
 	var total := 0.0
+	# Neue Autos dort, wo welche fehlen (Autobahn oder Landstraße)
+	var on_highway := 0
+	for c in _cars:
+		if c.leg.kind == Kind.HIGHWAY:
+			on_highway += 1
+	var need_highway := on_highway < roundi(_wanted_highway)
+	var need_road := _cars.size() - on_highway < roundi(_wanted_road)
 	for pair: Array in roads.loaded_segments(Rect2(p.x - spawn_max, p.z - spawn_max, spawn_max * 2.0, spawn_max * 2.0)):
 		var key: Vector3i = pair[0]
 		if not RoadNetwork.is_road_key(key) and not RoadNetwork.is_highway_key(key):
 			continue
 		var segment: RoadSegment = pair[1]
-		# Autobahn zählt mehr (dichterer Verkehr)
-		var weight := segment.total_length() * (2.8 if RoadNetwork.is_highway_key(key) else 1.0)
+		var highway_key := RoadNetwork.is_highway_key(key)
+		if (highway_key and not need_highway) or (not highway_key and not need_road):
+			continue
+		var weight := segment.total_length()
 		options.append([key, segment, weight])
 		total += weight
 	if options.is_empty():
@@ -350,8 +417,9 @@ func _try_spawn() -> void:
 		if _fill_timer <= 0.0 and distance < spawn_hidden and _in_view(at):
 			continue
 		var crowded := false
+		var spacing := 28.0 if highway and is_rush_hour() else 45.0
 		for other in _cars:
-			if other.position.distance_to(at) < 45.0:
+			if other.position.distance_to(at) < spacing:
 				crowded = true
 				break
 		if crowded:
@@ -698,7 +766,7 @@ func _leg_from_place(c: TrafficCar, cell: Vector2i) -> Leg:
 			leg.kind = Kind.ROAD
 			leg.forward = arm[1]
 			leg.from = junction.radius + 2.0
-			leg.to = segment.total_length() - 26.0
+			leg.to = segment.total_length() - RoadJunction.STOP_DISTANCE
 			leg.lateral = ROAD_LANE
 			if leg.to > leg.from + 10.0:
 				options.append(leg)
@@ -814,7 +882,7 @@ func _plan_highway_exit(c: TrafficCar) -> void:
 				to_place.kind = Kind.CONNECTOR
 				to_place.forward = false
 				to_place.from = _s_near(connector, false, ends[1])
-				to_place.to = connector.total_length() - 26.0
+				to_place.to = connector.total_length() - RoadJunction.STOP_DISTANCE
 				to_place.lateral = ROAD_LANE
 				if to_place.to > to_place.from + 5.0:
 					after = [_ramp_leg(exit_key, exit_segment), to_place]
@@ -879,6 +947,9 @@ func _desired_speed(c: TrafficCar) -> float:
 			target = minf(c.road_speed, 80.0 / 3.6)
 		Kind.LOT:
 			target = 25.0 / 3.6
+	# Berufsverkehr: vor manchen Anschlussstellen stockt es (Wellen aus Bremsen und Anfahren)
+	if leg.kind == Kind.HIGHWAY and not c.racing:
+		target = minf(target, _jam_speed(c))
 	# Auf dem Verzögerungsstreifen schon auf Rampentempo bremsen
 	if leg.kind == Kind.HIGHWAY and not c.plan.is_empty() and c.lane_target == HW_RAMP:
 		target = minf(target, 90.0 / 3.6)
@@ -919,6 +990,29 @@ func _desired_speed(c: TrafficCar) -> float:
 	return maxf(target, 5.0)
 
 
+## Tempo im Stau vor der Anschlussstelle am Ende dieses Autobahn-Stücks (sonst sehr hoch). Ob es dort
+## stockt, ist pro Anschlussstelle und Stunde fest (Zufall aus Lage und Uhrzeit, also bei jedem Start gleich).
+func _jam_speed(c: TrafficCar) -> float:
+	if c.jam_leg != c.leg:
+		c.jam_leg = c.leg
+		c.jam = false
+		var axis := RoadNetwork.highway_axis(c.leg.key)
+		var at := c.leg.key.x + 1 if c.leg.forward else c.leg.key.x
+		if not roads.highways.interchange_at(axis, c.leg.key.y, at).is_empty():
+			var hour := floori(day_night.time_of_day) if day_night else 12
+			var mix := (axis * 73856093) ^ (c.leg.key.y * 19349663) ^ (at * 83492791) ^ (hour * 2654435)
+			c.jam = absi(mix) % 100 < roundi(jam_share * 100.0)
+	if not c.jam or not is_rush_hour():
+		return 1000.0
+	var total := c.leg.segment.total_length()
+	var to_end := total - c.s
+	if to_end > jam_zone.x or to_end < jam_zone.y:
+		return 1000.0
+	# Welle, die gegen die Fahrtrichtung wandert: mal fast stehen, mal zügig rollen
+	var wave := 0.5 + 0.5 * sin(_blink_clock * 0.35 + c.s * 0.018)
+	return lerpf(jam_speed_kmh.x, jam_speed_kmh.y, wave * wave) / 3.6
+
+
 func _cells_of(leg: Leg) -> Array[Vector2i]:
 	if leg.kind == Kind.ROAD:
 		return [Vector2i(leg.key.x, leg.key.y), roads.edge_end_cell(leg.key)]
@@ -944,8 +1038,96 @@ func _acceleration(c: TrafficCar) -> float:
 	if c.merge_end > 0.0 and c.lane_target == HW_RAMP:
 		var wanted_end := MIN_GAP + c.speed * TIME_GAP + c.speed * c.speed / (2.0 * sqrt(c.accel * COMFORT_BRAKE))
 		interaction = maxf(interaction, pow(wanted_end / maxf(c.merge_end + 20.0 - c.s, 0.5), 2.0))
+	# Vorfahrt: Haltelinie wie ein stehendes Hindernis (die Front hält an der Linie)
+	var hold := _junction_hold(c)
+	if hold >= 0.0:
+		var gap := hold - 0.8 - c.s - c.length * 0.5 + MIN_GAP
+		var wanted_stop := MIN_GAP + c.speed * TIME_GAP * 0.5 + c.speed * c.speed / (2.0 * sqrt(c.accel * COMFORT_BRAKE))
+		interaction = maxf(interaction, pow(wanted_stop / maxf(gap, 0.3), 2.0))
 	var accel := c.accel * (free - interaction)
 	return clampf(accel, -9.0, c.accel)
+
+
+## Vorfahrt an der Kreuzung am Ende des aktuellen Stücks: Wo muss das Auto halten (Meter auf dem Stück,
+## die Haltelinie), oder -1 = darf fahren. Stoppschild: erst halten (stop_wait), dann fahren, wenn frei.
+## Vorfahrt gewähren: nur halten, solange die Kreuzung nicht frei ist. Nach max_wait fährt es trotzdem.
+func _junction_hold(c: TrafficCar) -> float:
+	if c.next != null or c.racing or c.crash_timer > 0.0:
+		return -1.0
+	if c.rule_leg != c.leg:
+		_find_rule(c)
+	if c.rule == RoadJunction.RULE_PRIORITY or c.cleared:
+		return -1.0
+	var line := c.leg.to
+	var distance := line - c.s - c.length * 0.5
+	if distance > 60.0:
+		return -1.0
+	if c.speed < 0.4 and distance < 2.0:
+		c.wait_timer += get_physics_process_delta_time()
+	var stopped_long_enough := c.rule != RoadJunction.RULE_STOP or c.wait_timer >= stop_wait
+	if (stopped_long_enough and _junction_clear(c)) or c.wait_timer > max_wait:
+		c.cleared = true
+		return -1.0
+	return line
+
+
+## Kreuzung und Regel für das Ende des aktuellen Stücks (Landstraße oder Zubringer zum Ort)
+func _find_rule(c: TrafficCar) -> void:
+	c.rule_leg = c.leg
+	c.rule_junction = null
+	c.rule = RoadJunction.RULE_PRIORITY
+	c.wait_timer = 0.0
+	c.cleared = false
+	var cell := Vector2i(-99999, -99999)
+	match c.leg.kind:
+		Kind.ROAD:
+			cell = roads.edge_end_cell(c.leg.key) if c.leg.forward else Vector2i(c.leg.key.x, c.leg.key.y)
+		Kind.CONNECTOR:
+			if c.leg.forward:
+				return
+			var interchange := roads.highways.interchange_at(RoadNetwork.highway_axis(c.leg.key), c.leg.key.y, c.leg.key.x)
+			if interchange.is_empty():
+				return
+			cell = interchange["cell"]
+		_:
+			return
+	var junction := roads.junction_at(cell)
+	if junction == null:
+		return
+	c.rule_junction = junction
+	c.rule = junction.rule_of(junction.arm_of(c.leg.segment, c.leg.forward))
+
+
+## Ist die Kreuzung frei? Niemand fährt gerade darüber, niemand kommt auf der Vorfahrtstraße in weniger als
+## yield_gap Sekunden an, und wer vorher losgefahren ist, ist schon durch. Der Spieler zählt mit.
+func _junction_clear(c: TrafficCar) -> bool:
+	var junction := c.rule_junction
+	var center := junction.center
+	for other in _cars:
+		if other == c:
+			continue
+		var distance := other.position.distance_to(center)
+		if distance < junction.radius + 6.0:
+			return false
+		if other.rule_junction != junction or other.next != null or other.rule_leg != other.leg:
+			continue
+		var to_line := other.leg.to - other.s
+		if to_line < 0.0 or to_line > 160.0:
+			continue
+		var eta := to_line / maxf(other.speed, 1.0)
+		# Vorfahrtstraße: kommt bald an. Nebenstraße: ist schon losgefahren und gleich da.
+		if other.rule == RoadJunction.RULE_PRIORITY and eta < yield_gap:
+			return false
+		if other.cleared and to_line < 25.0:
+			return false
+	var player := car.global_position
+	var player_distance := Vector2(player.x - center.x, player.z - center.z).length()
+	if player_distance < junction.radius + 8.0:
+		return false
+	var toward := (center - player).normalized().dot(car.linear_velocity)
+	if player_distance < 120.0 and toward > 2.0 and (player_distance - junction.radius) / toward < yield_gap:
+		return false
+	return true
 
 
 ## Vordermann in der eigenen Spur (seitlicher Versatz offset, positiv = rechts):
@@ -1063,6 +1245,30 @@ func spawn_leader(distance: float, kmh: float) -> TrafficCar:
 			else:
 				_remove(c)
 	return leader
+
+
+## Für Tests (DebugTools --junctionshot): ein Pkw auf diesem Arm der Kreuzung, before Meter vor der
+## Haltelinie, unterwegs zur Kreuzung. null = ging nicht
+func spawn_on_arm(junction: RoadJunction, arm_index: int, before: float) -> TrafficCar:
+	var arm: Array = junction.arms[arm_index]
+	var segment: RoadSegment = arm[0]
+	var leg := Leg.new()
+	leg.key = segment.key
+	leg.segment = segment
+	leg.kind = Kind.ROAD
+	leg.forward = not arm[1]
+	leg.from = 0.0
+	leg.to = segment.total_length() - RoadJunction.STOP_DISTANCE
+	leg.lateral = ROAD_LANE
+	if leg.to - before < 5.0:
+		return null
+	var count := _cars.size()
+	_spawn(_pick_type(false), leg, leg.to - before, false)
+	if _cars.size() == count:
+		return null
+	var c := _cars.back() as TrafficCar
+	c.speed = 9.0
+	return c
 
 
 ## Für Tempomat und Autopilot (gleiche Regeln wie für die KI): nächstes KI-Auto in der Spur
@@ -1834,7 +2040,8 @@ func record(time: float, keep: float) -> void:
 			"speed": c.speed, "plan": c.plan.duplicate(), "curve": c.curve, "curve_length": c.curve_length,
 			"curve_t": c.curve_t, "next": c.next, "blink": c.blink, "blink_timer": c.blink_timer,
 			"hazard": c.hazard, "crash_timer": c.crash_timer, "merge_end": c.merge_end,
-			"decide_timer": c.decide_timer, "right_free_time": c.right_free_time, "braking": c.braking}])
+			"decide_timer": c.decide_timer, "right_free_time": c.right_free_time, "braking": c.braking,
+			"rule_leg": c.rule_leg, "wait_timer": c.wait_timer, "cleared": c.cleared}])
 		while c.snapshots.size() > 1 and (c.snapshots[0][0] as float) < time - keep:
 			c.snapshots.pop_front()
 
@@ -1882,6 +2089,9 @@ func show_time(time: float, finish: bool) -> void:
 		c.decide_timer = state["decide_timer"]
 		c.right_free_time = state["right_free_time"]
 		c.braking = state["braking"]
+		c.rule_leg = state["rule_leg"]
+		c.wait_timer = state["wait_timer"]
+		c.cleared = state["cleared"]
 		c.node.visible = true
 		_update_pose(c)
 		_place(c)
@@ -1889,4 +2099,16 @@ func show_time(time: float, finish: bool) -> void:
 			c.snapshots.resize(index + 1)
 	if finish:
 		rewinding = false
+
+
+## Für den Benchmark: [Autos auf der Autobahn, davon langsamer als 50 km/h]
+func highway_stats() -> Vector2i:
+	var total := 0
+	var slow := 0
+	for c in _cars:
+		if c.leg.kind == Kind.HIGHWAY:
+			total += 1
+			if c.speed < 50.0 / 3.6:
+				slow += 1
+	return Vector2i(total, slow)
 

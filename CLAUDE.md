@@ -130,3 +130,4 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Blinker im Lampenglas, Begrüßungslicht, Scheinwerfer mit Hell-Dunkel-Grenze ·
   2WD-Modus der M5, Zurückspulen bis 10 s (mit Verkehr) · Tropfen, Schnee und Eis am Auto,
   Kontaktschatten · Sound 48 kHz, Limiter, Ducking, Hall der Umgebung
+- [x] Vorfahrt an Kreuzungen (Schilder, Haltelinien, KI wartet) · Verkehr nach Uhrzeit, Berufsverkehr, Stau

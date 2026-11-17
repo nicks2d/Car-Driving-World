@@ -17,8 +17,17 @@
   gewürfelt: Raststätte 15 % (Ausfahrt → Parkplatz → Einfahrt → weiter), Anschlussstelle 15 %
   (Rampe → Zubringer → Ort); an Orten mit Zubringer 30 % auf die Autobahn. Vor der Ausfahrt
   260 m lang rüber auf die Rampe, 900 m vorher nicht mehr überholen.
-- Dichte: Landstraße 1 Auto pro 2,5 km je Richtung, Autobahn 1 pro 450 m je Richtung (im
-  Umkreis von 1 km gezählt), höchstens 25, mal `density` (0/0,5/1). Entstehen 280–1050 m weg,
+- Dichte (seit 17.11.): Landstraße 1 Auto pro 2,1 km je Richtung, Autobahn 1 pro 380 m je Richtung (im
+  Umkreis von 1 km gezählt, vorher 2,5 km / 450 m), mal Faktor nach Uhrzeit (`time_factors`, weich
+  übergeblendet: nachts 0,3, 6:30–9 und 16:15–19 Uhr Berufsverkehr bis 3,0 auf der Autobahn und 1,4 auf
+  Landstraßen, mittags 1,0, abends 0,5–0,9), mal `density` (Einstellungen), höchstens 40 Autos (vorher 25).
+  Neue Autos entstehen dort, wo welche fehlen (Autobahn und Landstraße getrennt gezählt), bei mehr als
+  6 fehlenden alle 0,2 s statt 0,4 s, im Berufsverkehr auf der Autobahn mit 28 statt 45 m Abstand.
+  Gemessen (`--bench=30 --highway`, `BENCH verkehr`): 3 Uhr 4 Autos, 8 Uhr 23–31 (davon bis 13 im
+  Stau), 13 Uhr 10–13, 17 Uhr 23.
+- Stau im Berufsverkehr: Vor 45 % der Anschlussstellen (fest pro Anschlussstelle und Stunde) stockt es
+  von 1100 m bis 150 m vor der Anschlussstelle: Wunschtempo als Welle zwischen 12 und 70 km/h, die gegen
+  die Fahrtrichtung wandert (`jam_*`). Das IDM sorgt für Auflaufen und Anfahren. Entstehen 280–1050 m weg,
   unter 650 m nur hinter der Kamera; verschwinden über 1300 m, über 650 m hinter der Kamera
   oder wenn ihre Straße nicht mehr geladen ist. Nach dem Ladebildschirm 1,5 s „Füllen“: dann
   auch 60–400 m vom Spieler (die Welt ist sofort belebt).
@@ -28,6 +37,24 @@
   Ende wirkt im IDM wie ein stehendes Hindernis), fädeln ein, sobald sie schnell genug sind
   (85 % von min(Wunschtempo, 100 km/h)) oder der Streifen ausgeht und rechts eine Lücke ist.
   Autos auf der rechten Spur wechseln nach links, wenn rechts neben/vor ihnen jemand auffährt.
+
+## Vorfahrt an Kreuzungen (17.11.)
+
+- Regeln (`RoadJunction.compute_rules`, deterministisch aus der Form): An Kreuzungen mit 3–4 Straßen sind
+  die beiden, die am geradesten durchgehen, die Vorfahrtstraße; die anderen müssen warten, 30 % davon mit
+  Stoppschild (Zufall aus Lage und Richtung), sonst „Vorfahrt gewähren“. Es gibt kein Haupt-/Nebenstraßen-
+  Netz, die Regel ergibt sich nur aus der Kreuzung.
+- Schilder und Linien (`TrafficSigns.build_junction`, ein Mesh pro Kreuzung, Shader `sign.gdshader`):
+  26 m vor der Kreuzungsmitte (`RoadJunction.STOP_DISTANCE`, dort endet auch der Weg der KI-Autos) rechts
+  der ankommenden Fahrbahn: gelbe Raute (306) auf der Vorfahrtstraße, Dreieck auf der Spitze (205) mit
+  gestrichelter Wartelinie (341) bzw. rotes Achteck mit „STOP“ (206, Label3D) mit durchgezogener Haltlinie
+  (294). Linien 0,5 m breit, 3 cm über der Fahrbahn, Höhe aus dem Querschnitt (Querneigung).
+- KI (`Traffic._junction_hold`): Stoppschild: hält mit der Front an der Linie, steht mindestens 1,5 s, fährt,
+  wenn frei. Vorfahrt gewähren: hält nur, solange nicht frei. Frei = niemand in der Kreuzung, niemand auf
+  der Vorfahrtstraße in weniger als 4,5 s an der Linie, wer schon losgefahren ist, ist durch; der Spieler
+  zählt mit. Nach 9 s fährt es trotzdem (gegen Verklemmen). Vorfahrtstraße fährt einfach durch.
+- Test: `--junctionshot` (nächste Kreuzung mit Stoppschild, KI-Auto kommt an und wartet, Kamera dahinter),
+  `--junctionshot=yield`. Stopp z. B. `--pos=-2105,-776`, Vorfahrt gewähren `--pos=-683,463`.
 
 ## Fahrzeuge und Modelle
 

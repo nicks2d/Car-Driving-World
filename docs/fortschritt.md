@@ -68,3 +68,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
   Morgen, weicher Kontaktschatten unter eigenem Auto und Verkehr
 - [x] Teil 6 (17.11.): Motorsound 48 kHz, Limiter, Signalton mit Ducking bei Ansagen, Hall der Umgebung,
   Pegel per Messung angeglichen
+- [x] Teil 1 (17.11.): Vorfahrt an Kreuzungen (Raute, Vorfahrt gewähren, Stopp, Haltelinien, KI wartet),
+  Verkehr nach Uhrzeit mit Berufsverkehr und Stau vor Anschlussstellen

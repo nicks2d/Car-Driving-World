@@ -1046,8 +1046,18 @@ func _junction(cell: Vector2i) -> RoadJunction:
 	junction.center = node_at(cell)
 	junction.arms = arms
 	junction.radius = _junction_size(arms)
+	junction.compute_rules()
 	_junctions[cell] = junction
 	return junction
+
+
+## Kreuzungen, deren Mitte näher als radius an p liegt (nur schon angelegte; für Tests)
+func junctions_near(p: Vector3, radius: float) -> Array[RoadJunction]:
+	var result: Array[RoadJunction] = []
+	for junction: RoadJunction in _junctions.values():
+		if junction != null and Vector2(junction.center.x - p.x, junction.center.z - p.z).length() < radius:
+			result.append(junction)
+	return result
 
 
 ## Kreuzung an einem Ort (für den Verkehr). null = noch nicht alle Straßen dort geprüft.
@@ -1816,6 +1826,10 @@ func _update_visuals() -> void:
 				junction.mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				junction.mesh_instance.position = junction.center
 				add_child(junction.mesh_instance)
+				# Vorfahrtschilder und Haltelinien (relativ zur Kreuzungsmitte)
+				var signs := TrafficSigns.new()
+				signs.build_junction(junction)
+				_add_sign_instance(signs, junction.mesh_instance)
 		elif junction.mesh_instance:
 			junction.mesh_instance.queue_free()
 			junction.mesh_instance = null
@@ -1907,6 +1921,13 @@ var _landmark_lamp: StandardMaterial3D
 func _add_limit_signs(segment: RoadSegment, parent: Node3D) -> void:
 	var signs := TrafficSigns.new()
 	signs.build(segment)
+	_add_sign_instance(signs, parent)
+
+
+## Schilder als ein Mesh (Punktfarben, reflektiert nachts) und die Beschriftungen als Label3D
+func _add_sign_instance(signs: TrafficSigns, parent: Node3D) -> void:
+	if signs.verts.is_empty():
+		return
 	if _limit_sign_material == null:
 		_limit_sign_material = ShaderMaterial.new()
 		_limit_sign_material.shader = load("res://shaders/sign.gdshader")

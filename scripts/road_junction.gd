@@ -16,6 +16,17 @@ var radius: float
 var arms: Array = []
 var mesh_instance: MeshInstance3D
 var body: StaticBody3D
+## Vorfahrt je Arm (gleiche Reihenfolge wie arms): RULE_PRIORITY (Vorfahrtstraße, gelbe Raute),
+## RULE_YIELD („Vorfahrt gewähren“) oder RULE_STOP (Stoppschild). Leer bei weniger als drei Straßen.
+var rules := PackedByteArray()
+## So weit vor der Kreuzungsmitte liegen Haltelinie und Schilder (Meter). Dort endet auch der Weg der
+## KI-Autos (Traffic: leg.to = Länge − 26), danach fahren sie die Kurve über die Kreuzung.
+const STOP_DISTANCE: float = 26.0
+const RULE_PRIORITY: int = 0
+const RULE_YIELD: int = 1
+const RULE_STOP: int = 2
+## Anteil der Nebenstraßen mit Stoppschild (Rest: Vorfahrt gewähren)
+const STOP_SHARE: float = 0.3
 ## Ergebnis von build()
 var mesh_arrays: Array = []
 var collision_faces := PackedVector3Array()
@@ -99,6 +110,52 @@ func build() -> void:
 	mesh_arrays[Mesh.ARRAY_TEX_UV] = _uvs
 	mesh_arrays[Mesh.ARRAY_TEX_UV2] = _uv2s
 	mesh_arrays[Mesh.ARRAY_INDEX] = _indices
+
+
+## Vorfahrt festlegen (deterministisch aus der Form der Kreuzung): Die beiden Straßen, die am geradesten
+## durch die Kreuzung gehen, sind die Vorfahrtstraße, alle anderen müssen warten; davon bekommen etwa
+## 30 % ein Stoppschild (Zufall aus Lage und Richtung, also bei jedem Start gleich).
+func compute_rules() -> void:
+	rules.clear()
+	if arms.size() < 3:
+		return
+	var best := INF
+	var pair := Vector2i(0, 1)
+	for i in arms.size():
+		for j in range(i + 1, arms.size()):
+			var straight := outward(arms[i]).dot(outward(arms[j]))
+			if straight < best:
+				best = straight
+				pair = Vector2i(i, j)
+	rules.resize(arms.size())
+	for k in arms.size():
+		if k == pair.x or k == pair.y:
+			rules[k] = RULE_PRIORITY
+			continue
+		var angle := roundi(rad_to_deg(_angle(arms[k])))
+		var mix := (roundi(center.x) * 73856093) ^ (roundi(center.z) * 19349663) ^ (angle * 83492791)
+		rules[k] = RULE_STOP if absi(mix) % 100 < roundi(STOP_SHARE * 100.0) else RULE_YIELD
+
+
+## Index des Arms für diese Straße, wenn man auf ihr zur Kreuzung fährt (-1 = keiner).
+## forward: Fahrt in Richtung der Straßenpunkte (kommt am Ende der Straße an).
+func arm_of(segment: RoadSegment, forward: bool) -> int:
+	for k in arms.size():
+		if arms[k][0] == segment and arms[k][1] == not forward:
+			return k
+	return -1
+
+
+## Vorfahrtregel für diesen Arm (RULE_PRIORITY, wenn es keine Regeln gibt)
+func rule_of(arm_index: int) -> int:
+	if arm_index < 0 or arm_index >= rules.size():
+		return RULE_PRIORITY
+	return rules[arm_index]
+
+
+## Richtung, in die die Straße die Kreuzung verlässt (waagerecht)
+func outward(arm: Array) -> Vector3:
+	return _outward(arm)
 
 
 ## Richtung, in die die Straße die Kreuzung verlässt (waagerecht)
