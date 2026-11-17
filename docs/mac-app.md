@@ -11,6 +11,34 @@
   die vorbereiteten `prepared/model.res`), ohne `kia_stinger`, `screenshots/`, `docs/` (hat
   `.gdignore`) und `tools/`; `*.icns` kommt mit. Die App enthält die Automodelle (teils NC/ND):
   nur für Nicks Mac, nicht hochladen, kein Release.
+
+## Zwei Varianten (Teil 3, 17.11.)
+
+- Vollversion: `tools/build_mac_app.sh --install` (Vorlage „macOS“, alle 8 Garage-Autos und alle
+  Verkehrsmodelle) → `build/Car Driving World.app` (330 MB) und nach `/Applications`. Nur für diesen Mac.
+- Download-Version: `tools/build_mac_app.sh --download` (Vorlage „macOS Download“) →
+  `build/download/Car Driving World.app` (246 MB) und `build/Car-Driving-World-1.0.0-macOS.zip` (130,6 MB).
+  Nur CC-BY-Modelle: BMW M3 E30, M3 GTS E92, M5 F90, M4 CSL, Audi S3 (Verkehr), Tankstelle. Die
+  Vorlage schließt die Ordner von M2 (CC BY-NC-ND), M5 G90, SL 65, C 63, LC 500, Accord, Aztek
+  (CC BY-NC-SA) und ID. Buzz (CC BY-NC) ganz aus (`res://assets/models/<ordner>/*`).
+- Sicherheitsprüfung im Skript: Steht im `.pck` der Download-App ein Pfad `assets/models/<NC-Ordner>/`, bricht es
+  ab (Gegenprobe: in der Vollversion findet es `bmw_m2/` 6-mal). Einmal gründlich geprüft (17.11.):
+  `--export-pack "macOS Download" x.zip`, jede Datei in `.godot/imported` über die `.import`-Dateien ihrer
+  Quelle zugeordnet: nur Daten aus E30, E92, F90, M4 CSL, Audi S3 und Tankstelle. Im Paket bleiben die
+  Profile `cars/m2.tres`, `sl65.tres` usw. (nur Fahrwerte und Text, kein Modell; main.tscn braucht sie).
+- Im Spiel: Die Garage zeigt nur Autos, deren Modell da ist (`Garage._keep_available_cars`, Marke ohne Auto
+  verschwindet; fehlen alle, bleiben alle ausgegraut wie bisher). Verkehr ohne Modell fährt mit den gebauten
+  Ersatzformen (`Traffic._model` → null). Garage > Credits nennt nur vorhandene Modelle (Garage, Verkehr über
+  `Traffic.TYPES[...]["credit"]`, Tankstelle `RoadNetwork.STATION_CREDIT`), dazu Schrift, Texturen, Engine.
+- Beigelegt: `tools/download/CREDITS.txt` (Credits aller enthaltenen Modelle, Texturen, Inter, Godot-MIT-Text),
+  `LICENSE.txt` und `Inter-LICENSE.txt` im App-Paket (`Contents/Resources/`) und im ZIP, dazu
+  `tools/download/README.txt` (Installation, nicht notarisiert: Rechtsklick > Öffnen bzw. „Trotzdem öffnen“).
+  ZIP mit `ditto -c -k --norsrc --noextattr` (sonst „._“-Dateien); nach dem Entpacken prüft
+  `codesign --verify --deep --strict` die Signatur: OK.
+- Getestet (17.11.): `tools/test.sh --app` (Vollversion) und `tools/test.sh --app="build/download/Car Driving
+  World.app"`: beide OK. Fotos `screenshots/apps/` (nicht im Repo).
+- Erster Start einer neu gebauten App: ~70 s bis die Welt da ist (Godot übersetzt alle Shader für die neue
+  App, der Ladebildschirm zeigt das an), ab dem zweiten Start 4–5 s.
 - Export für arm64 verlangt `rendering/textures/vram_compression/import_etc2_astc=true` (Texturen
   zusätzlich als ASTC; die App nimmt ASTC, der Editor weiter S3TC/BPTC). Export-Vorlagen 4.7.2:
   nur `macos.zip` + `version.txt` in `~/Library/Application Support/Godot/export_templates/

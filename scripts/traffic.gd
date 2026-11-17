@@ -106,18 +106,24 @@ enum Kind { ROAD, HIGHWAY, RAMP, CONNECTOR, LOT }
 
 ## Fahrzeugtypen: Modell (Ordner in assets/models/verkehr), Form der gebauten Version (fern
 ## und als Ersatz ohne Modell), Länge, Breite, Höhe (Kollision), Beschleunigung, Anteil auf
-## Landstraße / Autobahn, Chance, auf der Autobahn zu den Schnellen links zu gehören
+## Landstraße / Autobahn, Chance, auf der Autobahn zu den Schnellen links zu gehören;
+## Name und Credit-Text des Modells (Garage > Credits, nur wenn das Modell da ist)
 const TYPES := {
 	"s3": {"model": "2014_audi_s3_limousine", "shape": "limousine", "length": 4.47, "width": 1.8,
-		"height": 1.42, "accel": 2.2, "road": 30, "highway": 26, "fast": 0.12},
+		"height": 1.42, "accel": 2.2, "road": 30, "highway": 26, "fast": 0.12, "name": "Audi S3 Limousine (2014)",
+		"credit": "This work is based on \"2014 Audi S3 Limousine\" (https://sketchfab.com/3d-models/2014-audi-s3-limousine-33056acd771241638ebe74109ba2777a) by tonielpro520 (https://sketchfab.com/tonielpro520) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)"},
 	"accord": {"model": "2021_honda_accord", "shape": "limousine", "length": 4.87, "width": 1.86,
-		"height": 1.45, "accel": 2.0, "road": 30, "highway": 26, "fast": 0.1},
+		"height": 1.45, "accel": 2.0, "road": 30, "highway": 26, "fast": 0.1, "name": "Honda Accord (2021)",
+		"credit": "This work is based on \"2021 Honda Accord\" (https://sketchfab.com/3d-models/2021-honda-accord-e742636e46814de5af1568542e7c9bdb) by Ddiaz Design (https://sketchfab.com/ddiaz-design) licensed under CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/)"},
 	"id_buzz": {"model": "2023_volkswagen_id_buzz_gtx", "shape": "suv", "length": 4.71, "width": 1.98,
-		"height": 1.85, "accel": 1.8, "road": 16, "highway": 11, "fast": 0.0},
+		"height": 1.85, "accel": 1.8, "road": 16, "highway": 11, "fast": 0.0, "name": "VW ID. Buzz GTX (2023)",
+		"credit": "This work is based on \"2023 Volkswagen ID Buzz GTX\" (https://sketchfab.com/3d-models/2023-volkswagen-id-buzz-gtx-3cc84dbea5b2495ba1f9468e8b4668d9) by BloxBloger (https://sketchfab.com/BloxBloger) licensed under CC-BY-NC-4.0 (http://creativecommons.org/licenses/by-nc/4.0/)"},
 	"aztek": {"model": "2005_pontiac_aztek", "shape": "suv", "length": 4.63, "width": 1.92,
-		"height": 1.75, "accel": 1.6, "road": 7, "highway": 5, "fast": 0.05},
+		"height": 1.75, "accel": 1.6, "road": 7, "highway": 5, "fast": 0.05, "name": "Pontiac Aztek (2005)",
+		"credit": "This work is based on \"2005 Pontiac Aztek\" (https://sketchfab.com/3d-models/2005-pontiac-aztek-12b60d84bd044960881f72d079fabdc8) by OUTPISTON (https://sketchfab.com/outpiston) licensed under CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/)"},
 	"lc500": {"model": "2017_lexus_lc_500", "shape": "limousine", "length": 4.77, "width": 1.92,
-		"height": 1.35, "accel": 2.6, "road": 5, "highway": 7, "fast": 0.6},
+		"height": 1.35, "accel": 2.6, "road": 5, "highway": 7, "fast": 0.6, "name": "Lexus LC 500 (2017)",
+		"credit": "This work is based on \"2017 Lexus LC 500\" (https://sketchfab.com/3d-models/2017-lexus-lc-500-06f7ccfdf2aa4ef7afce64da59cacb16) by Ddiaz Design (https://sketchfab.com/ddiaz-design) licensed under CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/)"},
 	"lkw": {"shape": "lkw", "length": 12.7, "width": 2.5, "height": 3.9, "accel": 0.7, "road": 6,
 		"highway": 22, "fast": 0.0},
 }

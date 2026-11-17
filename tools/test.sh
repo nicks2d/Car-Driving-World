@@ -7,6 +7,7 @@
 # Aufruf (im Projektordner):
 #   tools/test.sh            im Editor-Godot (vorher einmal --import, damit neue Klassen bekannt sind)
 #   tools/test.sh --app      gegen die exportierte App in /Applications
+#   tools/test.sh --app="build/download/Car Driving World.app"   gegen eine andere App (z. B. Download-Version)
 #   tools/test.sh --shots    zusätzlich ein Foto pro Schritt (screenshots/selftest_*.png)
 #   weitere Argumente gehen ans Spiel, z. B. tools/test.sh --car=e92
 # Log: screenshots/test.log (bzw. test_app.log). Rückgabe: 0 = OK, 1 = Fehler.
@@ -22,6 +23,7 @@ EXTRA=()
 for arg in "$@"; do
   case "$arg" in
     --app) USE_APP=1 ;;
+    --app=*) USE_APP=1; APP="${arg#--app=}/Contents/MacOS/Endlose Welt" ;;
     --shots) TEST_ARG="--selftest=shots" ;;
     *) EXTRA+=("$arg") ;;
   esac

@@ -82,3 +82,5 @@ erledigten Aufgaben in der Reihenfolge, in der sie gebaut wurden.
   Animationen in Menüs und HUD, Meldungen ohne Überlappung, Tastenhilfe (abschaltbar)
 - [x] Teil 2 (17.11.): Version 1.0.0 (Pausemenü, App-Info), CHANGELOG.md aus der Git-Geschichte, Fenster
   „Was ist neu“ einmal pro Version, Git-Tag v1.0.0
+- [x] Teil 3 (17.11.): Mac-App in zwei Varianten: Vollversion in /Applications, Download-Version nur mit
+  CC-BY-Modellen (ZIP mit Credits und Lizenzen), Garage zeigt nur vorhandene Autos, Credits nur vorhandene Modelle

@@ -99,6 +99,9 @@
   (Räder dabei in Ruhelage setzen, sonst stehen sie dort, wo die Physik sie beim Laden
   hingestellt hat). Welt-Umschalter ändern Uhrzeit (`DayNight.set_time`), Wetter und Jahreszeit
   sofort. Gespeichert: Auto, Lack, HUD-Farbe (`hud/akzent`), Sportauspuff (`auto/sportauspuff`).
+- Nur vorhandene Autos: Autos ohne Modell (Download-Version) stehen gar nicht in der Garage, eine Marke ohne
+  Auto verschwindet. Fehlen alle Modelle (frisch von GitHub), bleiben alle ausgegraut („Modell fehlt“).
+  Credits (Knopf unten) nennen nur Modelle, die wirklich da sind, auch Verkehr und Tankstelle (siehe `mac-app.md`).
 
 ## Karte und Navi
 

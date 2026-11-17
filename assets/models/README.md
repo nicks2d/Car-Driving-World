@@ -1,8 +1,9 @@
 # 3D-Modelle (Autos, Verkehr, Raststätte)
 
 Die Modelle sind **nicht im Git-Repository**: Ihre Lizenzen erlauben keine bzw. nur
-eingeschränkte Weitergabe. Fehlt ein Garage-Modell, steht das Auto in der Garage ausgegraut
-(„Modell fehlt“). Fehlen alle, fährt man mit einer einfachen Platzhalter-Box. Fehlen die
+eingeschränkte Weitergabe. Fehlt ein Garage-Modell, taucht das Auto in der Garage nicht auf
+(so entsteht auch die Download-Version, siehe docs/mac-app.md). Fehlen alle, stehen alle ausgegraut
+(„Modell fehlt“) und man fährt mit einer einfachen Platzhalter-Box. Fehlen die
 Verkehrsmodelle oder die Tankstelle, nimmt das Spiel die einfachen, im Code gebauten Formen.
 
 ## So kommt ein Modell ins Projekt

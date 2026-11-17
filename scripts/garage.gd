@@ -208,6 +208,7 @@ func _ready() -> void:
 	# Das Automodell muss auch bei angehaltenem Spiel laden können
 	if car and car.has_node("Model"):
 		car.get_node("Model").process_mode = Node.PROCESS_MODE_ALWAYS
+	_keep_available_cars()
 	_sort_brands()
 	_build_ui()
 	visible = false
@@ -381,6 +382,17 @@ func _process(delta: float) -> void:
 # ---------------------------------------------------------------------------
 # Auswahl
 # ---------------------------------------------------------------------------
+
+## Nur Autos, deren Modell da ist (Download-Version ohne NC/ND-Modelle: die fehlen dann ganz, auch ihre
+## Marke). Fehlen alle (Projekt frisch von GitHub, ohne Modelle), bleiben alle ausgegraut sichtbar.
+func _keep_available_cars() -> void:
+	var available: Array[CarProfile] = []
+	for profile in cars:
+		if CarModel.is_available(profile):
+			available.append(profile)
+	if not available.is_empty():
+		cars = available
+
 
 func _sort_brands() -> void:
 	for i in cars.size():
@@ -692,12 +704,7 @@ func _build_ui() -> void:
 	text.add_theme_font_override("bold_font", UiStyle.font("semibold"))
 	text.add_theme_font_size_override("normal_font_size", 15)
 	text.add_theme_font_size_override("bold_font_size", 15)
-	var credits := "Automodelle (von Sketchfab, für das Spiel verändert: skaliert, Räder getrennt, Teile ausgeblendet, eigene Materialien):\n\n"
-	for profile in cars:
-		credits += "[b]%s[/b] (%s)\n%s\n\n" % [profile.display_name, profile.subtitle, profile.credit]
-	credits += "Schrift: Inter von Rasmus Andersson und The Inter Project Authors (SIL Open Font License 1.1).\n"
-	credits += "Texturen: Poly Haven (CC0). Alles andere: im Spiel selbst erzeugt."
-	text.text = credits
+	text.text = _credits_text()
 	_credits.get_meta("content").add_child(text)
 	_collection = _build_overlay("Sammlung")
 	var tabs := HBoxContainer.new()
@@ -717,6 +724,28 @@ func _build_ui() -> void:
 	scroll.add_child(collection_list)
 	collection_list.add_child(UiStyle.label("Noch keine Aussichtspunkte entdeckt. Halte an einem an (Schild „Aussichtspunkt“).",
 		15, "regular", UiStyle.TEXT_DIM))
+
+
+## Credits: nur Modelle, die wirklich im Spiel sind (Garage, Verkehr, Tankstelle), dazu Schrift, Texturen, Engine
+func _credits_text() -> String:
+	var credits := "[b]Car Driving World %s[/b] · © 2026 Nick Aldinger\n\n" % WhatsNew.version()
+	credits += "Automodelle (von Sketchfab, für das Spiel verändert: skaliert, Räder getrennt, Teile ausgeblendet, eigene Materialien):\n\n"
+	for profile in cars:
+		if CarModel.is_available(profile):
+			credits += "[b]%s[/b] (%s)\n%s\n\n" % [profile.display_name, profile.subtitle, profile.credit]
+	var others := ""
+	for type: String in Traffic.TYPES:
+		var info: Dictionary = Traffic.TYPES[type]
+		if info.has("model") and ResourceLoader.exists(Traffic.MODEL_PATH % info["model"]):
+			others += "[b]%s[/b]\n%s\n\n" % [info["name"], info["credit"]]
+	if ResourceLoader.exists(RoadNetwork.STATION_MODEL):
+		others += "[b]Tankstelle[/b]\n%s\n\n" % RoadNetwork.STATION_CREDIT
+	if others != "":
+		credits += "Verkehr und Raststätte:\n\n" + others
+	credits += "Schrift: Inter von Rasmus Andersson und The Inter Project Authors (SIL Open Font License 1.1).\n"
+	credits += "Texturen: Poly Haven (CC0). Engine: Godot Engine (MIT-Lizenz), Physik Jolt (MIT).\n"
+	credits += "Alles andere (Welt, Straßen, Himmel, Klang): im Spiel selbst erzeugt."
+	return credits
 
 
 func _build_panel() -> void:

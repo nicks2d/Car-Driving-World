@@ -102,7 +102,7 @@ $G --path . --always-on-top -- --shot=NAME --pos=X,Z --heading=G   # Foto nach s
 $G --path . -- --shot=NAME --car=m2 --view=cockpit --steer=left      # Cockpit-Foto (oder --view=ego)
 $G --path . -- --bench=30 --highway --full --quality=hoch          # FPS (docs/leistung.md)
 $G --headless --path . --import                                    # nach neuen class_name
-tools/build_mac_app.sh                                             # Mac-App (docs/mac-app.md)
+tools/build_mac_app.sh [--install | --download]                    # Mac-App voll bzw. Download (docs/mac-app.md)
 tools/test.sh [--app] [--shots]                                    # Testlauf: OK oder Fehlerliste
 $G --headless --path . -s res://tools/world_check.gd -- --size=12  # Welt-Prüfer (40 = alles, ~25 min)
 ```
@@ -135,4 +135,5 @@ Alle Argumente im Kopf von `scripts/debug_tools.gd`, mehr in `docs/testen.md`.
   Impostoren, weiche LOD-Übergänge, Waldränder, Lichtungen, Schilf · Fels ohne Wiederholung, Grasrand,
   Flickstellen, ausgerundete Kuppen · Ruckler-Suche (BENCH langsam), Shader vorbereiten
 - [x] Ladebildschirm mit Bildern, Ladestand und Tipps · weiche Menü-Animationen · Toasts ohne Überlappung ·
-  Tastenhilfe (Stand, Raststätte, Aussichtspunkt, Prüfstand) · Version 1.0.0, CHANGELOG.md, „Was ist neu“
+  Tastenhilfe (Stand, Raststätte, Aussichtspunkt, Prüfstand) · Version 1.0.0, CHANGELOG.md, „Was ist neu“ ·
+  Mac-App in zwei Varianten (voll nur lokal, Download nur mit CC-BY-Modellen)

@@ -158,6 +158,8 @@ var _velocity := Vector2.ZERO
 var _rest_lights: Array[OmniLight3D] = []
 ## Vorbereitetes Tankstellen-Modell (fehlt es, wird die Tankstelle aus Kästen gebaut)
 const STATION_MODEL := "res://assets/models/raststaette/small_red_gas_station/prepared/model.res"
+## Credit-Text der Tankstelle (CC BY, Garage > Credits)
+const STATION_CREDIT := "This work is based on \"Small Red Gas Station\" (https://sketchfab.com/3d-models/small-red-gas-station-1a0feafb044148e585bfe588afe617b8) by SmashedBones (https://sketchfab.com/SmashedBones) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)"
 var _glow_timer: float = 0.0
 var _day_night: DayNight
 var _last_target := Vector2.ZERO
